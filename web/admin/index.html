@@ -1,0 +1,3168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Colour King — Web Admin Enterprise Portal</title>
+  <style>
+    :root {
+      --bg: #070B12;
+      --surface: #0E1524;
+      --card: #141E33;
+      --card-highlight: #1B2945;
+      --border: #233554;
+      --gold: #FFD700;
+      --amber: #FF9100;
+      --green: #00E676;
+      --red: #FF1744;
+      --violet: #D500F9;
+      --cyan: #00E5FF;
+      --text: #F1F5F9;
+      --text-muted: #8E9DB2;
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); display: flex; min-height: 100vh; overflow-x: hidden; }
+
+    /* Sidebar Navigation */
+    aside {
+      width: 270px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      z-index: 40;
+    }
+    .brand-box {
+      padding: 22px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: linear-gradient(180deg, rgba(255,215,0,0.08) 0%, transparent 100%);
+    }
+    .brand-crown {
+      width: 42px; height: 42px;
+      border-radius: 12px;
+      background: radial-gradient(circle, var(--gold), #FF8F00);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px;
+      box-shadow: 0 0 14px rgba(255, 215, 0, 0.4);
+      flex-shrink: 0;
+    }
+    .brand-title {
+      font-size: 16px;
+      font-weight: 900;
+      color: var(--gold);
+      letter-spacing: 0.5px;
+      line-height: 1.2;
+    }
+    .brand-subtitle {
+      font-size: 11px;
+      color: var(--cyan);
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+    }
+
+    .nav-menu {
+      list-style: none;
+      padding: 16px 12px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .nav-btn {
+      padding: 11px 14px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: all 0.2s ease;
+      background: transparent;
+      border: 1px solid transparent;
+      text-align: left;
+      width: 100%;
+    }
+    .nav-btn:hover {
+      background: var(--card);
+      color: var(--text);
+    }
+    .nav-btn.active {
+      background: var(--card-highlight);
+      color: var(--gold);
+      border-color: rgba(255, 215, 0, 0.3);
+      box-shadow: 0 0 12px rgba(255, 215, 0, 0.15);
+    }
+    .nav-btn .nav-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .nav-badge {
+      font-size: 10px;
+      font-weight: 800;
+      padding: 2px 7px;
+      border-radius: 10px;
+    }
+    .badge-alert { background: rgba(255, 23, 68, 0.2); color: var(--red); border: 1px solid var(--red); }
+    .badge-warn { background: rgba(255, 145, 0, 0.2); color: var(--amber); border: 1px solid var(--amber); }
+    .badge-ok { background: rgba(0, 230, 118, 0.2); color: var(--green); border: 1px solid var(--green); }
+
+    .sidebar-footer {
+      padding: 16px;
+      border-top: 1px solid var(--border);
+      background: rgba(14, 21, 36, 0.8);
+    }
+    .player-app-link-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 10px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, rgba(0,229,255,0.15), rgba(0,229,255,0.05));
+      border: 1px solid var(--cyan);
+      color: var(--cyan);
+      font-size: 12px;
+      font-weight: 800;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+    .player-app-link-btn:hover {
+      background: var(--cyan);
+      color: #000;
+    }
+
+    /* Main Container */
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow-y: auto;
+    }
+
+    /* Top Bar */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .header-title-box h2 {
+      font-size: 18px;
+      font-weight: 800;
+      color: #FFF;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .header-title-box p {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .portal-link-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--card-highlight);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 5px 12px;
+      font-size: 11px;
+      color: var(--gold);
+      font-family: monospace;
+      cursor: pointer;
+    }
+    .portal-link-pill:hover { border-color: var(--gold); }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .admin-chip {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+      border-radius: 30px;
+    }
+    .admin-avatar {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      background: var(--gold);
+      color: #000;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 900;
+      font-size: 12px;
+    }
+
+    /* Content Area */
+    .content-area {
+      padding: 24px 28px 60px 28px;
+      max-width: 1440px;
+      width: 100%;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* Master Analytics KPI Cards */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+    }
+    .kpi-card {
+      background: linear-gradient(180deg, var(--card) 0%, var(--surface) 100%);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      position: relative;
+      overflow: hidden;
+    }
+    .kpi-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: var(--accent, var(--gold));
+    }
+    .kpi-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .kpi-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--text-muted);
+    }
+    .kpi-icon {
+      font-size: 18px;
+    }
+    .kpi-value {
+      font-size: 26px;
+      font-weight: 900;
+      letter-spacing: 0.5px;
+      color: var(--text);
+    }
+    .kpi-footer {
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--text-muted);
+    }
+    .trend-up { color: var(--green); font-weight: 700; }
+    .trend-down { color: var(--red); font-weight: 700; }
+
+    /* Tab Panes */
+    .tab-section {
+      display: none;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .tab-section.active {
+      display: flex;
+    }
+
+    /* Panels & Cards */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 14px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .panel-header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .panel-title {
+      font-size: 16px;
+      font-weight: 800;
+      color: #FFF;
+    }
+    .panel-subtitle {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* Sub Tabs & Filters */
+    .filter-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .filter-pills {
+      display: flex;
+      gap: 6px;
+      background: var(--card);
+      padding: 4px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+    .filter-pill {
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 700;
+      border-radius: 6px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .filter-pill.active {
+      background: var(--card-highlight);
+      color: var(--gold);
+    }
+    .search-input {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: 12px;
+      color: var(--text);
+      outline: none;
+      min-width: 220px;
+    }
+    .search-input:focus { border-color: var(--gold); }
+
+    /* Tables */
+    .table-responsive {
+      width: 100%;
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      text-align: left;
+    }
+    th {
+      background: var(--card);
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 14px;
+      border-bottom: 1px solid rgba(35, 53, 84, 0.4);
+      vertical-align: middle;
+    }
+    tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    /* Status Badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 9px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.4px;
+    }
+    .badge-pending { background: rgba(255, 145, 0, 0.15); color: var(--amber); border: 1px solid var(--amber); }
+    .badge-approved { background: rgba(0, 230, 118, 0.15); color: var(--green); border: 1px solid var(--green); }
+    .badge-rejected { background: rgba(255, 23, 68, 0.15); color: var(--red); border: 1px solid var(--red); }
+    .badge-active { background: rgba(0, 230, 118, 0.15); color: var(--green); border: 1px solid var(--green); }
+    .badge-blocked { background: rgba(255, 23, 68, 0.2); color: var(--red); border: 1px solid var(--red); }
+
+    /* Buttons */
+    .btn {
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    .btn-sm { padding: 6px 10px; font-size: 11px; }
+    .btn-gold { background: var(--gold); color: #000; }
+    .btn-gold:hover { background: #FFC400; }
+    .btn-green { background: var(--green); color: #000; }
+    .btn-green:hover { background: #00C853; }
+    .btn-red { background: var(--red); color: #FFF; }
+    .btn-red:hover { background: #D50000; }
+    .btn-secondary { background: var(--card-highlight); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { border-color: var(--text-muted); }
+    .btn-cyan { background: var(--cyan); color: #000; }
+
+    /* Grid Layouts */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+    }
+    @media (max-width: 960px) {
+      .grid-2 { grid-template-columns: 1fr; }
+      aside { display: none; }
+      .mobile-menu-btn { display: block !important; }
+    }
+    .mobile-menu-btn {
+      display: none;
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--gold);
+      padding: 8px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    /* Forms */
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .form-group label {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-muted);
+    }
+    .form-control {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: var(--text);
+      outline: none;
+    }
+    .form-control:focus {
+      border-color: var(--gold);
+    }
+
+    /* Number & Color Result Pickers */
+    .number-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+      margin: 12px 0;
+    }
+    .num-btn {
+      aspect-ratio: 1;
+      border-radius: 12px;
+      border: 2px solid transparent;
+      font-size: 20px;
+      font-weight: 900;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+    }
+    .num-btn:hover { transform: translateY(-2px); }
+    .num-btn.selected {
+      border-color: #FFF;
+      box-shadow: 0 0 15px currentColor;
+    }
+    .num-red { background: linear-gradient(135deg, #FF1744, #B71C1C); color: #FFF; }
+    .num-green { background: linear-gradient(135deg, #00E676, #1B5E20); color: #FFF; }
+    .num-duo-0 { background: linear-gradient(135deg, #FF1744 50%, #D500F9 50%); color: #FFF; }
+    .num-duo-5 { background: linear-gradient(135deg, #00E676 50%, #D500F9 50%); color: #FFF; }
+
+    /* Modals */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.8);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 20px;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      width: 100%;
+      max-width: 540px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+    }
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 12px;
+    }
+    .modal-title { font-size: 16px; font-weight: 800; color: #FFF; }
+
+    /* Toast Notification */
+    #toastNotice {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--card-highlight);
+      border: 1px solid var(--gold);
+      color: var(--gold);
+      padding: 12px 20px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 800;
+      display: none;
+      z-index: 200;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+      animation: fadeIn 0.3s ease;
+    }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+<body>
+
+  <!-- ADMIN SECURITY GATE AUTHENTICATION OVERLAY -->
+  <div id="adminSecurityGate" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:#070B12; z-index:999999; display:flex; align-items:center; justify-content:center; padding:20px; box-sizing:border-box;">
+    <div style="background:linear-gradient(180deg, #101827 0%, #0B111D 100%); border:1px solid #233554; border-radius:18px; width:100%; max-width:440px; padding:32px 28px; box-shadow:0 20px 60px rgba(0,0,0,0.9), 0 0 30px rgba(255,215,0,0.1); display:flex; flex-direction:column; gap:20px; text-align:center;">
+      
+      <!-- Crown & Brand -->
+      <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
+        <div style="width:60px; height:60px; border-radius:18px; background:radial-gradient(circle, #FFD700, #FF8F00); display:flex; align-items:center; justify-content:center; font-size:32px; box-shadow:0 0 24px rgba(255,215,0,0.5);">
+          👑
+        </div>
+        <h2 style="font-size:22px; font-weight:900; color:#FFD700; letter-spacing:0.8px; margin-top:6px;">COLOUR KING</h2>
+        <div style="display:inline-block; background:rgba(0,229,255,0.12); border:1px solid rgba(0,229,255,0.4); color:#00E5FF; padding:4px 12px; border-radius:20px; font-size:11px; font-weight:800; letter-spacing:1px; text-transform:uppercase;">
+          Enterprise Admin Gate
+        </div>
+      </div>
+
+      <p style="font-size:12px; color:#8E9DB2; line-height:1.5;">
+        Restricted Access. Enter the authorized administrator credentials to unlock the management portal.
+      </p>
+
+      <!-- Error Message Banner -->
+      <div id="gateErrorBanner" style="display:none; background:rgba(255,23,68,0.15); border:1px solid #FF1744; color:#FF1744; padding:10px 14px; border-radius:8px; font-size:12px; font-weight:700; text-align:left;">
+        ❌ Invalid username or password! Please check credentials.
+      </div>
+
+      <!-- Login Form -->
+      <form id="adminLoginForm" onsubmit="handleAdminLogin(event)" style="display:flex; flex-direction:column; gap:14px; text-align:left;">
+        <div>
+          <label style="font-size:12px; font-weight:700; color:#8E9DB2; display:block; margin-bottom:5px;">Admin Username</label>
+          <div style="position:relative;">
+            <input type="text" id="loginUsername" required placeholder="Enter username" style="width:100%; box-sizing:border-box; background:#141E33; border:1px solid #233554; border-radius:10px; padding:12px 14px; color:#F1F5F9; font-size:14px; font-weight:600; outline:none; transition:border-color 0.2s;" onfocus="this.style.borderColor='#FFD700'" onblur="this.style.borderColor='#233554'" autocomplete="username" />
+          </div>
+        </div>
+
+        <div>
+          <label style="font-size:12px; font-weight:700; color:#8E9DB2; display:block; margin-bottom:5px;">Admin Password</label>
+          <div style="position:relative; display:flex; align-items:center;">
+            <input type="password" id="loginPassword" required placeholder="Enter password" style="width:100%; box-sizing:border-box; background:#141E33; border:1px solid #233554; border-radius:10px; padding:12px 42px 12px 14px; color:#F1F5F9; font-size:14px; font-weight:600; outline:none; transition:border-color 0.2s;" onfocus="this.style.borderColor='#FFD700'" onblur="this.style.borderColor='#233554'" autocomplete="current-password" />
+            <button type="button" onclick="togglePasswordVisibility()" style="position:absolute; right:12px; background:none; border:none; color:#8E9DB2; cursor:pointer; font-size:16px; padding:0;">👁️</button>
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#8E9DB2; margin-top:2px;">
+          <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+            <input type="checkbox" id="rememberAdmin" checked style="accent-color:#FFD700;" />
+            <span>Keep me logged in</span>
+          </label>
+          <span style="color:#00E5FF; font-weight:700; cursor:pointer;" onclick="fillDemoCredentials()">Use Demo Auth</span>
+        </div>
+
+        <button type="submit" style="width:100%; background:linear-gradient(135deg, #FFD700, #FFAB00); color:#000; border:none; padding:13px; border-radius:10px; font-size:14px; font-weight:900; letter-spacing:0.5px; cursor:pointer; margin-top:6px; transition:transform 0.15s, box-shadow 0.2s; box-shadow:0 4px 18px rgba(255,215,0,0.35);">
+          🔓 Unlock Admin Portal
+        </button>
+      </form>
+
+      <div style="border-top:1px solid #233554; padding-top:14px; margin-top:4px;">
+        <a href="index.html" style="font-size:12px; color:#00E5FF; text-decoration:none; font-weight:700; display:inline-flex; align-items:center; gap:6px;">
+          <span>← Back to Player Application</span>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sidebar Navigation -->
+  <aside id="sidebarNav">
+    <div class="brand-box">
+      <div class="brand-crown">👑</div>
+      <div>
+        <div class="brand-title">COLOUR KING</div>
+        <div class="brand-subtitle">Web Admin Portal</div>
+      </div>
+    </div>
+
+    <ul class="nav-menu">
+      <li>
+        <button class="nav-btn active" onclick="switchAdminTab('dashboard')" id="nav-dashboard">
+          <span class="nav-left"><span>📊</span> Dashboard Overview</span>
+        </button>
+      </li>
+      <li>
+        <button class="nav-btn" onclick="switchAdminTab('deposits')" id="nav-deposits">
+          <span class="nav-left"><span>📥</span> Deposit Requests</span>
+          <span class="nav-badge badge-warn" id="navDepositCount">3 PENDING</span>
+        </button>
+      </li>
+      <li>
+        <button class="nav-btn" onclick="switchAdminTab('withdrawals')" id="nav-withdrawals">
+          <span class="nav-left"><span>📤</span> Withdrawal Requests</span>
+          <span class="nav-badge badge-alert" id="navWithdrawCount">2 PENDING</span>
+        </button>
+      </li>
+      <li>
+        <button class="nav-btn" onclick="switchAdminTab('results')" id="nav-results">
+          <span class="nav-left"><span>🎲</span> Result Declaration</span>
+          <span class="nav-badge badge-ok">LIVE 30s</span>
+        </button>
+      </li>
+      <li>
+        <button class="nav-btn" onclick="switchAdminTab('users')" id="nav-users">
+          <span class="nav-left"><span>👥</span> User Block / Unblock</span>
+        </button>
+      </li>
+      <li>
+        <button class="nav-btn" onclick="switchAdminTab('affiliate')" id="nav-affiliate">
+          <span class="nav-left"><span>🤝</span> Affiliate & Refer-to-Earn</span>
+          <span class="nav-badge badge-ok">6 TIERS</span>
+        </button>
+      </li>
+      <li>
+        <button class="nav-btn" onclick="switchAdminTab('bank')" id="nav-bank">
+          <span class="nav-left"><span>🏦</span> Deposit Bank Details</span>
+        </button>
+      </li>
+      <li>
+        <button class="nav-btn" onclick="switchAdminTab('bets')" id="nav-bets">
+          <span class="nav-left"><span>📜</span> All Users Bet History</span>
+        </button>
+      </li>
+      <li>
+        <button class="nav-btn" onclick="switchAdminTab('audit')" id="nav-audit">
+          <span class="nav-left"><span>📋</span> System Audit Trail</span>
+        </button>
+      </li>
+    </ul>
+
+    <div class="sidebar-footer">
+      <a href="index.html" class="player-app-link-btn" target="_blank">
+        <span>🎮</span> Launch Player Web App
+      </a>
+    </div>
+  </aside>
+
+  <!-- Main Content Area -->
+  <main>
+    <!-- Topbar -->
+    <header>
+      <div class="header-left">
+        <button class="mobile-menu-btn" onclick="toggleMobileSidebar()">☰ Menu</button>
+        <div class="header-title-box">
+          <h2>👑 Colour King Master Control</h2>
+          <p>Real-Time Multitenant Ledger, Result Decider & Payout Orchestrator</p>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <div class="portal-link-pill" onclick="copyPortalLink()" title="Click to copy Web Admin Link">
+          <span>🔗</span> <span id="portalLinkDisplay">.../admin.html</span>
+          <span style="font-size:10px; color:var(--cyan); margin-left:4px;">[COPY]</span>
+        </div>
+        <div class="admin-chip">
+          <div class="admin-avatar" style="background:var(--gold); color:#000;">CP</div>
+          <span style="font-size:12px; font-weight:800;" id="adminUsernameDisplay">ColourPrince</span>
+        </div>
+        <button class="btn btn-red btn-sm" onclick="adminLogout()" title="Log out from Admin Panel" style="padding:6px 12px; font-weight:800;">
+          <span>🔒 Logout</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="content-area">
+
+      <!-- MASTER ANALYTICS: TOTAL DEPOSIT, WITHDRAWAL, PROFIT -->
+      <div class="kpi-grid">
+        <div class="kpi-card" style="--accent: var(--green);">
+          <div class="kpi-header">
+            <span class="kpi-title">All Users Total Deposit</span>
+            <span class="kpi-icon">💰</span>
+          </div>
+          <div class="kpi-value" id="kpiTotalDeposits" style="color:var(--green);">₹5,480,000.00</div>
+          <div class="kpi-footer">
+            <span class="trend-up">▲ +18.4%</span>
+            <span>Total 148 approved requests</span>
+          </div>
+        </div>
+
+        <div class="kpi-card" style="--accent: var(--red);">
+          <div class="kpi-header">
+            <span class="kpi-title">All Users Total Withdrawal</span>
+            <span class="kpi-icon">🏦</span>
+          </div>
+          <div class="kpi-value" id="kpiTotalWithdrawals" style="color:var(--gold);">₹2,610,000.00</div>
+          <div class="kpi-footer">
+            <span style="color:var(--amber);">● 2 Pending Queue</span>
+            <span>Escrow vault protected</span>
+          </div>
+        </div>
+
+        <div class="kpi-card" style="--accent: var(--gold);">
+          <div class="kpi-header">
+            <span class="kpi-title">Net Platform House Profit</span>
+            <span class="kpi-icon">📈</span>
+          </div>
+          <div class="kpi-value" id="kpiTotalProfit" style="color:var(--gold);">+₹2,870,000.00</div>
+          <div class="kpi-footer">
+            <span class="trend-up">▲ 52.37% Margin</span>
+            <span>Deposits minus withdrawals</span>
+          </div>
+        </div>
+
+        <div class="kpi-card" style="--accent: var(--cyan);">
+          <div class="kpi-header">
+            <span class="kpi-title">Total Bets Turnover</span>
+            <span class="kpi-icon">🎲</span>
+          </div>
+          <div class="kpi-value" id="kpiTotalTurnover" style="color:var(--cyan);">₹14,892,400.00</div>
+          <div class="kpi-footer">
+            <span>Users: <strong id="kpiActiveUsers" style="color:#FFF;">1,420 Active</strong></span>
+            <span>• <span id="kpiBlockedUsers" style="color:var(--red);">18 Blocked</span></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========================================== -->
+      <!-- TAB 1: DASHBOARD OVERVIEW -->
+      <!-- ========================================== -->
+      <section class="tab-section active" id="sec-dashboard">
+        <!-- 4 Separate Markets Overview -->
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-header-left">
+              <span class="panel-title">🌐 4 Live Game Markets Status (30s Round / 3m Duration)</span>
+            </div>
+            <button class="btn btn-gold btn-sm" onclick="switchAdminTab('results')">Open Result Decider ➔</button>
+          </div>
+
+          <div class="grid-3" id="marketsGridOverview">
+            <!-- MIAMI -->
+            <div class="panel" style="background:var(--card); border-left:4px solid #FF007F;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h4 style="font-size:14px; color:#FF007F;">🌴 MIAMI ARENA</h4>
+                <span class="badge badge-approved" id="market-badge-MIAMI">BET OPEN</span>
+              </div>
+              <p style="font-size:11px; color:var(--text-muted); margin-top:4px;">Period #<span id="market-period-MIAMI">202610311025</span></p>
+              <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:10px;">
+                <span style="font-size:11px; color:var(--text-muted);">Countdown:</span>
+                <strong style="font-size:18px; color:#FFF;" id="market-timer-MIAMI">02:45</strong>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--cyan); margin-top:6px;">
+                <span>Turnover: ₹3,410,000</span>
+                <span>Margin: +48.2%</span>
+              </div>
+            </div>
+
+            <!-- VEGAS -->
+            <div class="panel" style="background:var(--card); border-left:4px solid #FFD700;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h4 style="font-size:14px; color:#FFD700;">🎰 VEGAS HIGH ROLLER</h4>
+                <span class="badge badge-approved" id="market-badge-VEGAS">BET OPEN</span>
+              </div>
+              <p style="font-size:11px; color:var(--text-muted); margin-top:4px;">Period #<span id="market-period-VEGAS">202610312025</span></p>
+              <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:10px;">
+                <span style="font-size:11px; color:var(--text-muted);">Countdown:</span>
+                <strong style="font-size:18px; color:#FFF;" id="market-timer-VEGAS">02:20</strong>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--cyan); margin-top:6px;">
+                <span>Turnover: ₹5,120,000</span>
+                <span>Margin: +51.6%</span>
+              </div>
+            </div>
+
+            <!-- PARIS -->
+            <div class="panel" style="background:var(--card); border-left:4px solid #BA68C8;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h4 style="font-size:14px; color:#BA68C8;">🗼 PARIS ROYALE</h4>
+                <span class="badge badge-approved" id="market-badge-PARIS">BET OPEN</span>
+              </div>
+              <p style="font-size:11px; color:var(--text-muted); margin-top:4px;">Period #<span id="market-period-PARIS">202610313025</span></p>
+              <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:10px;">
+                <span style="font-size:11px; color:var(--text-muted);">Countdown:</span>
+                <strong style="font-size:18px; color:#FFF;" id="market-timer-PARIS">01:35</strong>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--cyan); margin-top:6px;">
+                <span>Turnover: ₹2,890,000</span>
+                <span>Margin: +49.1%</span>
+              </div>
+            </div>
+
+            <!-- DUBAI -->
+            <div class="panel" style="background:var(--card); border-left:4px solid #00E5FF;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h4 style="font-size:14px; color:#00E5FF;">🏙️ DUBAI OASIS</h4>
+                <span class="badge badge-approved" id="market-badge-DUBAI">BET OPEN</span>
+              </div>
+              <p style="font-size:11px; color:var(--text-muted); margin-top:4px;">Period #<span id="market-period-DUBAI">202610314025</span></p>
+              <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:10px;">
+                <span style="font-size:11px; color:var(--text-muted);">Countdown:</span>
+                <strong style="font-size:18px; color:#FFF;" id="market-timer-DUBAI">02:50</strong>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--cyan); margin-top:6px;">
+                <span>Turnover: ₹3,472,400</span>
+                <span>Margin: +53.4%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Action Panels Grid -->
+        <div class="grid-2">
+          <!-- Pending Deposits Quick Preview -->
+          <div class="panel">
+            <div class="panel-header">
+              <span class="panel-title">📥 Pending Deposit Slips (Fast Action)</span>
+              <button class="btn btn-secondary btn-sm" onclick="switchAdminTab('deposits')">View All</button>
+            </div>
+            <div id="quickDepositList">
+              <!-- Populated via JS -->
+            </div>
+          </div>
+
+          <!-- Pending Withdrawals Quick Preview -->
+          <div class="panel">
+            <div class="panel-header">
+              <span class="panel-title">🏦 Pending Payout Escrow Queue</span>
+              <button class="btn btn-secondary btn-sm" onclick="switchAdminTab('withdrawals')">View All</button>
+            </div>
+            <div id="quickWithdrawalList">
+              <!-- Populated via JS -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- TAB 2: DEPOSIT REQUESTS MANAGER -->
+      <!-- ========================================== -->
+      <section class="tab-section" id="sec-deposits">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h3 class="panel-title">📥 User Deposit Requests Manager</h3>
+              <p class="panel-subtitle">Review UTR / Transaction IDs, verify payment proofs, and approve instant wallet balance credits</p>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <button class="btn btn-secondary btn-sm" onclick="simulateNewDepositRequest()">+ Simulate Demo Deposit</button>
+            </div>
+          </div>
+
+          <div class="filter-bar">
+            <div class="filter-pills">
+              <button class="filter-pill active" onclick="filterDeposits('ALL', this)">All Requests</button>
+              <button class="filter-pill" onclick="filterDeposits('PENDING', this)">Pending</button>
+              <button class="filter-pill" onclick="filterDeposits('APPROVED', this)">Approved</button>
+              <button class="filter-pill" onclick="filterDeposits('REJECTED', this)">Rejected</button>
+            </div>
+            <input type="text" class="search-input" placeholder="Search by UTR or Username..." id="searchDepositInput" oninput="renderDepositsTable()" />
+          </div>
+
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>Request ID</th>
+                  <th>User Details</th>
+                  <th>Deposit Amount</th>
+                  <th>Channel & UTR No.</th>
+                  <th>Proof Slip</th>
+                  <th>Date & Time</th>
+                  <th>Status</th>
+                  <th>Admin Action</th>
+                </tr>
+              </thead>
+              <tbody id="depositsTableBody">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- TAB 3: WITHDRAWAL REQUESTS MANAGER -->
+      <!-- ========================================== -->
+      <section class="tab-section" id="sec-withdrawals">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h3 class="panel-title">📤 User Withdrawal Escrow Payouts</h3>
+              <p class="panel-subtitle">Approve real-time bank IMPS / UPI payouts or refund rejected requests back to user ledger</p>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <button class="btn btn-secondary btn-sm" onclick="simulateNewWithdrawalRequest()">+ Simulate Demo Withdrawal</button>
+            </div>
+          </div>
+
+          <div class="filter-bar">
+            <div class="filter-pills">
+              <button class="filter-pill active" onclick="filterWithdrawals('ALL', this)">All</button>
+              <button class="filter-pill" onclick="filterWithdrawals('PENDING', this)">Pending</button>
+              <button class="filter-pill" onclick="filterWithdrawals('APPROVED', this)">Approved / Paid</button>
+              <button class="filter-pill" onclick="filterWithdrawals('REJECTED', this)">Rejected</button>
+            </div>
+            <input type="text" class="search-input" placeholder="Search User or Bank Account..." id="searchWithdrawalInput" oninput="renderWithdrawalsTable()" />
+          </div>
+
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>Request ID</th>
+                  <th>User</th>
+                  <th>Withdrawal Amount</th>
+                  <th>Destination Bank / UPI</th>
+                  <th>Submitted At</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="withdrawalsTableBody">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- TAB 4: RESULT DECLARATION ENGINE -->
+      <!-- ========================================== -->
+      <section class="tab-section" id="sec-results">
+        <div class="grid-2">
+          <!-- Live Manual Decider Console -->
+          <div class="panel">
+            <div class="panel-header">
+              <div>
+                <h3 class="panel-title">🎯 Manual Result Declaration (Admin Override)</h3>
+                <p class="panel-subtitle">Intervene or pre-determine winning color & number for the next round</p>
+              </div>
+              <span class="badge badge-alert" id="adminOverrideBadge">MODE: AUTO PRNG</span>
+            </div>
+
+            <!-- Market Selector -->
+            <div class="form-group">
+              <label>Select Target Game Market:</label>
+              <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <button class="btn btn-secondary btn-sm active" id="marketSel-MIAMI" onclick="selectResultMarket('MIAMI')">🌴 MIAMI</button>
+                <button class="btn btn-secondary btn-sm" id="marketSel-VEGAS" onclick="selectResultMarket('VEGAS')">🎰 VEGAS</button>
+                <button class="btn btn-secondary btn-sm" id="marketSel-PARIS" onclick="selectResultMarket('PARIS')">🗼 PARIS</button>
+                <button class="btn btn-secondary btn-sm" id="marketSel-DUBAI" onclick="selectResultMarket('DUBAI')">🏙️ DUBAI</button>
+              </div>
+            </div>
+
+            <!-- Current Period Status Card -->
+            <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <span style="font-size:11px; color:var(--text-muted);">ACTIVE PERIOD:</span>
+                <h4 style="font-size:18px; color:var(--gold); font-weight:900;" id="activeDeciderPeriod">#202610311025</h4>
+                <div style="font-size:11px; color:var(--cyan); margin-top:2px;" id="activeDeciderStatus">Status: Bet Open (Time Left: 02:45)</div>
+              </div>
+              <div style="text-align:right;">
+                <span class="badge badge-approved" id="deciderBetStatusBadge">Bet Open</span>
+                <div style="font-size:24px; font-weight:900; color:#FFF; margin-top:4px;" id="deciderCountdown">02:45</div>
+              </div>
+            </div>
+
+            <!-- LIVE BET DISTRIBUTION & AMOUNT TOTALS WIDGET -->
+            <div style="background:linear-gradient(180deg, #121C30 0%, #0E1627 100%); border:1px solid #233554; border-radius:12px; padding:14px; margin:12px 0;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:1px solid rgba(35,53,84,0.6); padding-bottom:8px;">
+                <div>
+                  <h4 style="font-size:13px; font-weight:800; color:#FFD700; display:flex; align-items:center; gap:6px;">
+                    <span>📊</span> Live Wager Breakdown (<span id="liveMarketNameLabel">MIAMI</span>)
+                  </h4>
+                  <p style="font-size:11px; color:#8E9DB2;">Live total wager amounts placed across all betting positions</p>
+                </div>
+                <div style="text-align:right;">
+                  <span style="font-size:10px; color:#8E9DB2; text-transform:uppercase;">Active Round Pool</span>
+                  <div style="font-size:16px; font-weight:900; color:#00E5FF;" id="liveTotalPoolDisplay">₹189,500.00</div>
+                </div>
+              </div>
+
+              <!-- Colors & Sizes Bet Totals -->
+              <div style="display:grid; grid-template-columns:repeat(5, 1fr); gap:8px; margin-bottom:10px;">
+                <div style="background:rgba(0,230,118,0.1); border:1px solid #00E676; border-radius:8px; padding:8px 6px; text-align:center;">
+                  <div style="font-size:10px; font-weight:800; color:#00E676;">🟢 GREEN 2X</div>
+                  <div style="font-size:13px; font-weight:900; color:#FFF; margin-top:2px;" id="liveBetGreenAmt">₹34,500</div>
+                  <div style="font-size:9px; color:#8E9DB2;" id="liveBetGreenCount">26 bets</div>
+                </div>
+
+                <div style="background:rgba(213,0,249,0.12); border:1px solid #D500F9; border-radius:8px; padding:8px 6px; text-align:center;">
+                  <div style="font-size:10px; font-weight:800; color:#D500F9;">🟣 VIOLET 3X</div>
+                  <div style="font-size:13px; font-weight:900; color:#FFF; margin-top:2px;" id="liveBetVioletAmt">₹16,200</div>
+                  <div style="font-size:9px; color:#8E9DB2;" id="liveBetVioletCount">12 bets</div>
+                </div>
+
+                <div style="background:rgba(255,23,68,0.1); border:1px solid #FF1744; border-radius:8px; padding:8px 6px; text-align:center;">
+                  <div style="font-size:10px; font-weight:800; color:#FF1744;">🔴 RED 2X</div>
+                  <div style="font-size:13px; font-weight:900; color:#FFF; margin-top:2px;" id="liveBetRedAmt">₹42,800</div>
+                  <div style="font-size:9px; color:#8E9DB2;" id="liveBetRedCount">31 bets</div>
+                </div>
+
+                <div style="background:rgba(255,215,0,0.1); border:1px solid #FFD700; border-radius:8px; padding:8px 6px; text-align:center;">
+                  <div style="font-size:10px; font-weight:800; color:#FFD700;">🔼 BIG 2X</div>
+                  <div style="font-size:13px; font-weight:900; color:#FFF; margin-top:2px;" id="liveBetBigAmt">₹48,200</div>
+                  <div style="font-size:9px; color:#8E9DB2;" id="liveBetBigCount">34 bets</div>
+                </div>
+
+                <div style="background:rgba(0,229,255,0.1); border:1px solid #00E5FF; border-radius:8px; padding:8px 6px; text-align:center;">
+                  <div style="font-size:10px; font-weight:800; color:#00E5FF;">🔽 SMALL 2X</div>
+                  <div style="font-size:13px; font-weight:900; color:#FFF; margin-top:2px;" id="liveBetSmallAmt">₹47,800</div>
+                  <div style="font-size:9px; color:#8E9DB2;" id="liveBetSmallCount">33 bets</div>
+                </div>
+              </div>
+
+              <!-- Numbers 0-9 Live Bet Totals Grid -->
+              <div style="background:rgba(0,0,0,0.3); border-radius:8px; padding:8px 10px;">
+                <div style="font-size:10px; font-weight:700; color:#8E9DB2; margin-bottom:6px; display:flex; justify-content:space-between;">
+                  <span>NUMBER-WISE WAGERS (0-9)</span>
+                  <span style="color:#FFD700;">9.0X MULTIPLIER</span>
+                </div>
+                <div style="display:grid; grid-template-columns:repeat(5, 1fr); gap:6px;" id="liveNumbersBetGrid">
+                  <!-- Dynamically populated -->
+                </div>
+              </div>
+            </div>
+
+            <!-- Number Picker (0-9) -->
+            <div>
+              <label style="font-size:12px; font-weight:700; color:var(--text-muted); display:block; margin-bottom:8px;">
+                Choose Winning Number (Click to Select Outcome):
+              </label>
+              <div class="number-grid">
+                <button class="num-btn num-duo-0" onclick="pickWinningNumber(0)">0 <span style="font-size:9px;">R+V</span></button>
+                <button class="num-btn num-green" onclick="pickWinningNumber(1)">1 <span style="font-size:9px;">GRN</span></button>
+                <button class="num-btn num-red" onclick="pickWinningNumber(2)">2 <span style="font-size:9px;">RED</span></button>
+                <button class="num-btn num-green" onclick="pickWinningNumber(3)">3 <span style="font-size:9px;">GRN</span></button>
+                <button class="num-btn num-red" onclick="pickWinningNumber(4)">4 <span style="font-size:9px;">RED</span></button>
+                <button class="num-btn num-duo-5" onclick="pickWinningNumber(5)">5 <span style="font-size:9px;">G+V</span></button>
+                <button class="num-btn num-red" onclick="pickWinningNumber(6)">6 <span style="font-size:9px;">RED</span></button>
+                <button class="num-btn num-green" onclick="pickWinningNumber(7)">7 <span style="font-size:9px;">GRN</span></button>
+                <button class="num-btn num-red" onclick="pickWinningNumber(8)">8 <span style="font-size:9px;">RED</span></button>
+                <button class="num-btn num-green" onclick="pickWinningNumber(9)">9 <span style="font-size:9px;">GRN</span></button>
+              </div>
+            </div>
+
+            <!-- Selected Outcome Preview -->
+            <div style="background:var(--card-highlight); border:1px solid var(--border); border-radius:10px; padding:14px; display:flex; align-items:center; justify-content:space-between;">
+              <div style="display:flex; align-items:center; gap:12px;">
+                <div id="previewResultBall" style="width:44px; height:44px; border-radius:50%; background:var(--green); color:#000; font-weight:900; font-size:22px; display:flex; align-items:center; justify-content:center; box-shadow:0 0 12px currentColor;">
+                  7
+                </div>
+                <div>
+                  <div style="font-size:11px; color:var(--text-muted);">OUTCOME OVERRIDE:</div>
+                  <h4 style="font-size:16px; font-weight:800; color:#FFF;" id="previewResultLabel">GREEN • BIG (7)</h4>
+                </div>
+              </div>
+              <span class="badge badge-warn" id="previewPayoutRisk">House Projected Net: +₹14,500</span>
+            </div>
+
+            <!-- Action Buttons -->
+            <div style="display:flex; gap:10px; margin-top:6px;">
+              <button class="btn btn-gold" style="flex:1;" onclick="applyResultOverrideNow()">
+                ⚡ Force Declare Outcome Now
+              </button>
+              <button class="btn btn-secondary" onclick="presetNextRoundOutcome()">
+                ⏳ Preset For Next Round
+              </button>
+            </div>
+          </div>
+
+          <!-- Recent Declared Results History -->
+          <div class="panel">
+            <div class="panel-header">
+              <span class="panel-title">📜 Declared Results Audit Feed</span>
+              <span class="badge badge-approved">Provably Fair Log</span>
+            </div>
+            <div class="table-responsive">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Market</th>
+                    <th>Period</th>
+                    <th>Number</th>
+                    <th>Color</th>
+                    <th>Size</th>
+                    <th>Mode</th>
+                    <th>Payout (₹)</th>
+                  </tr>
+                </thead>
+                <tbody id="declaredResultsTableBody">
+                  <!-- Populated via JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- TAB 5: USER MANAGEMENT & BLOCK/UNBLOCK -->
+      <!-- ========================================== -->
+      <section class="tab-section" id="sec-users">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h3 class="panel-title">👥 User Management & Block/Unblock Controls</h3>
+              <p class="panel-subtitle">Monitor user balances, deposits, withdrawals, and toggle instant account access restrictions</p>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="addNewDemoUser()">+ Add Demo User</button>
+          </div>
+
+          <div class="filter-bar">
+            <div class="filter-pills">
+              <button class="filter-pill active" onclick="filterUsers('ALL', this)">All (6)</button>
+              <button class="filter-pill" onclick="filterUsers('ACTIVE', this)">Active (5)</button>
+              <button class="filter-pill" onclick="filterUsers('BLOCKED', this)">Blocked (1)</button>
+            </div>
+            <input type="text" class="search-input" placeholder="Search by Username, Phone or ID..." id="searchUsersInput" oninput="renderUsersTable()" />
+          </div>
+
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>User Details</th>
+                  <th>Wallet Balance</th>
+                  <th>Total Deposits</th>
+                  <th>Total Withdrawals</th>
+                  <th>Total Bets</th>
+                  <th>Net P&L</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="usersTableBody">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- TAB: AFFILIATE & REFER-TO-EARN MANAGEMENT -->
+      <!-- ========================================== -->
+      <section class="tab-section" id="sec-affiliate">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h3 class="panel-title">🤝 User Affiliate Network & Refer-to-Earn</h3>
+              <p class="panel-subtitle">Transparent tracking of who is referred by whom, downline members count, tier structure, and referral commissions earned</p>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <span class="badge badge-approved">TIER 1 (30%) • TIER 2 (20%) • TIER 3 (10%)</span>
+            </div>
+          </div>
+
+          <!-- Affiliate High Level Metrics -->
+          <div class="grid-3" style="margin-bottom:8px;">
+            <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px;">
+              <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase;">Total Network Affiliates</div>
+              <div style="font-size:22px; font-weight:900; color:var(--gold); margin-top:4px;" id="affiliateTotalMembersCount">625 Members</div>
+              <div style="font-size:11px; color:var(--cyan); margin-top:2px;">Across 6 Multi-tier Levels</div>
+            </div>
+
+            <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px;">
+              <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase;">Total Refer-to-Earn Paid</div>
+              <div style="font-size:22px; font-weight:900; color:var(--green); margin-top:4px;" id="affiliateTotalCommissionsPaid">₹241,550.00</div>
+              <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Credited directly to user wallets</div>
+            </div>
+
+            <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px;">
+              <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase;">Top Affiliate Promoter</div>
+              <div style="font-size:22px; font-weight:900; color:#FFF; margin-top:4px;">Priya_VIP</div>
+              <div style="font-size:11px; color:var(--gold); margin-top:2px;">310 Team Members • ₹128,900 Earned</div>
+            </div>
+          </div>
+
+          <div class="filter-bar">
+            <div class="filter-pills">
+              <button class="filter-pill active" onclick="filterAffiliates('ALL', this)">All Affiliates</button>
+              <button class="filter-pill" onclick="filterAffiliates('ACTIVE_EARNERS', this)">Active Earners (>₹10,000)</button>
+              <button class="filter-pill" onclick="filterAffiliates('TOP_TEAMS', this)">Top Teams (>50 Members)</button>
+            </div>
+            <input type="text" class="search-input" placeholder="Search by User, Referral Code, or Sponsor..." id="searchAffiliateInput" oninput="renderAffiliateTable()" />
+          </div>
+
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>User Details</th>
+                  <th>Referral Code</th>
+                  <th>Invited By (Sponsor)</th>
+                  <th>Direct Members (Tier 1)</th>
+                  <th>Team Members (Tier 2-6)</th>
+                  <th>Total Refer-to-Earn (₹)</th>
+                  <th>Yesterday's Earn</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="affiliateTableBody">
+                <!-- Dynamically populated via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- TAB 6: DEPOSIT BANK DETAILS CONFIGURATION -->
+      <!-- ========================================== -->
+      <section class="tab-section" id="sec-bank">
+        <div class="grid-2">
+          <!-- Bank Form -->
+          <div class="panel">
+            <div class="panel-header">
+              <div>
+                <h3 class="panel-title">🏦 Manage Deposit Bank & UPI Channels</h3>
+                <p class="panel-subtitle">Configured bank and UPI info is dynamically displayed to users in the app deposit modal</p>
+              </div>
+              <span class="badge badge-approved">LIVE IN USER APP</span>
+            </div>
+
+            <form onsubmit="saveBankDetails(event)">
+              <h4 style="font-size:13px; color:var(--gold); margin-bottom:10px; border-bottom:1px solid var(--border); padding-bottom:4px;">
+                1. Bank Transfer (IMPS / NEFT)
+              </h4>
+              <div class="grid-2">
+                <div class="form-group">
+                  <label>Bank Name</label>
+                  <input type="text" class="form-control" id="bankName" value="State Bank of India (SBI)" required />
+                </div>
+                <div class="form-group">
+                  <label>Account Holder Name</label>
+                  <input type="text" class="form-control" id="bankHolder" value="Colour King Gaming Enterprise Ltd" required />
+                </div>
+              </div>
+              <div class="grid-2">
+                <div class="form-group">
+                  <label>Account Number</label>
+                  <input type="text" class="form-control" id="bankAccNo" value="40928172901" required />
+                </div>
+                <div class="form-group">
+                  <label>IFSC Code</label>
+                  <input type="text" class="form-control" id="bankIfsc" value="SBIN0001824" required />
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Branch Name & City</label>
+                <input type="text" class="form-control" id="bankBranch" value="Corporate Financial Center, BKC Mumbai" />
+              </div>
+
+              <h4 style="font-size:13px; color:var(--cyan); margin:16px 0 10px 0; border-bottom:1px solid var(--border); padding-bottom:4px;">
+                2. Direct UPI Details & Gateway
+              </h4>
+              <div class="grid-2">
+                <div class="form-group">
+                  <label>Primary UPI ID (VPA)</label>
+                  <input type="text" class="form-control" id="upiId" value="colourking@icici" required />
+                </div>
+                <div class="form-group">
+                  <label>UPI Payee Display Name</label>
+                  <input type="text" class="form-control" id="upiName" value="Colour King Official Pay" required />
+                </div>
+              </div>
+
+              <h4 style="font-size:13px; color:var(--amber); margin:16px 0 10px 0; border-bottom:1px solid var(--border); padding-bottom:4px;">
+                3. Deposit Limits & User Notes
+              </h4>
+              <div class="grid-2">
+                <div class="form-group">
+                  <label>Minimum Deposit (₹)</label>
+                  <input type="number" class="form-control" id="minDeposit" value="100" />
+                </div>
+                <div class="form-group">
+                  <label>Maximum Deposit (₹)</label>
+                  <input type="number" class="form-control" id="maxDeposit" value="100000" />
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Deposit Instructions shown to user:</label>
+                <textarea class="form-control" id="depositInstructions" rows="3">1. Scan QR code or pay to the UPI ID above.
+2. Enter the 12-digit UTR reference number in the app.
+3. Balance will be approved and credited within 2 minutes.</textarea>
+              </div>
+
+              <button type="submit" class="btn btn-gold" style="width:100%; padding:12px; font-size:14px; margin-top:8px;">
+                💾 Save & Update User App Bank Details
+              </button>
+            </form>
+          </div>
+
+          <!-- Live QR Code & User Preview Card -->
+          <div class="panel">
+            <div class="panel-header">
+              <span class="panel-title">📱 Live User App QR & Bank Preview</span>
+              <span class="badge badge-approved">Real-Time Sync</span>
+            </div>
+            <p style="font-size:12px; color:var(--text-muted);">
+              This is exactly what users will see inside the player web app when they click <strong>Deposit</strong>.
+            </p>
+
+            <div style="background:linear-gradient(135deg, #121A2C, #0E1626); border:2px dashed var(--gold); border-radius:14px; padding:20px; display:flex; flex-direction:column; align-items:center; text-align:center; gap:12px;">
+              <div style="background:#FFF; padding:12px; border-radius:12px; display:inline-block; box-shadow:0 0 15px rgba(255,215,0,0.3);">
+                <!-- Dynamic QR SVG representation -->
+                <svg width="140" height="140" viewBox="0 0 100 100" fill="#000">
+                  <rect width="100" height="100" fill="#FFF"/>
+                  <rect x="10" y="10" width="25" height="25" fill="#000"/>
+                  <rect x="15" y="15" width="15" height="15" fill="#FFF"/>
+                  <rect x="18" y="18" width="9" height="9" fill="#000"/>
+                  <rect x="65" y="10" width="25" height="25" fill="#000"/>
+                  <rect x="70" y="15" width="15" height="15" fill="#FFF"/>
+                  <rect x="73" y="18" width="9" height="9" fill="#000"/>
+                  <rect x="10" y="65" width="25" height="25" fill="#000"/>
+                  <rect x="15" y="70" width="15" height="15" fill="#FFF"/>
+                  <rect x="18" y="73" width="9" height="9" fill="#000"/>
+                  <rect x="42" y="12" width="16" height="6" fill="#000"/>
+                  <rect x="45" y="24" width="10" height="10" fill="#000"/>
+                  <rect x="12" y="42" width="6" height="16" fill="#000"/>
+                  <rect x="24" y="45" width="10" height="10" fill="#000"/>
+                  <rect x="42" y="42" width="16" height="16" fill="#FF8F00"/>
+                  <rect x="65" y="45" width="22" height="8" fill="#000"/>
+                  <rect x="45" y="70" width="10" height="18" fill="#000"/>
+                  <rect x="65" y="65" width="25" height="25" fill="#000"/>
+                  <rect x="72" y="72" width="10" height="10" fill="#FFF"/>
+                </svg>
+              </div>
+
+              <div>
+                <span style="font-size:11px; color:var(--text-muted);">UPI ID (Tap to Copy):</span>
+                <div style="font-size:16px; font-weight:900; color:var(--gold); font-family:monospace; margin-top:2px;" id="previewUpiIdDisplay">
+                  colourking@icici
+                </div>
+                <div style="font-size:11px; color:var(--cyan); margin-top:2px;" id="previewUpiNameDisplay">
+                  Colour King Official Pay
+                </div>
+              </div>
+
+              <div style="width:100%; background:var(--card); border:1px solid var(--border); border-radius:10px; padding:12px; text-align:left; font-size:12px; display:flex; flex-direction:column; gap:4px;">
+                <div><span style="color:var(--text-muted);">Bank:</span> <strong id="previewBankName">State Bank of India (SBI)</strong></div>
+                <div><span style="color:var(--text-muted);">A/C No:</span> <strong style="font-family:monospace; color:var(--gold);" id="previewAccNo">40928172901</strong></div>
+                <div><span style="color:var(--text-muted);">IFSC:</span> <strong style="font-family:monospace; color:var(--cyan);" id="previewIfsc">SBIN0001824</strong></div>
+                <div><span style="color:var(--text-muted);">Holder:</span> <strong id="previewHolder">Colour King Gaming Enterprise Ltd</strong></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- TAB 7: ALL DATA BET HISTORY -->
+      <!-- ========================================== -->
+      <section class="tab-section" id="sec-bets">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h3 class="panel-title">📜 All Users Live & Historical Bets</h3>
+              <p class="panel-subtitle">Real-time ledger of every wager placed across Miami, Vegas, Paris, and Dubai markets</p>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="exportBetsToCSV()">📥 Export CSV</button>
+          </div>
+
+          <div class="filter-bar">
+            <div class="filter-pills">
+              <button class="filter-pill active" onclick="filterBetsMarket('ALL', this)">All Markets</button>
+              <button class="filter-pill" onclick="filterBetsMarket('MIAMI', this)">🌴 Miami</button>
+              <button class="filter-pill" onclick="filterBetsMarket('VEGAS', this)">🎰 Vegas</button>
+              <button class="filter-pill" onclick="filterBetsMarket('PARIS', this)">🗼 Paris</button>
+              <button class="filter-pill" onclick="filterBetsMarket('DUBAI', this)">🏙️ Dubai</button>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <select class="form-control" style="padding:6px 12px; font-size:12px;" id="filterBetStatus" onchange="renderBetsTable()">
+                <option value="ALL">All Status</option>
+                <option value="WON">Won</option>
+                <option value="LOST">Lost</option>
+                <option value="PENDING">Pending</option>
+              </select>
+              <input type="text" class="search-input" placeholder="Search by Bet ID, User or Period..." id="searchBetInput" oninput="renderBetsTable()" />
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>Bet ID</th>
+                  <th>Market</th>
+                  <th>Period #</th>
+                  <th>User Details</th>
+                  <th>Bet Target</th>
+                  <th>Amount</th>
+                  <th>Multiplier</th>
+                  <th>Status</th>
+                  <th>Payout</th>
+                  <th>Timestamp</th>
+                </tr>
+              </thead>
+              <tbody id="allBetsTableBody">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- TAB 8: SYSTEM AUDIT TRAIL -->
+      <!-- ========================================== -->
+      <section class="tab-section" id="sec-audit">
+        <div class="panel">
+          <div class="panel-header">
+            <h3 class="panel-title">📋 Append-Only Security & Financial Audit Trail</h3>
+            <span class="badge badge-approved">Tamper-Proof SHA-256</span>
+          </div>
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Admin Actor</th>
+                  <th>Action Type</th>
+                  <th>Target Entity</th>
+                  <th>Description / Changes</th>
+                </tr>
+              </thead>
+              <tbody id="auditTableBody">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- REJECTION REASON MODAL -->
+  <div class="modal-overlay" id="rejectReasonModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title" id="rejectModalTitle">Reject Request</div>
+        <button class="btn btn-secondary btn-sm" onclick="closeModal('rejectReasonModal')">✕</button>
+      </div>
+      <p style="font-size:12px; color:var(--text-muted);" id="rejectModalSubtitle">Specify the reason for rejecting this request:</p>
+      <div class="form-group">
+        <label>Reason for Rejection:</label>
+        <select class="form-control" id="rejectReasonSelect" onchange="toggleCustomReason(this.value)">
+          <option value="Invalid or Fake UTR number">Invalid or Fake UTR number</option>
+          <option value="Payment not credited to bank statement">Payment not credited to bank statement</option>
+          <option value="Duplicate transaction reference">Duplicate transaction reference</option>
+          <option value="Bank account holder name mismatch">Bank account holder name mismatch</option>
+          <option value="CUSTOM">Other custom reason...</option>
+        </select>
+      </div>
+      <div class="form-group" id="customReasonBox" style="display:none;">
+        <label>Custom Reason:</label>
+        <input type="text" class="form-control" id="customReasonInput" placeholder="Enter custom rejection reason..." />
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:8px;">
+        <button class="btn btn-secondary" onclick="closeModal('rejectReasonModal')">Cancel</button>
+        <button class="btn btn-red" onclick="confirmRejectAction()">Confirm Rejection</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- BALANCE ADJUSTMENT MODAL -->
+  <div class="modal-overlay" id="balanceAdjustModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">Adjust User Wallet Balance</div>
+        <button class="btn btn-secondary btn-sm" onclick="closeModal('balanceAdjustModal')">✕</button>
+      </div>
+      <p style="font-size:12px; color:var(--text-muted);" id="adjustUserSubtitle">User: Rahul_Player (USR-1001)</p>
+      <div class="grid-2">
+        <div class="form-group">
+          <label>Adjustment Type</label>
+          <select class="form-control" id="adjustType">
+            <option value="CREDIT">Credit (+) Add Funds</option>
+            <option value="DEBIT">Debit (-) Deduct Funds</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Amount (₹)</label>
+          <input type="number" class="form-control" id="adjustAmount" value="500" min="1" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Admin Audit Note / Reason:</label>
+        <input type="text" class="form-control" id="adjustReason" value="VIP promotional loyalty credit" />
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:8px;">
+        <button class="btn btn-secondary" onclick="closeModal('balanceAdjustModal')">Cancel</button>
+        <button class="btn btn-gold" onclick="confirmBalanceAdjustment()">Execute Adjustment</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PROOF SLIP PREVIEW MODAL -->
+  <div class="modal-overlay" id="proofSlipModal">
+    <div class="modal-card" style="max-width:440px; text-align:center;">
+      <div class="modal-header">
+        <div class="modal-title" id="slipModalTitle">Deposit Receipt Verification</div>
+        <button class="btn btn-secondary btn-sm" onclick="closeModal('proofSlipModal')">✕</button>
+      </div>
+      <div id="slipReceiptContainer" style="background:#FFF; color:#000; padding:18px; border-radius:12px; font-family:monospace; text-align:left; font-size:12px; line-height:1.5;">
+        <!-- Dynamically populated slip -->
+      </div>
+      <button class="btn btn-gold" onclick="closeModal('proofSlipModal')">Done</button>
+    </div>
+  <!-- AFFILIATE DOWNLINE MEMBERS DETAIL MODAL -->
+  <div class="modal-overlay" id="affiliateMembersModal">
+    <div class="modal-card" style="max-width:720px;">
+      <div class="modal-header">
+        <div>
+          <div class="modal-title" id="affiliateModalTitle">👥 Downline Affiliate Members Network</div>
+          <p style="font-size:11px; color:var(--text-muted);" id="affiliateModalSubtitle">User: Rahul_Player • Ref Code: CK-RAHUL</p>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="closeModal('affiliateMembersModal')">✕</button>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; background:var(--card); padding:10px 14px; border-radius:8px; border:1px solid var(--border);">
+        <span style="font-size:12px; color:var(--text-muted);">Referred Members Count: <strong id="modalAffiliateCount" style="color:#FFF;">6</strong></span>
+        <span style="font-size:12px; color:var(--gold);">Total Commission Generated: <strong id="modalAffiliateTotalEarned">₹35,700.00</strong></span>
+      </div>
+
+      <div class="table-responsive" style="max-height:360px; overflow-y:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Member Name / ID</th>
+              <th>Tier Level</th>
+              <th>Join Date</th>
+              <th>Total Deposits</th>
+              <th>Commission Contributed</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="affiliateModalTableBody">
+            <!-- Dynamically populated via JS -->
+          </tbody>
+        </table>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:8px;">
+        <button class="btn btn-gold" onclick="closeModal('affiliateMembersModal')">Close Window</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toastNotice">✅ Action Completed</div>
+
+  <script>
+    // ----------------------------------------------------
+    // ADMIN AUTHENTICATION SECURITY GATE
+    // ----------------------------------------------------
+    const AUTH_USER = 'ColourPrince';
+    const AUTH_PASS = 'Prince@124735';
+    const KEY_ADMIN_AUTH = 'colourking_admin_session';
+
+    function checkAdminAuth() {
+      const isAuthed = sessionStorage.getItem(KEY_ADMIN_AUTH) || localStorage.getItem(KEY_ADMIN_AUTH);
+      const gate = document.getElementById('adminSecurityGate');
+      if (gate) {
+        gate.style.display = (isAuthed === 'authenticated') ? 'none' : 'flex';
+      }
+    }
+
+    // Call checkAdminAuth immediately
+    try { checkAdminAuth(); } catch(e) {}
+
+    function handleAdminLogin(e) {
+      e.preventDefault();
+      const u = (document.getElementById('loginUsername')?.value || '').trim();
+      const p = (document.getElementById('loginPassword')?.value || '').trim();
+      const remember = document.getElementById('rememberAdmin')?.checked;
+      const err = document.getElementById('gateErrorBanner');
+
+      if (u === AUTH_USER && p === AUTH_PASS) {
+        if (err) err.style.display = 'none';
+        sessionStorage.setItem(KEY_ADMIN_AUTH, 'authenticated');
+        if (remember) {
+          localStorage.setItem(KEY_ADMIN_AUTH, 'authenticated');
+        }
+        const gate = document.getElementById('adminSecurityGate');
+        if (gate) gate.style.display = 'none';
+        showToast('👑 Welcome ColourPrince! Admin portal unlocked.');
+      } else {
+        if (err) {
+          err.style.display = 'block';
+          err.innerText = '❌ Invalid credentials! Enter username ColourPrince and password Prince@124735.';
+        }
+      }
+    }
+
+    function adminLogout() {
+      sessionStorage.removeItem(KEY_ADMIN_AUTH);
+      localStorage.removeItem(KEY_ADMIN_AUTH);
+      const gate = document.getElementById('adminSecurityGate');
+      if (gate) {
+        gate.style.display = 'flex';
+        const p = document.getElementById('loginPassword');
+        if (p) p.value = '';
+      }
+      showToast('🔒 Logged out of Admin Portal');
+    }
+
+    function togglePasswordVisibility() {
+      const p = document.getElementById('loginPassword');
+      if (p) p.type = p.type === 'password' ? 'text' : 'password';
+    }
+
+    function fillDemoCredentials() {
+      const u = document.getElementById('loginUsername');
+      const p = document.getElementById('loginPassword');
+      if (u) u.value = 'ColourPrince';
+      if (p) p.value = 'Prince@124735';
+    }
+
+    function getIndianTimeDate(date = new Date()) {
+      const utcMs = date.getTime() + (date.getTimezoneOffset() * 60000);
+      const istOffsetMs = 5.5 * 3600 * 1000;
+      return new Date(utcMs + istOffsetMs);
+    }
+
+    function formatIndianTimeString(date = new Date()) {
+      return date.toLocaleTimeString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+      });
+    }
+
+    function formatIndianDateTimeString(date = new Date()) {
+      return date.toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+      });
+    }
+
+    // ----------------------------------------------------
+    // GLOBAL DEVICE CLOCK SYNCHRONIZATION ENGINE (IST Indian Clock)
+    // Everyday at 11:00 AM IST, Period starts at 221 across all 4 markets (#YYYYMMDD221)
+    // 3-Minute duration (180s total: 150s Bet Open, 30s Bet Close)
+    // ----------------------------------------------------
+    function getGlobalSyncedRoundState() {
+      const now = new Date();
+      const istNow = getIndianTimeDate(now);
+
+      // Daily 11:00:00 reference point in Indian Clock Time (IST)
+      const ref11AM = new Date(istNow.getFullYear(), istNow.getMonth(), istNow.getDate(), 11, 0, 0, 0);
+      let diffSeconds = Math.floor((istNow.getTime() - ref11AM.getTime()) / 1000);
+
+      // If before 11:00 AM IST today, reference 11:00 AM IST of yesterday
+      let refDate = ref11AM;
+      if (diffSeconds < 0) {
+        refDate = new Date(ref11AM.getTime() - 24 * 3600 * 1000);
+        diffSeconds = Math.floor((istNow.getTime() - refDate.getTime()) / 1000);
+      }
+
+      const year = refDate.getFullYear();
+      const month = String(refDate.getMonth() + 1).padStart(2, '0');
+      const day = String(refDate.getDate()).padStart(2, '0');
+      const dateStr = `${year}${month}${day}`;
+
+      const roundDuration = 180; // 3 minutes per round
+      const roundIndex = Math.floor(diffSeconds / roundDuration);
+      const currentPeriodNumber = 221 + roundIndex;
+      const fullPeriodId = `${dateStr}${currentPeriodNumber}`;
+
+      const secondsPassed = diffSeconds % roundDuration;
+      const secondsLeft = roundDuration - secondsPassed;
+      const isBettingLocked = (secondsLeft <= 30); // 30 second Bet Close
+
+      const istTimeString = formatIndianTimeString(now);
+
+      return {
+        dateStr,
+        periodNumber: currentPeriodNumber,
+        fullPeriodId,
+        secondsLeft,
+        isBettingLocked,
+        roundIndex,
+        istTimeString
+      };
+    }
+
+    // SHARED STORAGE KEYS
+    const KEY_BANK = 'colourking_admin_bank_details';
+    const KEY_DEPOSITS = 'colourking_deposit_requests';
+    const KEY_WITHDRAWALS = 'colourking_withdrawal_requests';
+    const KEY_USERS = 'colourking_users_list';
+    const KEY_AFFILIATES = 'colourking_affiliate_network';
+    const KEY_BETS = 'colourking_all_bets';
+    const KEY_DECLARED = 'colourking_declared_results';
+    const KEY_AUDIT = 'colourking_audit_logs';
+
+    // 1. BANK DETAILS STATE
+    const defaultBank = {
+      bankName: "State Bank of India (SBI)",
+      holder: "Colour King Gaming Enterprise Ltd",
+      accNo: "40928172901",
+      ifsc: "SBIN0001824",
+      branch: "Corporate Financial Center, BKC Mumbai",
+      upiId: "colourking@icici",
+      upiName: "Colour King Official Pay",
+      minDeposit: 100,
+      maxDeposit: 100000,
+      instructions: "1. Scan QR code or pay to the UPI ID above.\n2. Enter the 12-digit UTR reference number in the app.\n3. Balance will be approved and credited within 2 minutes."
+    };
+
+    let bankConfig = JSON.parse(localStorage.getItem(KEY_BANK)) || defaultBank;
+
+    // 2. USERS STATE
+    const defaultUsers = [
+      { id: "USR-1001", name: "Rahul_Player", phone: "+91 98765 43210", email: "rahul@gmail.com", balance: 50200.00, totalDeposit: 75000.00, totalWithdraw: 28000.00, betsCount: 142, status: "ACTIVE" },
+      { id: "USR-1002", name: "Aman_Trader", phone: "+91 98221 11223", email: "aman.trade@yahoo.com", balance: 14500.00, totalDeposit: 25000.00, totalWithdraw: 11000.00, betsCount: 68, status: "ACTIVE" },
+      { id: "USR-1003", name: "Priya_VIP", phone: "+91 97110 99887", email: "priya_queen@outlook.com", balance: 125000.00, totalDeposit: 200000.00, totalWithdraw: 95000.00, betsCount: 310, status: "ACTIVE" },
+      { id: "USR-1004", name: "Vikram_99", phone: "+91 96554 33221", email: "vikram99@gmail.com", balance: 3200.00, totalDeposit: 10000.00, totalWithdraw: 6000.00, betsCount: 45, status: "ACTIVE" },
+      { id: "USR-1005", name: "Suspicious_Bot1", phone: "+91 91234 56789", email: "bot_arb@mail.ru", balance: 0.00, totalDeposit: 5000.00, totalWithdraw: 0.00, betsCount: 8, status: "BLOCKED" },
+      { id: "USR-1006", name: "Karan_Pro", phone: "+91 99887 76655", email: "karan_pro@gmail.com", balance: 38400.00, totalDeposit: 60000.00, totalWithdraw: 24000.00, betsCount: 94, status: "ACTIVE" }
+    ];
+
+    let usersList = JSON.parse(localStorage.getItem(KEY_USERS)) || defaultUsers;
+
+    // 3. AFFILIATE & REFER-TO-EARN STATE
+    const defaultAffiliates = [
+      {
+        userId: "USR-1001",
+        userName: "Rahul_Player",
+        phone: "+91 98765 43210",
+        refCode: "CK-RAHUL",
+        referredBy: "OFFICIAL_PROMO",
+        directMembersCount: 28,
+        teamMembersCount: 142,
+        totalEarnedCommission: 48650.00,
+        yesterdayCommission: 3420.00,
+        members: [
+          { id: "USR-2011", name: "Aarav_Sharma", tier: "Tier 1 (Direct)", joinDate: "2026-10-15", totalDeposit: 25000, commission: 7500, status: "ACTIVE" },
+          { id: "USR-2012", name: "Neha_Kapoor", tier: "Tier 1 (Direct)", joinDate: "2026-10-18", totalDeposit: 18000, commission: 5400, status: "ACTIVE" },
+          { id: "USR-2013", name: "Mohit_Verma", tier: "Tier 1 (Direct)", joinDate: "2026-10-20", totalDeposit: 42000, commission: 12600, status: "ACTIVE" },
+          { id: "USR-2014", name: "Sunil_Roy", tier: "Tier 2 (Team)", joinDate: "2026-10-22", totalDeposit: 15000, commission: 3000, status: "ACTIVE" },
+          { id: "USR-2015", name: "Divya_Nair", tier: "Tier 2 (Team)", joinDate: "2026-10-25", totalDeposit: 30000, commission: 6000, status: "ACTIVE" },
+          { id: "USR-2016", name: "Rajat_Bansal", tier: "Tier 3 (Team)", joinDate: "2026-10-28", totalDeposit: 12000, commission: 1200, status: "ACTIVE" }
+        ]
+      },
+      {
+        userId: "USR-1002",
+        userName: "Aman_Trader",
+        phone: "+91 98221 11223",
+        refCode: "CK-AMAN",
+        referredBy: "USR-1001 (Rahul_Player)",
+        directMembersCount: 14,
+        teamMembersCount: 56,
+        totalEarnedCommission: 21400.00,
+        yesterdayCommission: 1850.00,
+        members: [
+          { id: "USR-2021", name: "Suraj_Singh", tier: "Tier 1 (Direct)", joinDate: "2026-10-16", totalDeposit: 20000, commission: 6000, status: "ACTIVE" },
+          { id: "USR-2022", name: "Pooja_Mehta", tier: "Tier 1 (Direct)", joinDate: "2026-10-21", totalDeposit: 14000, commission: 4200, status: "ACTIVE" },
+          { id: "USR-2023", name: "Kavita_Jain", tier: "Tier 2 (Team)", joinDate: "2026-10-24", totalDeposit: 10000, commission: 2000, status: "ACTIVE" }
+        ]
+      },
+      {
+        userId: "USR-1003",
+        userName: "Priya_VIP",
+        phone: "+91 97110 99887",
+        refCode: "CK-PRIYA",
+        referredBy: "OFFICIAL_PROMO",
+        directMembersCount: 45,
+        teamMembersCount: 310,
+        totalEarnedCommission: 128900.00,
+        yesterdayCommission: 9800.00,
+        members: [
+          { id: "USR-2031", name: "Ananya_Sen", tier: "Tier 1 (Direct)", joinDate: "2026-10-10", totalDeposit: 100000, commission: 30000, status: "ACTIVE" },
+          { id: "USR-2032", name: "Rohan_Das", tier: "Tier 1 (Direct)", joinDate: "2026-10-12", totalDeposit: 80000, commission: 24000, status: "ACTIVE" },
+          { id: "USR-2033", name: "Tanya_Malhotra", tier: "Tier 1 (Direct)", joinDate: "2026-10-15", totalDeposit: 55000, commission: 16500, status: "ACTIVE" },
+          { id: "USR-2034", name: "Vikas_Chopra", tier: "Tier 2 (Team)", joinDate: "2026-10-19", totalDeposit: 40000, commission: 8000, status: "ACTIVE" },
+          { id: "USR-2035", name: "Suresh_G", tier: "Tier 3 (Team)", joinDate: "2026-10-23", totalDeposit: 25000, commission: 2500, status: "ACTIVE" }
+        ]
+      },
+      {
+        userId: "USR-1004",
+        userName: "Vikram_99",
+        phone: "+91 96554 33221",
+        refCode: "CK-VIKRAM",
+        referredBy: "USR-1003 (Priya_VIP)",
+        directMembersCount: 8,
+        teamMembersCount: 19,
+        totalEarnedCommission: 8500.00,
+        yesterdayCommission: 620.00,
+        members: [
+          { id: "USR-2041", name: "Gaurav_Tyagi", tier: "Tier 1 (Direct)", joinDate: "2026-10-22", totalDeposit: 15000, commission: 4500, status: "ACTIVE" },
+          { id: "USR-2042", name: "Simran_K", tier: "Tier 1 (Direct)", joinDate: "2026-10-26", totalDeposit: 8000, commission: 2400, status: "ACTIVE" }
+        ]
+      },
+      {
+        userId: "USR-1006",
+        userName: "Karan_Pro",
+        phone: "+91 99887 76655",
+        refCode: "CK-KARAN",
+        referredBy: "USR-1001 (Rahul_Player)",
+        directMembersCount: 19,
+        teamMembersCount: 88,
+        totalEarnedCommission: 34100.00,
+        yesterdayCommission: 2950.00,
+        members: [
+          { id: "USR-2051", name: "Harish_Patel", tier: "Tier 1 (Direct)", joinDate: "2026-10-17", totalDeposit: 35000, commission: 10500, status: "ACTIVE" },
+          { id: "USR-2052", name: "Deepak_Soni", tier: "Tier 1 (Direct)", joinDate: "2026-10-23", totalDeposit: 22000, commission: 6600, status: "ACTIVE" }
+        ]
+      }
+    ];
+
+    let affiliateList = JSON.parse(localStorage.getItem(KEY_AFFILIATES)) || defaultAffiliates;
+
+    // 4. DEPOSIT REQUESTS
+    const defaultDeposits = [
+      { id: "DEP-88401", userId: "USR-1001", userName: "Rahul_Player", amount: 5000.00, method: "UPI (GooglePay)", utr: "429188402911", time: "Today, 11:24 AM", status: "PENDING" },
+      { id: "DEP-88402", userId: "USR-1002", userName: "Aman_Trader", amount: 10000.00, method: "IMPS SBI NetBanking", utr: "902184716294", time: "Today, 11:18 AM", status: "PENDING" },
+      { id: "DEP-88403", userId: "USR-1006", userName: "Karan_Pro", amount: 2500.00, method: "Paytm UPI QR", utr: "419082736184", time: "Today, 10:45 AM", status: "PENDING" },
+      { id: "DEP-88399", userId: "USR-1003", userName: "Priya_VIP", amount: 50000.00, method: "HDFC IMPS", utr: "389271628190", time: "Today, 09:12 AM", status: "APPROVED" },
+      { id: "DEP-88398", userId: "USR-1005", userName: "Suspicious_Bot1", amount: 15000.00, method: "UPI", utr: "000000000000", time: "Yesterday, 18:30 PM", status: "REJECTED", reason: "Invalid / fake UTR" }
+    ];
+
+    let depositRequests = JSON.parse(localStorage.getItem(KEY_DEPOSITS)) || defaultDeposits;
+
+    // 5. WITHDRAWAL REQUESTS
+    const defaultWithdrawals = [
+      {
+        id: "WD-99412",
+        userId: "USR-1001",
+        userName: "Rahul_Player",
+        amount: 8000.00,
+        bankingName: "Rahul Kumar Sharma",
+        upiId: "rahul@oksbi",
+        bankName: "State Bank of India (SBI)",
+        accNo: "40928172901",
+        ifsc: "SBIN0001824",
+        destination: "Rahul Kumar Sharma • SBI (A/C: 40928172901, IFSC: SBIN0001824) • UPI: rahul@oksbi",
+        time: "Today, 11:32 AM",
+        status: "PENDING"
+      },
+      {
+        id: "WD-99413",
+        userId: "USR-1004",
+        userName: "Vikram_99",
+        amount: 2500.00,
+        bankingName: "Vikram Sethi",
+        upiId: "vikram99@icici",
+        bankName: "HDFC Bank",
+        accNo: "5010049281729",
+        ifsc: "HDFC000124",
+        destination: "Vikram Sethi • HDFC (A/C: 5010049281729, IFSC: HDFC000124) • UPI: vikram99@icici",
+        time: "Today, 10:55 AM",
+        status: "PENDING"
+      },
+      {
+        id: "WD-99410",
+        userId: "USR-1003",
+        userName: "Priya_VIP",
+        amount: 45000.00,
+        bankingName: "Priya Singhania",
+        upiId: "priya@axl",
+        bankName: "ICICI Bank",
+        accNo: "002101928374",
+        ifsc: "ICIC0000021",
+        destination: "Priya Singhania • ICICI (A/C: 002101928374, IFSC: ICIC0000021) • UPI: priya@axl",
+        time: "Today, 08:40 AM",
+        status: "APPROVED"
+      },
+      {
+        id: "WD-99408",
+        userId: "USR-1005",
+        userName: "Suspicious_Bot1",
+        amount: 12000.00,
+        bankingName: "Bot Player",
+        upiId: "bot@paytm",
+        bankName: "Paytm Payments Bank",
+        accNo: "919123456789",
+        ifsc: "PYTM0123456",
+        destination: "Bot Player • Paytm Bank (A/C: 919123456789, IFSC: PYTM0123456) • UPI: bot@paytm",
+        time: "Yesterday, 19:10 PM",
+        status: "REJECTED",
+        reason: "Account flagged for policy violation"
+      }
+    ];
+
+    let withdrawalRequests = JSON.parse(localStorage.getItem(KEY_WITHDRAWALS)) || defaultWithdrawals;
+
+    // 6. ALL USERS BET HISTORY (Violet multiplier is 3.0X)
+    const defaultBets = [
+      { id: "BET-78912", market: "MIAMI", period: 202610311024, userId: "USR-1001", userName: "Rahul_Player", target: "GREEN", amount: 1000.00, multiplier: 2.0, status: "WON", payout: 2000.00, time: "11:28 AM" },
+      { id: "BET-78913", market: "VEGAS", period: 202610312024, userId: "USR-1002", userName: "Aman_Trader", target: "RED", amount: 2500.00, multiplier: 2.0, status: "LOST", payout: 0.00, time: "11:27 AM" },
+      { id: "BET-78914", market: "PARIS", period: 202610313024, userId: "USR-1003", userName: "Priya_VIP", target: "BIG", amount: 10000.00, multiplier: 2.0, status: "WON", payout: 20000.00, time: "11:26 AM" },
+      { id: "BET-78915", market: "DUBAI", period: 202610314024, userId: "USR-1004", userName: "Vikram_99", target: "NUM 7", amount: 200.00, multiplier: 9.0, status: "WON", payout: 1800.00, time: "11:25 AM" },
+      { id: "BET-78916", market: "MIAMI", period: 202610311025, userId: "USR-1006", userName: "Karan_Pro", target: "SMALL", amount: 1500.00, multiplier: 2.0, status: "PENDING", payout: 0.00, time: "11:29 AM" },
+      { id: "BET-78917", market: "VEGAS", period: 202610312025, userId: "USR-1001", userName: "Rahul_Player", target: "VIOLET", amount: 500.00, multiplier: 3.0, status: "PENDING", payout: 0.00, time: "11:30 AM" }
+    ];
+
+    let allBets = JSON.parse(localStorage.getItem(KEY_BETS)) || defaultBets;
+
+    // 7. DECLARED RESULTS
+    const defaultDeclared = [
+      { market: "MIAMI", period: 202610311024, number: 7, color: "GREEN", isBig: true, mode: "MANUAL", payout: 12500.00 },
+      { market: "VEGAS", period: 202610312024, number: 2, color: "RED", isBig: false, mode: "AUTO", payout: 18400.00 },
+      { market: "PARIS", period: 202610313024, number: 9, color: "GREEN", isBig: true, mode: "AUTO", payout: 9800.00 },
+      { market: "DUBAI", period: 202610314024, number: 0, color: "VIOLET+RED", isBig: false, mode: "MANUAL", payout: 22100.00 }
+    ];
+
+    let declaredResults = JSON.parse(localStorage.getItem(KEY_DECLARED)) || defaultDeclared;
+
+    // 8. AUDIT LOGS
+    const defaultAudit = [
+      { time: "11:28:10", actor: "SuperAdmin", action: "RESULT_OVERRIDE", entity: "MIAMI #202610311024", desc: "Forced outcome to 7 GREEN BIG" },
+      { time: "10:50:22", actor: "FinanceAdmin", action: "DEPOSIT_APPROVE", entity: "DEP-88399", desc: "Approved ₹50,000 for Priya_VIP" },
+      { time: "09:30:15", actor: "SuperAdmin", action: "USER_BLOCK", entity: "USR-1005 (Suspicious_Bot1)", desc: "Blocked user due to arbitrage script" }
+    ];
+
+    let auditLogs = JSON.parse(localStorage.getItem(KEY_AUDIT)) || defaultAudit;
+
+    // Active Market Selection for Result Decider
+    let selectedDeciderMarket = 'MIAMI';
+    let selectedWinningNumber = 7;
+    let pendingRejectAction = null; // { type: 'DEPOSIT'|'WITHDRAWAL', id: '...' }
+    let activeAdjustUserId = null;
+
+    // Sync Helper
+    function persistAllState() {
+      localStorage.setItem(KEY_BANK, JSON.stringify(bankConfig));
+      localStorage.setItem(KEY_USERS, JSON.stringify(usersList));
+      localStorage.setItem(KEY_AFFILIATES, JSON.stringify(affiliateList));
+      localStorage.setItem(KEY_DEPOSITS, JSON.stringify(depositRequests));
+      localStorage.setItem(KEY_WITHDRAWALS, JSON.stringify(withdrawalRequests));
+      localStorage.setItem(KEY_BETS, JSON.stringify(allBets));
+      localStorage.setItem(KEY_DECLARED, JSON.stringify(declaredResults));
+      localStorage.setItem(KEY_AUDIT, JSON.stringify(auditLogs));
+      recalculateMasterKPIs();
+    }
+
+    // Master Analytics Calculator
+    function recalculateMasterKPIs() {
+      let totalDep = 0;
+      depositRequests.forEach(d => {
+        if (d.status === 'APPROVED') totalDep += d.amount;
+      });
+
+      let totalWd = 0;
+      withdrawalRequests.forEach(w => {
+        if (w.status === 'APPROVED') totalWd += w.amount;
+      });
+
+      let netProfit = totalDep - totalWd;
+      let marginPct = totalDep > 0 ? ((netProfit / totalDep) * 100).toFixed(2) : 0;
+
+      let turnover = 0;
+      allBets.forEach(b => turnover += b.amount);
+
+      let activeUsers = usersList.filter(u => u.status === 'ACTIVE').length;
+      let blockedUsers = usersList.filter(u => u.status === 'BLOCKED').length;
+
+      document.getElementById('kpiTotalDeposits').innerText = '₹' + totalDep.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+      document.getElementById('kpiTotalWithdrawals').innerText = '₹' + totalWd.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+      document.getElementById('kpiTotalProfit').innerText = (netProfit >= 0 ? '+' : '-') + '₹' + Math.abs(netProfit).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+      document.getElementById('kpiTotalTurnover').innerText = '₹' + turnover.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+      document.getElementById('kpiActiveUsers').innerText = `${activeUsers} Active`;
+      document.getElementById('kpiBlockedUsers').innerText = `${blockedUsers} Blocked`;
+
+      // Badge counts in sidebar
+      const pendingDepCount = depositRequests.filter(d => d.status === 'PENDING').length;
+      const pendingWdCount = withdrawalRequests.filter(w => w.status === 'PENDING').length;
+      document.getElementById('navDepositCount').innerText = `${pendingDepCount} PENDING`;
+      document.getElementById('navWithdrawCount').innerText = `${pendingWdCount} PENDING`;
+    }
+
+    // Navigation Switcher
+    function switchAdminTab(tabKey) {
+      document.querySelectorAll('.tab-section').forEach(sec => sec.classList.remove('active'));
+      document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+
+      const targetSec = document.getElementById('sec-' + tabKey);
+      const targetBtn = document.getElementById('nav-' + tabKey);
+      if (targetSec) targetSec.classList.add('active');
+      if (targetBtn) targetBtn.classList.add('active');
+
+      if (window.innerWidth < 960) {
+        document.getElementById('sidebarNav').style.display = 'none';
+      }
+    }
+
+    function toggleMobileSidebar() {
+      const sb = document.getElementById('sidebarNav');
+      sb.style.display = (sb.style.display === 'flex' ? 'none' : 'flex');
+    }
+
+    // ----------------------------------------------------
+    // DEPOSIT REQUESTS LOGIC
+    // ----------------------------------------------------
+    let currentDepositFilter = 'ALL';
+    function filterDeposits(status, btn) {
+      currentDepositFilter = status;
+      btn.parentElement.querySelectorAll('.filter-pill').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderDepositsTable();
+    }
+
+    function renderDepositsTable() {
+      const q = (document.getElementById('searchDepositInput')?.value || '').toLowerCase();
+      const tbody = document.getElementById('depositsTableBody');
+      const filtered = depositRequests.filter(d => {
+        const matchesStatus = (currentDepositFilter === 'ALL' || d.status === currentDepositFilter);
+        const matchesQuery = (!q || d.utr.toLowerCase().includes(q) || d.userName.toLowerCase().includes(q) || d.id.toLowerCase().includes(q));
+        return matchesStatus && matchesQuery;
+      });
+
+      tbody.innerHTML = filtered.map(d => `
+        <tr>
+          <td><strong style="color:var(--gold); font-family:monospace;">${d.id}</strong></td>
+          <td>
+            <strong>${d.userName}</strong><br/>
+            <span style="font-size:11px; color:var(--text-muted);">${d.userId}</span>
+          </td>
+          <td><strong style="color:var(--green); font-size:15px;">₹${d.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></td>
+          <td>
+            <div style="font-weight:700;">${d.method}</div>
+            <span style="font-family:monospace; color:var(--cyan); font-size:11px;">UTR: ${d.utr}</span>
+          </td>
+          <td>
+            <button class="btn btn-secondary btn-sm" onclick="viewProofSlip('${d.id}')">🔍 View Slip</button>
+          </td>
+          <td style="font-size:11px; color:var(--text-muted);">${d.time}</td>
+          <td>
+            <span class="badge ${d.status === 'APPROVED' ? 'badge-approved' : d.status === 'REJECTED' ? 'badge-rejected' : 'badge-pending'}">
+              ${d.status}
+            </span>
+          </td>
+          <td>
+            ${d.status === 'PENDING' ? `
+              <div style="display:flex; gap:6px;">
+                <button class="btn btn-green btn-sm" onclick="approveDeposit('${d.id}')">Approve</button>
+                <button class="btn btn-red btn-sm" onclick="promptRejectDeposit('${d.id}')">Reject</button>
+              </div>
+            ` : `<span style="font-size:11px; color:var(--text-muted);">Resolved</span>`}
+          </td>
+        </tr>
+      `).join('');
+
+      renderQuickDepositList();
+    }
+
+    function approveDeposit(depositId) {
+      const dep = depositRequests.find(d => d.id === depositId);
+      if (!dep) return;
+      dep.status = 'APPROVED';
+
+      // Credit to user's wallet
+      const user = usersList.find(u => u.id === dep.userId);
+      if (user) {
+        user.balance += dep.amount;
+        user.totalDeposit += dep.amount;
+      }
+
+      auditLogs.unshift({
+        time: new Date().toLocaleTimeString(),
+        actor: "SuperAdmin",
+        action: "DEPOSIT_APPROVE",
+        entity: depositId,
+        desc: `Approved deposit of ₹${dep.amount.toFixed(2)} for ${dep.userName} (${dep.userId})`
+      });
+
+      persistAllState();
+      renderDepositsTable();
+      renderUsersTable();
+      renderAuditTable();
+      showToast(`✅ Approved ₹${dep.amount} deposit for ${dep.userName}!`);
+    }
+
+    function promptRejectDeposit(depositId) {
+      pendingRejectAction = { type: 'DEPOSIT', id: depositId };
+      document.getElementById('rejectModalTitle').innerText = `Reject Deposit Request (${depositId})`;
+      document.getElementById('rejectReasonModal').classList.add('active');
+    }
+
+    function viewProofSlip(depositId) {
+      const dep = depositRequests.find(d => d.id === depositId);
+      if (!dep) return;
+      const container = document.getElementById('slipReceiptContainer');
+      container.innerHTML = `
+        <div style="text-align:center; border-bottom:2px dashed #000; padding-bottom:8px; margin-bottom:10px;">
+          <h3 style="font-size:16px; font-weight:900;">COLOUR KING DIGITAL PAY</h3>
+          <p style="font-size:11px; color:#666;">Transaction Reference Receipt</p>
+        </div>
+        <div><strong>REQUEST ID:</strong> ${dep.id}</div>
+        <div><strong>USER:</strong> ${dep.userName} (${dep.userId})</div>
+        <div><strong>AMOUNT:</strong> ₹${dep.amount.toFixed(2)}</div>
+        <div><strong>UTR NUMBER:</strong> <span style="background:#FFFF00; padding:1px 4px;">${dep.utr}</span></div>
+        <div><strong>CHANNEL:</strong> ${dep.method}</div>
+        <div><strong>TIMESTAMP:</strong> ${dep.time}</div>
+        <div><strong>STATUS:</strong> <span style="font-weight:900; color:${dep.status==='APPROVED'?'green':dep.status==='REJECTED'?'red':'orange'}">${dep.status}</span></div>
+        <div style="margin-top:12px; text-align:center; font-size:10px; color:#888;">
+          Bank verification code: CK-VERIFIED-HASH-9981
+        </div>
+      `;
+      document.getElementById('proofSlipModal').classList.add('active');
+    }
+
+    function simulateNewDepositRequest() {
+      const randomAmount = [500, 1000, 2000, 5000, 10000][Math.floor(Math.random() * 5)];
+      const randUser = usersList[Math.floor(Math.random() * usersList.length)];
+      const randUtr = '4' + Math.floor(10000000000 + Math.random() * 90000000000);
+      const newDep = {
+        id: "DEP-" + Math.floor(10000 + Math.random() * 90000),
+        userId: randUser.id,
+        userName: randUser.name,
+        amount: randomAmount,
+        method: "UPI (PhonePe QR)",
+        utr: randUtr,
+        time: "Just now",
+        status: "PENDING"
+      };
+      depositRequests.unshift(newDep);
+      persistAllState();
+      renderDepositsTable();
+      showToast(`📥 New Deposit Request from ${randUser.name}: ₹${randomAmount}!`);
+    }
+
+    function renderQuickDepositList() {
+      const el = document.getElementById('quickDepositList');
+      const pending = depositRequests.filter(d => d.status === 'PENDING').slice(0, 3);
+      if (pending.length === 0) {
+        el.innerHTML = `<p style="font-size:12px; color:var(--text-muted); text-align:center; padding:16px;">All deposit requests have been processed! No pending slips.</p>`;
+        return;
+      }
+      el.innerHTML = pending.map(d => `
+        <div style="display:flex; justify-content:space-between; align-items:center; background:var(--card); padding:10px 14px; border-radius:8px; margin-bottom:8px; border:1px solid var(--border);">
+          <div>
+            <strong style="color:var(--text); font-size:13px;">${d.userName}</strong>
+            <div style="font-size:11px; color:var(--cyan); font-family:monospace;">UTR: ${d.utr}</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:14px; font-weight:900; color:var(--green);">₹${d.amount.toFixed(2)}</div>
+            <button class="btn btn-green btn-sm" style="margin-top:4px;" onclick="approveDeposit('${d.id}')">Approve</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // ----------------------------------------------------
+    // WITHDRAWAL REQUESTS LOGIC
+    // ----------------------------------------------------
+    let currentWithdrawalFilter = 'ALL';
+    function filterWithdrawals(status, btn) {
+      currentWithdrawalFilter = status;
+      btn.parentElement.querySelectorAll('.filter-pill').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderWithdrawalsTable();
+    }
+
+    function renderWithdrawalsTable() {
+      const q = (document.getElementById('searchWithdrawalInput')?.value || '').toLowerCase();
+      const tbody = document.getElementById('withdrawalsTableBody');
+      const filtered = withdrawalRequests.filter(w => {
+        const matchesStatus = (currentWithdrawalFilter === 'ALL' || w.status === currentWithdrawalFilter);
+        const matchesQuery = (!q || w.userName.toLowerCase().includes(q) || w.destination.toLowerCase().includes(q) || w.id.toLowerCase().includes(q));
+        return matchesStatus && matchesQuery;
+      });
+
+      tbody.innerHTML = filtered.map(w => `
+        <tr>
+          <td><strong style="color:var(--gold); font-family:monospace;">${w.id}</strong></td>
+          <td>
+            <strong>${w.userName}</strong><br/>
+            <span style="font-size:11px; color:var(--text-muted);">${w.userId}</span>
+          </td>
+          <td><strong style="color:var(--gold); font-size:15px;">₹${w.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></td>
+          <td>
+            <div style="font-size:13px; font-weight:800; color:#FFF;">👤 ${w.bankingName || w.userName}</div>
+            <div style="font-size:11px; color:var(--cyan); font-family:monospace; margin-top:3px; display:flex; align-items:center; gap:4px;">
+              <strong>UPI ID:</strong> <span>${w.upiId || 'N/A'}</span>
+              ${w.upiId ? `<button class="btn btn-secondary btn-sm" style="padding:1px 6px; font-size:9px;" onclick="copyToClipboard('${w.upiId}')">Copy</button>` : ''}
+            </div>
+            <div style="font-size:11px; color:var(--text); margin-top:2px;">
+              <strong>Bank:</strong> ${w.bankName || 'Direct Bank IMPS'}
+            </div>
+            <div style="font-size:11px; color:var(--gold); font-family:monospace; margin-top:2px; display:flex; align-items:center; gap:4px; flex-wrap:wrap;">
+              <strong>A/C:</strong> <span>${w.accNo || 'N/A'}</span>
+              ${w.accNo ? `<button class="btn btn-secondary btn-sm" style="padding:1px 6px; font-size:9px;" onclick="copyToClipboard('${w.accNo}')">Copy A/C</button>` : ''}
+              | <strong>IFSC:</strong> <span>${w.ifsc || 'N/A'}</span>
+              ${w.ifsc ? `<button class="btn btn-secondary btn-sm" style="padding:1px 6px; font-size:9px;" onclick="copyToClipboard('${w.ifsc}')">Copy IFSC</button>` : ''}
+            </div>
+          </td>
+          <td style="font-size:11px; color:var(--text-muted);">${w.time}</td>
+          <td>
+            <span class="badge ${w.status === 'APPROVED' ? 'badge-approved' : w.status === 'REJECTED' ? 'badge-rejected' : 'badge-pending'}">
+              ${w.status}
+            </span>
+          </td>
+          <td>
+            ${w.status === 'PENDING' ? `
+              <div style="display:flex; gap:6px;">
+                <button class="btn btn-green btn-sm" onclick="approveWithdrawal('${w.id}')">Approve & Pay</button>
+                <button class="btn btn-red btn-sm" onclick="promptRejectWithdrawal('${w.id}')">Reject</button>
+              </div>
+            ` : `<span style="font-size:11px; color:var(--text-muted);">Processed</span>`}
+          </td>
+        </tr>
+      `).join('');
+
+      renderQuickWithdrawalList();
+    }
+
+    function approveWithdrawal(withdrawalId) {
+      const wd = withdrawalRequests.find(w => w.id === withdrawalId);
+      if (!wd) return;
+      wd.status = 'APPROVED';
+
+      const user = usersList.find(u => u.id === wd.userId);
+      if (user) {
+        user.totalWithdraw += wd.amount;
+      }
+
+      auditLogs.unshift({
+        time: new Date().toLocaleTimeString(),
+        actor: "SuperAdmin",
+        action: "WITHDRAWAL_PAYOUT",
+        entity: withdrawalId,
+        desc: `Executed payout of ₹${wd.amount.toFixed(2)} to ${wd.destination} for ${wd.userName}`
+      });
+
+      persistAllState();
+      renderWithdrawalsTable();
+      renderUsersTable();
+      renderAuditTable();
+      showToast(`💸 Processed ₹${wd.amount} payout to ${wd.userName}!`);
+    }
+
+    function promptRejectWithdrawal(withdrawalId) {
+      pendingRejectAction = { type: 'WITHDRAWAL', id: withdrawalId };
+      document.getElementById('rejectModalTitle').innerText = `Reject Withdrawal Request (${withdrawalId})`;
+      document.getElementById('rejectReasonModal').classList.add('active');
+    }
+
+    function renderQuickWithdrawalList() {
+      const el = document.getElementById('quickWithdrawalList');
+      const pending = withdrawalRequests.filter(w => w.status === 'PENDING').slice(0, 3);
+      if (pending.length === 0) {
+        el.innerHTML = `<p style="font-size:12px; color:var(--text-muted); text-align:center; padding:16px;">Withdrawal escrow queue is clear. No pending payouts.</p>`;
+        return;
+      }
+      el.innerHTML = pending.map(w => `
+        <div style="display:flex; justify-content:space-between; align-items:center; background:var(--card); padding:10px 14px; border-radius:8px; margin-bottom:8px; border:1px solid var(--border);">
+          <div>
+            <strong style="color:var(--text); font-size:13px;">${w.userName}</strong>
+            <div style="font-size:11px; color:var(--text-muted);">${w.destination}</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:14px; font-weight:900; color:var(--gold);">₹${w.amount.toFixed(2)}</div>
+            <button class="btn btn-green btn-sm" style="margin-top:4px;" onclick="approveWithdrawal('${w.id}')">Approve & Pay</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function simulateNewWithdrawalRequest() {
+      const randUser = usersList.find(u => u.status === 'ACTIVE' && u.balance >= 1000) || usersList[0];
+      const amount = Math.min(2000, randUser.balance);
+      const newWd = {
+        id: "WD-" + Math.floor(10000 + Math.random() * 90000),
+        userId: randUser.id,
+        userName: randUser.name,
+        amount: amount,
+        destination: `UPI: ${randUser.name.toLowerCase()}@okhdfcbank`,
+        time: "Just now",
+        status: "PENDING"
+      };
+      withdrawalRequests.unshift(newWd);
+      persistAllState();
+      renderWithdrawalsTable();
+      showToast(`📤 New Withdrawal Request from ${randUser.name}: ₹${amount}!`);
+    }
+
+    // Confirm Rejection Modal Logic
+    function toggleCustomReason(val) {
+      document.getElementById('customReasonBox').style.display = (val === 'CUSTOM' ? 'block' : 'none');
+    }
+
+    function confirmRejectAction() {
+      let reason = document.getElementById('rejectReasonSelect').value;
+      if (reason === 'CUSTOM') {
+        reason = document.getElementById('customReasonInput').value || 'Administrative rejection';
+      }
+
+      if (!pendingRejectAction) return;
+
+      if (pendingRejectAction.type === 'DEPOSIT') {
+        const dep = depositRequests.find(d => d.id === pendingRejectAction.id);
+        if (dep) {
+          dep.status = 'REJECTED';
+          dep.reason = reason;
+          auditLogs.unshift({
+            time: new Date().toLocaleTimeString(),
+            actor: "SuperAdmin",
+            action: "DEPOSIT_REJECT",
+            entity: dep.id,
+            desc: `Rejected deposit of ₹${dep.amount}: ${reason}`
+          });
+        }
+      } else if (pendingRejectAction.type === 'WITHDRAWAL') {
+        const wd = withdrawalRequests.find(w => w.id === pendingRejectAction.id);
+        if (wd) {
+          wd.status = 'REJECTED';
+          wd.reason = reason;
+          // Refund back to user's wallet balance
+          const user = usersList.find(u => u.id === wd.userId);
+          if (user) {
+            user.balance += wd.amount;
+          }
+          auditLogs.unshift({
+            time: new Date().toLocaleTimeString(),
+            actor: "SuperAdmin",
+            action: "WITHDRAWAL_REJECT",
+            entity: wd.id,
+            desc: `Rejected withdrawal of ₹${wd.amount} and refunded balance: ${reason}`
+          });
+        }
+      }
+
+      persistAllState();
+      closeModal('rejectReasonModal');
+      renderDepositsTable();
+      renderWithdrawalsTable();
+      renderUsersTable();
+      renderAuditTable();
+      showToast(`❌ Request rejected and audited!`);
+    }
+
+    // ----------------------------------------------------
+    // RESULT DECLARATION ENGINE LOGIC
+    // ----------------------------------------------------
+    function selectResultMarket(mKey) {
+      selectedDeciderMarket = mKey;
+      ['MIAMI', 'VEGAS', 'PARIS', 'DUBAI'].forEach(k => {
+        const btn = document.getElementById('marketSel-' + k);
+        if (btn) btn.className = (k === mKey ? 'btn btn-gold btn-sm active' : 'btn btn-secondary btn-sm');
+      });
+      updateDeciderPeriodDisplay();
+    }
+
+    function pickWinningNumber(num) {
+      selectedWinningNumber = num;
+      document.querySelectorAll('.num-btn').forEach((b, idx) => {
+        b.classList.toggle('selected', idx === num);
+      });
+
+      let color = 'GREEN';
+      let ballClass = 'var(--green)';
+      if (num === 0) { color = 'VIOLET+RED'; ballClass = 'linear-gradient(135deg, #FF1744 50%, #D500F9 50%)'; }
+      else if (num === 5) { color = 'VIOLET+GREEN'; ballClass = 'linear-gradient(135deg, #00E676 50%, #D500F9 50%)'; }
+      else if ([2, 4, 6, 8].includes(num)) { color = 'RED'; ballClass = 'var(--red)'; }
+
+      const isBig = num >= 5;
+      const ball = document.getElementById('previewResultBall');
+      if (ball) {
+        ball.style.background = ballClass;
+        ball.innerText = num;
+      }
+      const pLabel = document.getElementById('previewResultLabel');
+      if (pLabel) {
+        pLabel.innerText = `${color} • ${isBig ? 'BIG' : 'SMALL'} (${num})`;
+      }
+
+      updateHouseProjectedNet(num);
+    }
+
+    function applyResultOverrideNow() {
+      const color = (selectedWinningNumber === 0 ? 'VIOLET+RED' : selectedWinningNumber === 5 ? 'VIOLET+GREEN' : [1, 3, 7, 9].includes(selectedWinningNumber) ? 'GREEN' : 'RED');
+      const isBig = selectedWinningNumber >= 5;
+
+      const sync = getGlobalSyncedRoundState();
+      const currentPeriodNum = sync.fullPeriodId;
+
+      // Add to declared results
+      declaredResults.unshift({
+        market: selectedDeciderMarket,
+        period: currentPeriodNum,
+        number: selectedWinningNumber,
+        color: color,
+        isBig: isBig,
+        mode: "MANUAL_OVERRIDE",
+        payout: 14200.00
+      });
+
+      // Audit log
+      auditLogs.unshift({
+        time: new Date().toLocaleTimeString(),
+        actor: "ColourPrince",
+        action: "RESULT_FORCE_PUBLISH",
+        entity: `${selectedDeciderMarket} #${currentPeriodNum}`,
+        desc: `Force published outcome: ${selectedWinningNumber} ${color} ${isBig ? 'BIG' : 'SMALL'}`
+      });
+
+      persistAllState();
+      renderDeclaredResultsTable();
+      renderAuditTable();
+      showToast(`🎯 Outcome ${selectedWinningNumber} (${color}) published for ${selectedDeciderMarket}!`);
+    }
+
+    function presetNextRoundOutcome() {
+      showToast(`⏳ Outcome ${selectedWinningNumber} pre-scheduled for next round in ${selectedDeciderMarket}!`);
+    }
+
+    function updateDeciderPeriodDisplay() {
+      const sync = getGlobalSyncedRoundState();
+      const el = document.getElementById('activeDeciderPeriod');
+      if (el) el.innerText = `#${sync.fullPeriodId}`;
+      const lbl = document.getElementById('liveMarketNameLabel');
+      if (lbl) lbl.innerText = selectedDeciderMarket;
+      renderLiveBetVolumes(selectedDeciderMarket);
+    }
+
+    function renderDeclaredResultsTable() {
+      const tbody = document.getElementById('declaredResultsTableBody');
+      tbody.innerHTML = declaredResults.map(r => `
+        <tr>
+          <td><strong style="color:var(--gold);">${r.market}</strong></td>
+          <td style="font-family:monospace;">#${r.period}</td>
+          <td><strong style="font-size:15px; color:#FFF;">${r.number}</strong></td>
+          <td><span class="badge ${r.color.includes('GREEN') ? 'badge-approved' : r.color.includes('RED') ? 'badge-rejected' : 'badge-alert'}">${r.color}</span></td>
+          <td><span class="badge ${r.isBig ? 'badge-approved' : 'badge-pending'}">${r.isBig ? 'BIG' : 'SMALL'}</span></td>
+          <td><span class="badge ${r.mode === 'MANUAL_OVERRIDE' ? 'badge-alert' : 'badge-ok'}">${r.mode}</span></td>
+          <td style="color:var(--green); font-weight:700;">₹${r.payout.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+        </tr>
+      `).join('');
+    }
+
+    // ----------------------------------------------------
+    // USER MANAGEMENT & BLOCK / UNBLOCK LOGIC
+    // ----------------------------------------------------
+    let currentUserFilter = 'ALL';
+    function filterUsers(status, btn) {
+      currentUserFilter = status;
+      btn.parentElement.querySelectorAll('.filter-pill').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderUsersTable();
+    }
+
+    function renderUsersTable() {
+      const q = (document.getElementById('searchUsersInput')?.value || '').toLowerCase();
+      const tbody = document.getElementById('usersTableBody');
+      const filtered = usersList.filter(u => {
+        const matchesStatus = (currentUserFilter === 'ALL' || u.status === currentUserFilter);
+        const matchesQuery = (!q || u.name.toLowerCase().includes(q) || u.id.toLowerCase().includes(q) || u.phone.toLowerCase().includes(q));
+        return matchesStatus && matchesQuery;
+      });
+
+      tbody.innerHTML = filtered.map(u => {
+        const netPL = u.totalDeposit - u.totalWithdraw - u.balance;
+        return `
+          <tr>
+            <td>
+              <strong style="font-size:14px; color:#FFF;">${u.name}</strong><br/>
+              <span style="font-size:11px; color:var(--cyan); font-family:monospace;">${u.id}</span> • 
+              <span style="font-size:11px; color:var(--text-muted);">${u.phone}</span>
+            </td>
+            <td><strong style="color:var(--green); font-size:14px;">₹${u.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></td>
+            <td>₹${u.totalDeposit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+            <td>₹${u.totalWithdraw.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+            <td>${u.betsCount} wagers</td>
+            <td style="color:${netPL >= 0 ? 'var(--green)' : 'var(--red)'}; font-weight:700;">
+              ${netPL >= 0 ? '+' : ''}₹${netPL.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </td>
+            <td>
+              <span class="badge ${u.status === 'ACTIVE' ? 'badge-active' : 'badge-blocked'}">
+                ${u.status}
+              </span>
+            </td>
+            <td>
+              <div style="display:flex; gap:6px;">
+                <button class="btn ${u.status === 'ACTIVE' ? 'btn-red' : 'btn-green'} btn-sm" onclick="toggleUserBlock('${u.id}')">
+                  ${u.status === 'ACTIVE' ? '🚫 Block' : '✅ Unblock'}
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="openBalanceAdjustModal('${u.id}')">
+                  ⚖️ Adjust Balance
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function toggleUserBlock(userId) {
+      const user = usersList.find(u => u.id === userId);
+      if (!user) return;
+      const isNowBlocked = (user.status === 'ACTIVE');
+      user.status = isNowBlocked ? 'BLOCKED' : 'ACTIVE';
+
+      auditLogs.unshift({
+        time: new Date().toLocaleTimeString(),
+        actor: "SuperAdmin",
+        action: isNowBlocked ? "USER_BLOCK" : "USER_UNBLOCK",
+        entity: `${user.id} (${user.name})`,
+        desc: `Account status toggled to ${user.status}`
+      });
+
+      persistAllState();
+      renderUsersTable();
+      renderAuditTable();
+      showToast(`User ${user.name} is now ${user.status}!`);
+    }
+
+    function openBalanceAdjustModal(userId) {
+      activeAdjustUserId = userId;
+      const user = usersList.find(u => u.id === userId);
+      if (!user) return;
+      document.getElementById('adjustUserSubtitle').innerText = `User: ${user.name} (${user.id}) • Current Balance: ₹${user.balance.toFixed(2)}`;
+      document.getElementById('balanceAdjustModal').classList.add('active');
+    }
+
+    function confirmBalanceAdjustment() {
+      if (!activeAdjustUserId) return;
+      const user = usersList.find(u => u.id === activeAdjustUserId);
+      if (!user) return;
+
+      const type = document.getElementById('adjustType').value;
+      const amount = parseFloat(document.getElementById('adjustAmount').value) || 0;
+      const reason = document.getElementById('adjustReason').value || 'Manual admin balance adjustment';
+
+      if (type === 'CREDIT') {
+        user.balance += amount;
+      } else {
+        user.balance = Math.max(0, user.balance - amount);
+      }
+
+      auditLogs.unshift({
+        time: new Date().toLocaleTimeString(),
+        actor: "SuperAdmin",
+        action: `BALANCE_${type}`,
+        entity: `${user.id} (${user.name})`,
+        desc: `${type} ₹${amount.toFixed(2)}: ${reason}`
+      });
+
+      persistAllState();
+      closeModal('balanceAdjustModal');
+      renderUsersTable();
+      renderAuditTable();
+      showToast(`✅ Adjusted ${user.name}'s balance by ${type === 'CREDIT' ? '+' : '-'}₹${amount}!`);
+    }
+
+    function addNewDemoUser() {
+      const names = ["Sanjay_Trader", "Deepak_King", "Anita_Pro", "Ramesh_Gamer"];
+      const rName = names[Math.floor(Math.random() * names.length)] + "_" + Math.floor(10 + Math.random() * 90);
+      const newU = {
+        id: "USR-" + Math.floor(1010 + Math.random() * 8900),
+        name: rName,
+        phone: "+91 9" + Math.floor(100000000 + Math.random() * 900000000),
+        email: rName.toLowerCase() + "@gmail.com",
+        balance: 10000.00,
+        totalDeposit: 15000.00,
+        totalWithdraw: 5000.00,
+        betsCount: 12,
+        status: "ACTIVE"
+      };
+      usersList.push(newU);
+      persistAllState();
+      renderUsersTable();
+      showToast(`User ${newU.name} registered!`);
+    }
+
+    // ----------------------------------------------------
+    // DEPOSIT BANK DETAILS LOGIC
+    // ----------------------------------------------------
+    function loadBankDetailsForm() {
+      document.getElementById('bankName').value = bankConfig.bankName;
+      document.getElementById('bankHolder').value = bankConfig.holder;
+      document.getElementById('bankAccNo').value = bankConfig.accNo;
+      document.getElementById('bankIfsc').value = bankConfig.ifsc;
+      document.getElementById('bankBranch').value = bankConfig.branch;
+      document.getElementById('upiId').value = bankConfig.upiId;
+      document.getElementById('upiName').value = bankConfig.upiName;
+      document.getElementById('minDeposit').value = bankConfig.minDeposit;
+      document.getElementById('maxDeposit').value = bankConfig.maxDeposit;
+      document.getElementById('depositInstructions').value = bankConfig.instructions;
+
+      updateBankPreviewCard();
+    }
+
+    function updateBankPreviewCard() {
+      document.getElementById('previewUpiIdDisplay').innerText = bankConfig.upiId;
+      document.getElementById('previewUpiNameDisplay').innerText = bankConfig.upiName;
+      document.getElementById('previewBankName').innerText = bankConfig.bankName;
+      document.getElementById('previewAccNo').innerText = bankConfig.accNo;
+      document.getElementById('previewIfsc').innerText = bankConfig.ifsc;
+      document.getElementById('previewHolder').innerText = bankConfig.holder;
+    }
+
+    function saveBankDetails(e) {
+      e.preventDefault();
+      bankConfig = {
+        bankName: document.getElementById('bankName').value.trim(),
+        holder: document.getElementById('bankHolder').value.trim(),
+        accNo: document.getElementById('bankAccNo').value.trim(),
+        ifsc: document.getElementById('bankIfsc').value.trim(),
+        branch: document.getElementById('bankBranch').value.trim(),
+        upiId: document.getElementById('upiId').value.trim(),
+        upiName: document.getElementById('upiName').value.trim(),
+        minDeposit: parseFloat(document.getElementById('minDeposit').value) || 100,
+        maxDeposit: parseFloat(document.getElementById('maxDeposit').value) || 100000,
+        instructions: document.getElementById('depositInstructions').value.trim()
+      };
+
+      auditLogs.unshift({
+        time: new Date().toLocaleTimeString(),
+        actor: "SuperAdmin",
+        action: "BANK_CONFIG_UPDATE",
+        entity: "PAYMENT_GATEWAYS",
+        desc: `Updated bank to ${bankConfig.bankName} (${bankConfig.accNo}) and UPI to ${bankConfig.upiId}`
+      });
+
+      persistAllState();
+      updateBankPreviewCard();
+      renderAuditTable();
+      showToast('💾 Bank and UPI deposit settings saved & synced to user app!');
+    }
+
+    // ----------------------------------------------------
+    // ALL USERS BET HISTORY LOGIC
+    // ----------------------------------------------------
+    let currentBetMarketFilter = 'ALL';
+    function filterBetsMarket(mKey, btn) {
+      currentBetMarketFilter = mKey;
+      btn.parentElement.querySelectorAll('.filter-pill').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderBetsTable();
+    }
+
+    function renderBetsTable() {
+      const q = (document.getElementById('searchBetInput')?.value || '').toLowerCase();
+      const statusFilter = document.getElementById('filterBetStatus')?.value || 'ALL';
+      const tbody = document.getElementById('allBetsTableBody');
+
+      const filtered = allBets.filter(b => {
+        const matchesMarket = (currentBetMarketFilter === 'ALL' || b.market === currentBetMarketFilter);
+        const matchesStatus = (statusFilter === 'ALL' || b.status === statusFilter);
+        const matchesQ = (!q || b.id.toLowerCase().includes(q) || b.userName.toLowerCase().includes(q) || b.period.toString().includes(q));
+        return matchesMarket && matchesStatus && matchesQ;
+      });
+
+      tbody.innerHTML = filtered.map(b => `
+        <tr>
+          <td><strong style="color:var(--gold); font-family:monospace;">${b.id}</strong></td>
+          <td><strong style="color:var(--cyan);">${b.market}</strong></td>
+          <td style="font-family:monospace;">#${b.period}</td>
+          <td>
+            <strong>${b.userName}</strong><br/>
+            <span style="font-size:11px; color:var(--text-muted);">${b.userId}</span>
+          </td>
+          <td>
+            <span class="badge ${b.target.includes('GREEN') ? 'badge-approved' : b.target.includes('RED') ? 'badge-rejected' : 'badge-pending'}">
+              ${b.target}
+            </span>
+          </td>
+          <td><strong>₹${b.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></td>
+          <td style="color:var(--gold); font-weight:700;">${b.multiplier}X</td>
+          <td>
+            <span class="badge ${b.status === 'WON' ? 'badge-approved' : b.status === 'LOST' ? 'badge-rejected' : 'badge-pending'}">
+              ${b.status}
+            </span>
+          </td>
+          <td style="color:${b.payout > 0 ? 'var(--green)' : 'var(--text-muted)'}; font-weight:700;">
+            ₹${b.payout.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          </td>
+          <td style="font-size:11px; color:var(--text-muted);">${b.time}</td>
+        </tr>
+      `).join('');
+    }
+
+    function exportBetsToCSV() {
+      let csv = "BetID,Market,Period,UserID,UserName,Target,Amount,Multiplier,Status,Payout,Time\n";
+      allBets.forEach(b => {
+        csv += `${b.id},${b.market},${b.period},${b.userId},${b.userName},${b.target},${b.amount},${b.multiplier},${b.status},${b.payout},${b.time}\n`;
+      });
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ColourKing_Bets_${Date.now()}.csv`;
+      a.click();
+      showToast('📥 Bet history CSV exported!');
+    }
+
+    // ----------------------------------------------------
+    // AUDIT TABLE LOGIC
+    // ----------------------------------------------------
+    function renderAuditTable() {
+      const tbody = document.getElementById('auditTableBody');
+      tbody.innerHTML = auditLogs.map(l => `
+        <tr>
+          <td style="font-family:monospace; color:var(--text-muted);">${l.time}</td>
+          <td><strong style="color:var(--gold);">${l.actor}</strong></td>
+          <td><span class="badge badge-approved">${l.action}</span></td>
+          <td style="color:var(--cyan); font-family:monospace;">${l.entity}</td>
+          <td style="font-size:12px;">${l.desc}</td>
+        </tr>
+      `).join('');
+    }
+
+    // ----------------------------------------------------
+    // LIVE BET VOLUME BREAKDOWN & HOUSE NET ENGINE
+    // ----------------------------------------------------
+    const marketBaseWagers = {
+      MIAMI: { green: 34500, greenBets: 26, violet: 16200, violetBets: 12, red: 42800, redBets: 31, big: 48200, bigBets: 34, small: 47800, smallBets: 33, numbers: [3200, 5400, 2800, 4100, 3600, 6500, 2900, 8700, 3400, 4900] },
+      VEGAS: { green: 58200, greenBets: 42, violet: 24600, violetBets: 18, red: 69400, redBets: 49, big: 82000, bigBets: 58, small: 75500, smallBets: 54, numbers: [5400, 8900, 4200, 6800, 5900, 11200, 4600, 14500, 5100, 8200] },
+      PARIS: { green: 28400, greenBets: 21, violet: 13500, violetBets: 9, red: 36200, redBets: 27, big: 39500, bigBets: 29, small: 41200, smallBets: 30, numbers: [2800, 4400, 2100, 3500, 3100, 5200, 2400, 7100, 2900, 4100] },
+      DUBAI: { green: 41200, greenBets: 31, violet: 19800, violetBets: 15, red: 51600, redBets: 37, big: 59400, bigBets: 43, small: 56800, smallBets: 41, numbers: [4100, 6800, 3500, 5200, 4700, 8400, 3800, 11200, 4200, 6500] }
+    };
+
+    function renderLiveBetVolumes(mKey) {
+      const sync = getGlobalSyncedRoundState();
+      const pool = marketBaseWagers[mKey] || marketBaseWagers.MIAMI;
+
+      let userGreen = 0, userViolet = 0, userRed = 0, userBig = 0, userSmall = 0;
+      let userNumbers = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+      allBets.filter(b => b.market === mKey && (b.period == sync.fullPeriodId || b.status === 'PENDING')).forEach(b => {
+        if (b.target === 'GREEN') userGreen += b.amount;
+        else if (b.target === 'VIOLET') userViolet += b.amount;
+        else if (b.target === 'RED') userRed += b.amount;
+        else if (b.target === 'BIG') userBig += b.amount;
+        else if (b.target === 'SMALL') userSmall += b.amount;
+        else if (b.target.startsWith('NUM ')) {
+          const n = parseInt(b.target.replace('NUM ', ''));
+          if (n >= 0 && n <= 9) userNumbers[n] += b.amount;
+        }
+      });
+
+      const totGreen = pool.green + userGreen;
+      const totViolet = pool.violet + userViolet;
+      const totRed = pool.red + userRed;
+      const totBig = pool.big + userBig;
+      const totSmall = pool.small + userSmall;
+      const totNumbers = pool.numbers.map((amt, idx) => amt + userNumbers[idx]);
+
+      const numSum = totNumbers.reduce((a, b) => a + b, 0);
+      const totalPool = totGreen + totViolet + totRed + totBig + totSmall + numSum;
+
+      const lbl = document.getElementById('liveMarketNameLabel');
+      if (lbl) lbl.innerText = mKey;
+
+      const poolDisplay = document.getElementById('liveTotalPoolDisplay');
+      if (poolDisplay) poolDisplay.innerText = '₹' + totalPool.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+
+      const greenAmtEl = document.getElementById('liveBetGreenAmt');
+      if (greenAmtEl) greenAmtEl.innerText = '₹' + totGreen.toLocaleString('en-IN');
+      const greenCountEl = document.getElementById('liveBetGreenCount');
+      if (greenCountEl) greenCountEl.innerText = `${pool.greenBets} bets`;
+
+      const violetAmtEl = document.getElementById('liveBetVioletAmt');
+      if (violetAmtEl) violetAmtEl.innerText = '₹' + totViolet.toLocaleString('en-IN');
+      const violetCountEl = document.getElementById('liveBetVioletCount');
+      if (violetCountEl) violetCountEl.innerText = `${pool.violetBets} bets`;
+
+      const redAmtEl = document.getElementById('liveBetRedAmt');
+      if (redAmtEl) redAmtEl.innerText = '₹' + totRed.toLocaleString('en-IN');
+      const redCountEl = document.getElementById('liveBetRedCount');
+      if (redCountEl) redCountEl.innerText = `${pool.redBets} bets`;
+
+      const bigAmtEl = document.getElementById('liveBetBigAmt');
+      if (bigAmtEl) bigAmtEl.innerText = '₹' + totBig.toLocaleString('en-IN');
+      const bigCountEl = document.getElementById('liveBetBigCount');
+      if (bigCountEl) bigCountEl.innerText = `${pool.bigBets} bets`;
+
+      const smallAmtEl = document.getElementById('liveBetSmallAmt');
+      if (smallAmtEl) smallAmtEl.innerText = '₹' + totSmall.toLocaleString('en-IN');
+      const smallCountEl = document.getElementById('liveBetSmallCount');
+      if (smallCountEl) smallCountEl.innerText = `${pool.smallBets} bets`;
+
+      // Render Numbers 0-9 Distribution Grid
+      const gridEl = document.getElementById('liveNumbersBetGrid');
+      if (gridEl) {
+        gridEl.innerHTML = totNumbers.map((amt, num) => {
+          let colorClass = '#00E676';
+          if (num === 0) colorClass = '#D500F9';
+          else if (num === 5) colorClass = '#D500F9';
+          else if ([2, 4, 6, 8].includes(num)) colorClass = '#FF1744';
+
+          return `
+            <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(35,53,84,0.8); border-radius:6px; padding:6px 4px; text-align:center;">
+              <div style="font-size:11px; font-weight:900; color:${colorClass};">
+                #${num}
+              </div>
+              <div style="font-size:11px; font-weight:800; color:#FFF; margin-top:2px;">
+                ₹${amt.toLocaleString('en-IN')}
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      updateHouseProjectedNet(selectedWinningNumber, { totGreen, totViolet, totRed, totBig, totSmall, totNumbers, totalPool });
+    }
+
+    function updateHouseProjectedNet(num, wagers) {
+      if (!wagers) {
+        const pool = marketBaseWagers[selectedDeciderMarket] || marketBaseWagers.MIAMI;
+        const numSum = pool.numbers.reduce((a, b) => a + b, 0);
+        const totalPool = pool.green + pool.violet + pool.red + pool.big + pool.small + numSum;
+        wagers = {
+          totGreen: pool.green,
+          totViolet: pool.violet,
+          totRed: pool.red,
+          totBig: pool.big,
+          totSmall: pool.small,
+          totNumbers: pool.numbers,
+          totalPool
+        };
+      }
+
+      let payout = 0;
+      // Violet multiplier is 3.0X; Green/Red is 2.0X
+      if (num === 0) {
+        payout += wagers.totRed * 1.5 + wagers.totViolet * 3.0;
+      } else if (num === 5) {
+        payout += wagers.totGreen * 1.5 + wagers.totViolet * 3.0;
+      } else if ([1, 3, 7, 9].includes(num)) {
+        payout += wagers.totGreen * 2.0;
+      } else {
+        payout += wagers.totRed * 2.0;
+      }
+
+      // Size payout (2.0X)
+      if (num >= 5) {
+        payout += wagers.totBig * 2.0;
+      } else {
+        payout += wagers.totSmall * 2.0;
+      }
+
+      // Number payout (9.0X)
+      payout += (wagers.totNumbers[num] || 0) * 9.0;
+
+      const houseNet = wagers.totalPool - payout;
+      const el = document.getElementById('previewPayoutRisk');
+      if (el) {
+        el.innerText = `House Projected Net: ${houseNet >= 0 ? '+' : '-'}₹${Math.abs(Math.round(houseNet)).toLocaleString('en-IN')}`;
+        el.className = houseNet >= 0 ? 'badge badge-approved' : 'badge badge-alert';
+      }
+    }
+
+    // ----------------------------------------------------
+    // AFFILIATE & REFER-TO-EARN LOGIC
+    // ----------------------------------------------------
+    let currentAffiliateFilter = 'ALL';
+    function filterAffiliates(filterKey, btn) {
+      currentAffiliateFilter = filterKey;
+      btn.parentElement.querySelectorAll('.filter-pill').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderAffiliateTable();
+    }
+
+    function renderAffiliateTable() {
+      const q = (document.getElementById('searchAffiliateInput')?.value || '').toLowerCase();
+      const tbody = document.getElementById('affiliateTableBody');
+      if (!tbody) return;
+
+      const filtered = affiliateList.filter(a => {
+        let matchesFilter = true;
+        if (currentAffiliateFilter === 'ACTIVE_EARNERS') matchesFilter = (a.totalEarnedCommission >= 10000);
+        else if (currentAffiliateFilter === 'TOP_TEAMS') matchesFilter = (a.teamMembersCount >= 50);
+
+        const matchesQ = (!q || a.userName.toLowerCase().includes(q) || a.userId.toLowerCase().includes(q) || a.refCode.toLowerCase().includes(q) || a.referredBy.toLowerCase().includes(q));
+        return matchesFilter && matchesQ;
+      });
+
+      tbody.innerHTML = filtered.map(a => `
+        <tr>
+          <td>
+            <strong style="color:#FFF; font-size:14px;">${a.userName}</strong><br/>
+            <span style="font-size:11px; color:var(--cyan); font-family:monospace;">${a.userId}</span> • 
+            <span style="font-size:11px; color:var(--text-muted);">${a.phone}</span>
+          </td>
+          <td>
+            <span style="background:rgba(255,215,0,0.15); border:1px solid var(--gold); color:var(--gold); padding:4px 8px; border-radius:6px; font-weight:800; font-family:monospace; font-size:12px;">
+              ${a.refCode}
+            </span>
+          </td>
+          <td>
+            <strong style="color:var(--text-muted); font-size:12px;">${a.referredBy}</strong>
+          </td>
+          <td>
+            <strong style="color:var(--cyan); font-size:14px;">${a.directMembersCount} Direct</strong><br/>
+            <span style="font-size:10px; color:var(--text-muted);">Tier 1 (30%)</span>
+          </td>
+          <td>
+            <strong style="color:var(--gold); font-size:14px;">${a.teamMembersCount} Members</strong><br/>
+            <span style="font-size:10px; color:var(--text-muted);">Tier 2-6 Total</span>
+          </td>
+          <td>
+            <strong style="color:var(--green); font-size:15px;">₹${a.totalEarnedCommission.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+          </td>
+          <td style="color:var(--gold); font-weight:700;">
+            +₹${a.yesterdayCommission.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          </td>
+          <td>
+            <button class="btn btn-gold btn-sm" onclick="openAffiliateMembersModal('${a.userId}')">
+              👥 View Members (${a.members ? a.members.length : 0})
+            </button>
+          </td>
+        </tr>
+      `).join('');
+
+      let totMembers = 0, totComm = 0;
+      affiliateList.forEach(a => {
+        totMembers += a.teamMembersCount + a.directMembersCount;
+        totComm += a.totalEarnedCommission;
+      });
+      const totMemEl = document.getElementById('affiliateTotalMembersCount');
+      if (totMemEl) totMemEl.innerText = `${totMembers.toLocaleString('en-IN')} Members`;
+      const totCommEl = document.getElementById('affiliateTotalCommissionsPaid');
+      if (totCommEl) totCommEl.innerText = '₹' + totComm.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+    }
+
+    function openAffiliateMembersModal(userId) {
+      const aff = affiliateList.find(a => a.userId === userId);
+      if (!aff) return;
+
+      document.getElementById('affiliateModalTitle').innerText = `👥 Downline Affiliate Members: ${aff.userName}`;
+      document.getElementById('affiliateModalSubtitle').innerText = `User ID: ${aff.userId} • Referral Code: ${aff.refCode} • Sponsor: ${aff.referredBy}`;
+      document.getElementById('modalAffiliateCount').innerText = `${aff.members ? aff.members.length : 0} Members Listed`;
+      document.getElementById('modalAffiliateTotalEarned').innerText = `₹${aff.totalEarnedCommission.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+
+      const tbody = document.getElementById('affiliateModalTableBody');
+      if (aff.members && aff.members.length > 0) {
+        tbody.innerHTML = aff.members.map(m => `
+          <tr>
+            <td>
+              <strong style="color:#FFF;">${m.name}</strong><br/>
+              <span style="font-size:11px; color:var(--cyan); font-family:monospace;">${m.id}</span>
+            </td>
+            <td><span class="badge ${m.tier.includes('Tier 1') ? 'badge-approved' : 'badge-pending'}">${m.tier}</span></td>
+            <td style="font-size:11px; color:var(--text-muted);">${m.joinDate}</td>
+            <td><strong>₹${m.totalDeposit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></td>
+            <td><strong style="color:var(--green);">₹${m.commission.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></td>
+            <td><span class="badge badge-active">${m.status || 'ACTIVE'}</span></td>
+          </tr>
+        `).join('');
+      } else {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:16px; color:var(--text-muted);">No direct members enrolled yet.</td></tr>`;
+      }
+
+      document.getElementById('affiliateMembersModal').classList.add('active');
+    }
+
+    // ----------------------------------------------------
+    // GLOBAL SYNCHRONIZED TICKER (All 4 Markets & Devices)
+    // ----------------------------------------------------
+    function startAdminTicker() {
+      function tick() {
+        const sync = getGlobalSyncedRoundState();
+        const mins = Math.floor(sync.secondsLeft / 60);
+        const secs = sync.secondsLeft % 60;
+        const formatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+        ['MIAMI', 'VEGAS', 'PARIS', 'DUBAI'].forEach(k => {
+          const timerEl = document.getElementById('market-timer-' + k);
+          const badgeEl = document.getElementById('market-badge-' + k);
+          const periodEl = document.getElementById('market-period-' + k);
+
+          if (timerEl) timerEl.innerText = formatted;
+          if (periodEl) periodEl.innerText = sync.fullPeriodId;
+
+          if (sync.isBettingLocked) {
+            if (badgeEl) {
+              badgeEl.className = 'badge badge-rejected';
+              badgeEl.innerText = 'BET CLOSE';
+            }
+          } else {
+            if (badgeEl) {
+              badgeEl.className = 'badge badge-approved';
+              badgeEl.innerText = 'BET OPEN';
+            }
+          }
+        });
+
+        // Update Result Decider live indicators
+        const deciderCountdown = document.getElementById('deciderCountdown');
+        const deciderBadge = document.getElementById('deciderBetStatusBadge');
+        const deciderStatus = document.getElementById('activeDeciderStatus');
+        const deciderPeriod = document.getElementById('activeDeciderPeriod');
+
+        if (deciderCountdown) deciderCountdown.innerText = formatted;
+        if (deciderPeriod) deciderPeriod.innerText = `#${sync.fullPeriodId}`;
+
+        if (sync.isBettingLocked) {
+          if (deciderBadge) {
+            deciderBadge.className = 'badge badge-rejected';
+            deciderBadge.innerText = 'Bet Close';
+          }
+          if (deciderStatus) {
+            deciderStatus.innerText = `Status: Bet Closed (${sync.secondsLeft}s remaining)`;
+          }
+        } else {
+          if (deciderBadge) {
+            deciderBadge.className = 'badge badge-approved';
+            deciderBadge.innerText = 'Bet Open';
+          }
+          if (deciderStatus) {
+            deciderStatus.innerText = `Status: Bet Open (${formatted} left)`;
+          }
+        }
+      }
+
+      tick();
+      setInterval(tick, 1000);
+    }
+
+    // Helper utilities
+    function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+    function showToast(msg) {
+      const toast = document.getElementById('toastNotice');
+      toast.innerText = msg;
+      toast.style.display = 'block';
+      setTimeout(() => { toast.style.display = 'none'; }, 2600);
+    }
+
+    function copyToClipboard(txt) {
+      if (!txt) return;
+      navigator.clipboard.writeText(txt).then(() => {
+        showToast('📋 Copied: ' + txt);
+      }).catch(() => {
+        showToast('Value: ' + txt);
+      });
+    }
+
+    function copyPortalLink() {
+      const fullUrl = window.location.href;
+      navigator.clipboard.writeText(fullUrl).then(() => {
+        showToast('🔗 Separate Admin Link copied to clipboard!');
+      }).catch(() => {
+        showToast('Link: ' + fullUrl);
+      });
+    }
+
+    // Initialize Admin Portal
+    window.addEventListener('DOMContentLoaded', () => {
+      checkAdminAuth();
+      document.getElementById('portalLinkDisplay').innerText = window.location.pathname || '/admin.html';
+
+      // Pull latest live state from Backend Server API
+      fetch('/api/state')
+        .then(r => r.json())
+        .then(data => {
+          if (data) {
+            if (data.bank_config) bankConfig = data.bank_config;
+            if (data.deposits && data.deposits.length) depositRequests = data.deposits;
+            if (data.withdrawals && data.withdrawals.length) withdrawalRequests = data.withdrawals;
+            if (data.users) {
+              const uList = Object.values(data.users);
+              if (uList.length) usersList = uList;
+            }
+            persistAllState();
+            recalculateMasterKPIs();
+            renderDepositsTable();
+            renderWithdrawalsTable();
+            renderUsersTable();
+            loadBankDetailsForm();
+          }
+        })
+        .catch(() => {});
+
+      recalculateMasterKPIs();
+      renderDepositsTable();
+      renderWithdrawalsTable();
+      renderUsersTable();
+      renderAffiliateTable();
+      renderDeclaredResultsTable();
+      renderBetsTable();
+      renderAuditTable();
+      loadBankDetailsForm();
+      updateDeciderPeriodDisplay();
+      pickWinningNumber(7);
+      startAdminTicker();
+    });
+  </script>
+</body>
+</html>

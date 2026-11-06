@@ -1,0 +1,6 @@
+{
+  "name": "Colour King",
+  "description": "Production-grade multi-tenant gaming platform with double-entry wallet ledger, real-time color prediction engine, 6-level referral affiliate system, provably fair verification, and admin controls.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,180 @@
+{
+  "bank_config": {
+    "bankName": "State Bank of India (SBI)",
+    "holder": "Colour King Gaming Enterprise Ltd",
+    "accNo": "40928172901",
+    "ifsc": "SBIN0001824",
+    "branch": "Corporate Financial Center, BKC Mumbai",
+    "upiId": "colourking@icici",
+    "upiName": "Colour King Official Pay",
+    "minDeposit": 100,
+    "maxDeposit": 100000,
+    "instructions": "1. Scan QR code or pay to the UPI ID above.\n2. Enter the 12-digit UTR reference number in the app.\n3. Balance will be approved and credited within 2 minutes."
+  },
+  "users": {
+    "USR-1001": {
+      "id": "USR-1001",
+      "name": "Rahul_Player",
+      "balance": 49700.0,
+      "totalDeposit": 75000.0,
+      "totalWithdraw": 28000.0,
+      "betsCount": 142,
+      "status": "ACTIVE"
+    },
+    "USR-1002": {
+      "id": "USR-1002",
+      "name": "Aman_Trader",
+      "balance": 14500.0,
+      "totalDeposit": 25000.0,
+      "totalWithdraw": 11000.0,
+      "betsCount": 68,
+      "status": "ACTIVE"
+    },
+    "USR-1003": {
+      "id": "USR-1003",
+      "name": "Priya_VIP",
+      "balance": 125000.0,
+      "totalDeposit": 200000.0,
+      "totalWithdraw": 95000.0,
+      "betsCount": 310,
+      "status": "ACTIVE"
+    },
+    "USR-1004": {
+      "id": "USR-1004",
+      "name": "Vikram_99",
+      "balance": 3200.0,
+      "totalDeposit": 10000.0,
+      "totalWithdraw": 6000.0,
+      "betsCount": 45,
+      "status": "ACTIVE"
+    },
+    "USR-1005": {
+      "id": "USR-1005",
+      "name": "Suspicious_Bot1",
+      "balance": 0.0,
+      "totalDeposit": 5000.0,
+      "totalWithdraw": 0.0,
+      "betsCount": 8,
+      "status": "BLOCKED"
+    },
+    "USR-1006": {
+      "id": "USR-1006",
+      "name": "Karan_Pro",
+      "balance": 38400.0,
+      "totalDeposit": 60000.0,
+      "totalWithdraw": 24000.0,
+      "betsCount": 94,
+      "status": "ACTIVE"
+    }
+  },
+  "deposits": [
+    {
+      "id": "DEP-202214",
+      "userId": "USR-1001",
+      "userName": "Rahul_Player",
+      "amount": 1000.0,
+      "method": "UPI (GPay)",
+      "utr": "429188402911",
+      "time": "Just now",
+      "status": "PENDING"
+    },
+    {
+      "id": "DEP-88401",
+      "userId": "USR-1001",
+      "userName": "Rahul_Player",
+      "amount": 5000.0,
+      "method": "UPI (GooglePay)",
+      "utr": "429188402911",
+      "time": "Today, 11:24 AM",
+      "status": "PENDING"
+    },
+    {
+      "id": "DEP-88402",
+      "userId": "USR-1002",
+      "userName": "Aman_Trader",
+      "amount": 10000.0,
+      "method": "IMPS SBI NetBanking",
+      "utr": "902184716294",
+      "time": "Today, 11:18 AM",
+      "status": "PENDING"
+    },
+    {
+      "id": "DEP-88403",
+      "userId": "USR-1006",
+      "userName": "Karan_Pro",
+      "amount": 2500.0,
+      "method": "Paytm UPI QR",
+      "utr": "419082736184",
+      "time": "Today, 10:45 AM",
+      "status": "PENDING"
+    },
+    {
+      "id": "DEP-88399",
+      "userId": "USR-1003",
+      "userName": "Priya_VIP",
+      "amount": 50000.0,
+      "method": "HDFC IMPS",
+      "utr": "389271628190",
+      "time": "Today, 09:12 AM",
+      "status": "APPROVED"
+    }
+  ],
+  "withdrawals": [
+    {
+      "id": "WD-202210",
+      "userId": "USR-1001",
+      "userName": "Rahul_Player",
+      "amount": 500.0,
+      "upiId": "rahul@oksbi",
+      "bankName": "State Bank of India",
+      "accNo": "40928172901",
+      "ifsc": "SBIN0001824",
+      "bankingName": "Rahul Kumar Sharma",
+      "destination": "Rahul Kumar Sharma \u2022 State Bank of India (A/C: 40928172901, IFSC: SBIN0001824) \u2022 UPI: rahul@oksbi",
+      "time": "Just now",
+      "status": "PENDING"
+    },
+    {
+      "id": "WD-99412",
+      "userId": "USR-1001",
+      "userName": "Rahul_Player",
+      "amount": 8000.0,
+      "upiId": "rahul@oksbi",
+      "bankName": "State Bank of India",
+      "accNo": "40928172901",
+      "ifsc": "SBIN0001824",
+      "bankingName": "Rahul Kumar Sharma",
+      "destination": "Rahul Kumar Sharma \u2022 SBI (A/C: 40928172901, IFSC: SBIN0001824) \u2022 UPI: rahul@oksbi",
+      "time": "Today, 11:32 AM",
+      "status": "PENDING"
+    },
+    {
+      "id": "WD-99413",
+      "userId": "USR-1004",
+      "userName": "Vikram_99",
+      "amount": 2500.0,
+      "upiId": "vikram99@icici",
+      "bankName": "HDFC Bank",
+      "accNo": "5010049281729",
+      "ifsc": "HDFC000124",
+      "bankingName": "Vikram Sethi",
+      "destination": "Vikram Sethi \u2022 HDFC (A/C: 5010049281729, IFSC: HDFC000124) \u2022 UPI: vikram99@icici",
+      "time": "Today, 10:55 AM",
+      "status": "PENDING"
+    },
+    {
+      "id": "WD-99410",
+      "userId": "USR-1003",
+      "userName": "Priya_VIP",
+      "amount": 45000.0,
+      "upiId": "priya@axl",
+      "bankName": "ICICI Bank",
+      "accNo": "002101928374",
+      "ifsc": "ICIC0000021",
+      "bankingName": "Priya Singhania",
+      "destination": "Priya Singhania \u2022 ICICI (A/C: 002101928374, IFSC: ICIC0000021) \u2022 UPI: priya@axl",
+      "time": "Today, 08:40 AM",
+      "status": "APPROVED"
+    }
+  ]
+}
