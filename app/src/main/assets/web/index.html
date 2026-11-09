@@ -545,6 +545,7 @@
     .bet-slip-card.status-won { border-left: 4px solid var(--green); }
     .bet-slip-card.status-lost { border-left: 4px solid var(--red); }
     .bet-slip-card.status-wait { border-left: 4px solid var(--gold); }
+    .bet-slip-card.status-refunded { border-left: 4px solid var(--cyan); }
 
     /* Filter Chips Row */
     .filter-chips-row {
@@ -636,6 +637,265 @@
     .badge-green { background: rgba(0, 230, 118, 0.2); color: var(--green); }
     .badge-red { background: rgba(255, 23, 68, 0.2); color: var(--red); }
     .badge-violet { background: rgba(213, 0, 249, 0.2); color: var(--violet); }
+
+    /* 24-Hours Period Records Table & Result Balls (Matches Android UI) */
+    .period-results-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+    }
+    .period-results-table th {
+      background: var(--card-highlight);
+      padding: 8px 10px;
+      color: var(--text-muted);
+      font-weight: 800;
+      font-size: 11px;
+    }
+    .period-results-table td {
+      padding: 9px 10px;
+      border-bottom: 0.8px solid rgba(42, 52, 71, 0.6);
+      vertical-align: middle;
+    }
+    .period-results-table tr:hover {
+      background: rgba(255, 255, 255, 0.03);
+    }
+    .result-ball-28 {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 900;
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      margin: 0 auto;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+    }
+    .result-ball-28.red {
+      background: #FF1744;
+      color: #FFFFFF;
+    }
+    .result-ball-28.green {
+      background: #00E676;
+      color: #0a0d14;
+    }
+    .result-ball-28.violet {
+      background: #D500F9;
+      color: #FFFFFF;
+    }
+    .result-ball-28.red-violet {
+      background: linear-gradient(135deg, #FF1744 50%, #D500F9 50%);
+      color: #FFFFFF;
+    }
+    .result-ball-28.green-violet {
+      background: linear-gradient(135deg, #00E676 50%, #D500F9 50%);
+      color: #FFFFFF;
+    }
+    .badge-pill-bs {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 800;
+      text-align: center;
+    }
+    .badge-pill-bs.small {
+      background: rgba(255, 145, 0, 0.2);
+      color: #FF9100;
+    }
+    .badge-pill-bs.big {
+      background: rgba(0, 229, 255, 0.2);
+      color: #00E5FF;
+    }
+    .history-pagination-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 14px;
+      padding: 0 4px;
+    }
+    .btn-pagination {
+      background: transparent;
+      border: 1px solid #00E5FF;
+      color: #F0F4F8;
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-pagination:disabled {
+      border-color: var(--border);
+      color: var(--text-muted);
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+    .pagination-page-label {
+      color: var(--gold);
+      font-size: 12px;
+      font-weight: 800;
+      font-family: monospace;
+    }
+
+    /* Bet Placement Modal Custom Styling (Matches Android UI) */
+    .bet-modal-box {
+      background: var(--surface);
+      border-radius: 20px;
+      border: 1.5px solid rgba(0, 230, 118, 0.8);
+      box-shadow: 0 0 24px rgba(0, 230, 118, 0.25);
+      width: 100%;
+      max-width: 440px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      position: relative;
+      transition: border-color 0.25s, box-shadow 0.25s;
+    }
+    .casino-chip-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .casino-chip {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+    }
+    .casino-chip .chip-label {
+      font-size: 11px;
+      font-weight: 800;
+      color: #FFF;
+      text-align: center;
+      pointer-events: none;
+    }
+    .casino-chip[data-amount="10"] {
+      border: 1.5px solid #00E5FF;
+      background: radial-gradient(circle, #1a2230 0%, #0d121c 100%);
+    }
+    .casino-chip[data-amount="10"].selected {
+      border: 3px solid #FFFFFF;
+      background: radial-gradient(circle, rgba(0, 229, 255, 0.9) 0%, rgba(0, 229, 255, 0.5) 100%);
+      box-shadow: 0 0 14px rgba(0, 229, 255, 0.8);
+      transform: scale(1.05);
+    }
+    .casino-chip[data-amount="50"] {
+      border: 1.5px solid #00E676;
+      background: radial-gradient(circle, #1a2230 0%, #0d121c 100%);
+    }
+    .casino-chip[data-amount="50"].selected {
+      border: 3px solid #FFFFFF;
+      background: radial-gradient(circle, rgba(0, 230, 118, 0.9) 0%, rgba(0, 230, 118, 0.5) 100%);
+      box-shadow: 0 0 14px rgba(0, 230, 118, 0.8);
+      transform: scale(1.05);
+    }
+    .casino-chip[data-amount="100"] {
+      border: 1.5px solid #FFD700;
+      background: radial-gradient(circle, #1a2230 0%, #0d121c 100%);
+    }
+    .casino-chip[data-amount="100"].selected {
+      border: 3px solid #FFFFFF;
+      background: radial-gradient(circle, rgba(255, 215, 0, 0.9) 0%, rgba(255, 215, 0, 0.5) 100%);
+      box-shadow: 0 0 14px rgba(255, 215, 0, 0.8);
+      transform: scale(1.05);
+    }
+    .casino-chip[data-amount="500"] {
+      border: 1.5px solid #FF9100;
+      background: radial-gradient(circle, #1a2230 0%, #0d121c 100%);
+    }
+    .casino-chip[data-amount="500"].selected {
+      border: 3px solid #FFFFFF;
+      background: radial-gradient(circle, rgba(255, 145, 0, 0.9) 0%, rgba(255, 145, 0, 0.5) 100%);
+      box-shadow: 0 0 14px rgba(255, 145, 0, 0.8);
+      transform: scale(1.05);
+    }
+    .casino-chip[data-amount="1000"] {
+      border: 1.5px solid #FF1744;
+      background: radial-gradient(circle, #1a2230 0%, #0d121c 100%);
+    }
+    .casino-chip[data-amount="1000"].selected {
+      border: 3px solid #FFFFFF;
+      background: radial-gradient(circle, rgba(255, 23, 68, 0.9) 0%, rgba(255, 23, 68, 0.5) 100%);
+      box-shadow: 0 0 14px rgba(255, 23, 68, 0.8);
+      transform: scale(1.05);
+    }
+    .casino-chip[data-amount="5000"] {
+      border: 1.5px solid #D500F9;
+      background: radial-gradient(circle, #1a2230 0%, #0d121c 100%);
+    }
+    .casino-chip[data-amount="5000"].selected {
+      border: 3px solid #FFFFFF;
+      background: radial-gradient(circle, rgba(213, 0, 249, 0.9) 0%, rgba(213, 0, 249, 0.5) 100%);
+      box-shadow: 0 0 14px rgba(213, 0, 249, 0.8);
+      transform: scale(1.05);
+    }
+    .multiplier-stepper-box {
+      display: flex;
+      align-items: center;
+      background: var(--card-highlight);
+      border-radius: 8px;
+      padding: 2px 4px;
+    }
+    .stepper-btn {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: none;
+      border: none;
+      color: #FFF;
+      font-size: 18px;
+      font-weight: 800;
+      cursor: pointer;
+      user-select: none;
+    }
+    .stepper-btn:disabled {
+      color: var(--text-muted);
+      cursor: not-allowed;
+    }
+    .stepper-display {
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--gold);
+      padding: 0 8px;
+      min-width: 36px;
+      text-align: center;
+    }
+    .quick-multipliers-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .quick-mult-btn {
+      flex: 1;
+      padding: 8px 0;
+      border-radius: 8px;
+      background: var(--card-highlight);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.2s;
+    }
+    .quick-mult-btn.active {
+      background: var(--gold);
+      color: #0a0d14;
+      border-color: var(--gold);
+      font-weight: 900;
+    }
 
     /* Bottom Nav Bar */
     nav.bottom-nav {
@@ -1055,22 +1315,30 @@
             </div>
           </div>
 
-          <!-- Table View Container -->
-          <div id="historyTableView" class="table-container">
-            <table class="records-table">
-              <thead>
-                <tr>
-                  <th>Period</th>
-                  <th>Number</th>
-                  <th>Big/Small</th>
-                  <th>Color</th>
-                  <th>Audit</th>
-                </tr>
-              </thead>
-              <tbody id="periodRecordsBody">
-                <!-- Dynamically populated -->
-              </tbody>
-            </table>
+          <!-- Table View Container (Matches Android UI with Colored Balls & Pagination) -->
+          <div id="historyTableView">
+            <div style="overflow-x:auto; background:var(--card-highlight); border-radius:10px; border:1px solid var(--border);">
+              <table class="period-results-table">
+                <thead>
+                  <tr>
+                    <th style="width:38%; text-align:left;">Period Number</th>
+                    <th style="width:18%; text-align:center;">Number</th>
+                    <th style="width:22%; text-align:center;">Big/Small</th>
+                    <th style="width:22%; text-align:center;">Color</th>
+                  </tr>
+                </thead>
+                <tbody id="periodRecordsBody">
+                  <!-- Dynamically populated with 10 rows per page -->
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Pagination Bar (10 periods per page, matching Android UI) -->
+            <div class="history-pagination-bar">
+              <button class="btn-pagination" id="btnHistoryPrev" onclick="prevHistoryPage()">◀ Prev 10</button>
+              <span class="pagination-page-label" id="historyPageLabel">Page 1 of 5</span>
+              <button class="btn-pagination" id="btnHistoryNext" onclick="nextHistoryPage()">Next 10 ▶</button>
+            </div>
           </div>
 
           <!-- 10x10 Bead Plate Matrix View Container -->
@@ -1491,58 +1759,87 @@
   <!-- MODALS & DIALOGS                          -->
   <!-- ========================================== -->
 
-  <!-- Bet Placement Modal -->
+  <!-- Bet Placement Modal (Matches Android UI & Screenshot 1) -->
   <div class="modal-overlay" id="betModal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <div class="modal-title" id="betModalTitle">Place Bet</div>
-        <button class="btn-close" onclick="closeModal('betModal')">✕</button>
+    <div class="bet-modal-box" id="betModalBox">
+      <!-- Header with Target Avatar & Info & Close -->
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div id="betModalAvatar" style="width:40px; height:40px; border-radius:50%; background:var(--green); border:1.5px solid #FFF; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:900; color:#0a0d14;">
+            G
+          </div>
+          <div>
+            <div id="betModalTargetTitle" style="font-size:16px; font-weight:900; color:#FFF; line-height:1.2;">GREEN</div>
+            <div style="display:flex; align-items:center; gap:6px; margin-top:2px;">
+              <span id="betModalPayoutBadge" style="background:rgba(0,230,118,0.2); color:var(--green); font-size:11px; font-weight:800; padding:2px 6px; border-radius:4px;">2.0x Payout</span>
+              <span id="betModalTypeSubtitle" style="font-size:11px; color:var(--text-muted);">COLOR Bet</span>
+            </div>
+          </div>
+        </div>
+        <button class="btn-close" onclick="closeModal('betModal')" style="font-size:22px; color:var(--text-muted); cursor:pointer;">✕</button>
       </div>
 
-      <div style="display:flex; justify-content:space-between; align-items:center; background:var(--card-highlight); padding:10px 12px; border-radius:10px;">
-        <div>
-          <span style="font-size:10px; color:var(--text-muted);">Selected Target:</span>
-          <h3 id="betModalTarget" style="font-size:18px; font-weight:900; color:var(--gold);">BIG</h3>
-        </div>
-        <div style="text-align:right;">
-          <span style="font-size:10px; color:var(--text-muted);">Multiplier:</span>
-          <h3 id="betModalMultiplier" style="font-size:18px; font-weight:900; color:var(--green);">2.0X</h3>
-        </div>
-      </div>
-
+      <!-- Contract Money (Chip Amount) -->
       <div>
-        <label style="font-size:11px; color:var(--text-muted); display:block; margin-bottom:6px;">Select Chip Amount (₹):</label>
-        <div class="chip-selector">
-          <div class="chip-btn selected" onclick="selectChip(10)">₹10</div>
-          <div class="chip-btn" onclick="selectChip(50)">₹50</div>
-          <div class="chip-btn" onclick="selectChip(100)">₹100</div>
-          <div class="chip-btn" onclick="selectChip(500)">₹500</div>
-          <div class="chip-btn" onclick="selectChip(1000)">₹1,000</div>
-          <div class="chip-btn" onclick="selectChip(5000)">₹5,000</div>
+        <div style="font-size:13px; font-weight:800; color:#FFF;">Contract Money (Chip Amount)</div>
+        <div class="casino-chip-row">
+          <div class="casino-chip" data-amount="10" onclick="selectChip(10)"><span class="chip-label">₹10</span></div>
+          <div class="casino-chip" data-amount="50" onclick="selectChip(50)"><span class="chip-label">₹50</span></div>
+          <div class="casino-chip selected" data-amount="100" onclick="selectChip(100)"><span class="chip-label">₹100</span></div>
+          <div class="casino-chip" data-amount="500" onclick="selectChip(500)"><span class="chip-label">₹500</span></div>
+          <div class="casino-chip" data-amount="1000" onclick="selectChip(1000)"><span class="chip-label">₹1000</span></div>
+          <div class="casino-chip" data-amount="5000" onclick="selectChip(5000)"><span class="chip-label">₹5000</span></div>
         </div>
       </div>
 
-      <!-- Quantity Stepper / Multiplier -->
-      <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.25); padding:8px 12px; border-radius:8px;">
-        <span style="font-size:11px; color:var(--text-muted);">Quantity Stepper:</span>
-        <div style="display:flex; align-items:center; gap:8px;">
-          <button class="btn-secondary" style="padding:4px 10px;" onclick="changeBetQuantity(-1)">-</button>
-          <span id="betModalQuantityDisplay" style="font-size:14px; font-weight:800; min-width:24px; text-align:center;">1</span>
-          <button class="btn-secondary" style="padding:4px 10px;" onclick="changeBetQuantity(1)">+</button>
+      <!-- Multiplier (Number of Bets) -->
+      <div>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:13px; font-weight:800; color:#FFF;">Multiplier (Number of Bets)</span>
+          <div class="multiplier-stepper-box">
+            <button class="stepper-btn" onclick="changeBetQuantity(-1)" id="btnStepperMinus">−</button>
+            <span class="stepper-display" id="betModalQuantityDisplay">1X</span>
+            <button class="stepper-btn" onclick="changeBetQuantity(1)">+</button>
+          </div>
+        </div>
+        <!-- Quick Multiplier Pills (1X, 2X, 5X, 10X, 20X) -->
+        <div class="quick-multipliers-row">
+          <button class="quick-mult-btn active" id="qmult-1" onclick="setQuickMultiplier(1)">1X</button>
+          <button class="quick-mult-btn" id="qmult-2" onclick="setQuickMultiplier(2)">2X</button>
+          <button class="quick-mult-btn" id="qmult-5" onclick="setQuickMultiplier(5)">5X</button>
+          <button class="quick-mult-btn" id="qmult-10" onclick="setQuickMultiplier(10)">10X</button>
+          <button class="quick-mult-btn" id="qmult-20" onclick="setQuickMultiplier(20)">20X</button>
         </div>
       </div>
 
-      <div style="display:flex; justify-content:space-between; font-size:12px; padding:4px 0;">
-        <span style="color:var(--text-muted);">Total Bet Amount:</span>
-        <strong id="betModalAmountDisplay" style="color:var(--gold);">₹10.00</strong>
-      </div>
-      <div style="display:flex; justify-content:space-between; font-size:12px; padding-bottom:4px;">
-        <span style="color:var(--text-muted);">Estimated Payout:</span>
-        <strong id="betModalPotentialWin" style="color:var(--green);">₹20.00</strong>
+      <!-- Calculation Summary Box (Obsidian Background) -->
+      <div style="background:#0a0d14; border:1px solid #2a3447; border-radius:12px; padding:12px; display:flex; flex-direction:column; gap:6px;">
+        <div style="display:flex; justify-content:space-between; font-size:12px;">
+          <span style="color:var(--text-muted);">Total Bet Amount</span>
+          <strong id="betModalAmountDisplay" style="color:var(--gold); font-size:14px; font-weight:800;">₹100.00</strong>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:12px;">
+          <span style="color:var(--text-muted);">Potential Win Payout</span>
+          <strong id="betModalPotentialWin" style="color:var(--green); font-size:13px; font-weight:800;">₹200.00</strong>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:12px;">
+          <span style="color:var(--text-muted);">Available Balance</span>
+          <span id="betModalAvailableBalance" style="color:#FFF; font-size:12px; font-weight:700;">₹50,000.00</span>
+        </div>
+        <div id="betModalInsufficientWarning" style="display:none; color:var(--red); font-size:11px; font-weight:700; margin-top:2px;">
+          ⚠️ Insufficient wallet balance! Please reduce bet or deposit funds.
+        </div>
       </div>
 
-      <button class="btn-primary" onclick="confirmPlaceBet()">CONFIRM & PLACE BET</button>
-      <button class="btn-secondary" onclick="closeModal('betModal')">Cancel</button>
+      <!-- Action Buttons: Cancel & Confirm Bet -->
+      <div style="display:flex; gap:10px;">
+        <button onclick="closeModal('betModal')" style="flex:1; height:46px; background:transparent; border:1px solid #2a3447; border-radius:12px; color:#FFF; font-size:13px; font-weight:700; cursor:pointer;">
+          Cancel
+        </button>
+        <button id="betModalConfirmBtn" onclick="confirmPlaceBet()" style="flex:1.4; height:46px; background:var(--green); border:none; border-radius:12px; color:#0a0d14; font-size:13px; font-weight:900; cursor:pointer;">
+          Confirm Bet ₹100.00
+        </button>
+      </div>
     </div>
   </div>
 
@@ -2158,6 +2455,7 @@
     // MARKET SWITCHER
     function switchMarket(mKey) {
       currentMarketId = mKey;
+      historyCurrentPage = 0;
       document.querySelectorAll('.market-tab-btn').forEach(b => {
         b.classList.toggle('active', b.id === 'mTab-' + mKey);
       });
@@ -2205,11 +2503,14 @@
           const num = Math.floor(Math.random() * 10);
           const prevPeriod = `${datePrefix}${Math.max(1, curNum - i)}`;
           const col = (num === 0 || num === 5) ? 'violet' : [1, 3, 7, 9].includes(num) ? 'green' : 'red';
+          const recDate = new Date(Date.now() - i * 180 * 1000);
+          const timeStr = recDate.toTimeString().split(' ')[0];
           st.pastRecords.push({
             period: prevPeriod,
             number: num,
             isBig: num >= 5,
             color: col,
+            time: timeStr,
             hash: "hash_" + prevPeriod + "_" + Math.floor(Math.random()*100000)
           });
         }
@@ -2342,19 +2643,98 @@
       document.getElementById('historyMatrixView').style.display = mode === 1 ? 'block' : 'none';
     }
 
+    let historyCurrentPage = 0;
+    const historyRowsPerPage = 10;
+
+    function prevHistoryPage() {
+      if (historyCurrentPage > 0) {
+        historyCurrentPage--;
+        renderHistoryTable();
+        playSound('betClick');
+      }
+    }
+
+    function nextHistoryPage() {
+      const st = marketStates[currentMarketId];
+      const totalPages = Math.max(1, Math.ceil((st.pastRecords.length || 1) / historyRowsPerPage));
+      if (historyCurrentPage < totalPages - 1) {
+        historyCurrentPage++;
+        renderHistoryTable();
+        playSound('betClick');
+      }
+    }
+
     function renderHistoryTable() {
       const st = marketStates[currentMarketId];
       const tbody = document.getElementById('periodRecordsBody');
       if (!tbody) return;
-      tbody.innerHTML = st.pastRecords.slice(0, 15).map(r => `
-        <tr style="cursor:pointer;" onclick="openPeriodAudit('${r.period}', ${r.number}, '${r.color}', ${r.isBig})">
-          <td style="font-family:monospace; color:var(--gold); font-weight:700;">#${r.period}</td>
-          <td><strong style="font-size:14px;">${r.number}</strong></td>
-          <td><span class="badge-pill ${r.isBig ? 'badge-big' : 'badge-small'}">${r.isBig ? 'BIG' : 'SMALL'}</span></td>
-          <td><span class="badge-pill badge-${r.color}">${r.color.toUpperCase()}</span></td>
-          <td style="color:var(--cyan); font-weight:700;">Audit ↗</td>
-        </tr>
-      `).join('');
+
+      const totalItems = st.pastRecords.length;
+      const totalPages = Math.max(1, Math.ceil(totalItems / historyRowsPerPage));
+      if (historyCurrentPage >= totalPages) historyCurrentPage = totalPages - 1;
+      if (historyCurrentPage < 0) historyCurrentPage = 0;
+
+      // Update Pagination Bar UI
+      const prevBtn = document.getElementById('btnHistoryPrev');
+      const nextBtn = document.getElementById('btnHistoryNext');
+      const pageLabel = document.getElementById('historyPageLabel');
+      if (prevBtn) prevBtn.disabled = historyCurrentPage === 0;
+      if (nextBtn) nextBtn.disabled = historyCurrentPage >= totalPages - 1;
+      if (pageLabel) pageLabel.innerText = `Page ${historyCurrentPage + 1} of ${totalPages}`;
+
+      const startIndex = historyCurrentPage * historyRowsPerPage;
+      const pageRecords = st.pastRecords.slice(startIndex, startIndex + historyRowsPerPage);
+
+      if (pageRecords.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:20px; color:var(--text-muted);">No period results yet</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = pageRecords.map(r => {
+        const num = r.number;
+        const isBig = num >= 5;
+        let ballClass = 'green';
+        let colorName = 'GREEN';
+        let colorHex = '#00E676';
+
+        if (num === 0) {
+          ballClass = 'red-violet';
+          colorName = 'RED + VIOLET';
+          colorHex = '#D500F9';
+        } else if (num === 5) {
+          ballClass = 'green-violet';
+          colorName = 'GREEN + VIOLET';
+          colorHex = '#D500F9';
+        } else if ([1, 3, 7, 9].includes(num)) {
+          ballClass = 'green';
+          colorName = 'GREEN';
+          colorHex = '#00E676';
+        } else {
+          ballClass = 'red';
+          colorName = 'RED';
+          colorHex = '#FF1744';
+        }
+
+        const timeStr = r.time || '23:24:25';
+
+        return `
+          <tr style="cursor:pointer;" onclick="openPeriodAudit('${r.period}', ${num}, '${r.color}', ${isBig})">
+            <td>
+              <div style="font-family:monospace; color:#F0F4F8; font-weight:800; font-size:12px;">${r.period}</div>
+              <div style="font-size:10px; color:var(--text-muted);">${timeStr}</div>
+            </td>
+            <td style="text-align:center;">
+              <div class="result-ball-28 ${ballClass}">${num}</div>
+            </td>
+            <td style="text-align:center;">
+              <span class="badge-pill-bs ${isBig ? 'big' : 'small'}">${isBig ? 'BIG' : 'SMALL'}</span>
+            </td>
+            <td style="text-align:center;">
+              <span style="color:${colorHex}; font-weight:800; font-size:11px;">${colorName}</span>
+            </td>
+          </tr>
+        `;
+      }).join('');
     }
 
     function render10x10BeadPlate() {
@@ -2404,8 +2784,9 @@
         const isWon = slip.status === 'WON';
         const isLost = slip.status === 'LOST';
         const isWait = slip.status === 'WAIT';
-        const statusClass = isWon ? 'status-won' : isLost ? 'status-lost' : 'status-wait';
-        const statusColor = isWon ? 'var(--green)' : isLost ? 'var(--red)' : 'var(--gold)';
+        const isRefunded = slip.status === 'REFUNDED';
+        const statusClass = isWon ? 'status-won' : isLost ? 'status-lost' : isRefunded ? 'status-refunded' : 'status-wait';
+        const statusColor = isWon ? 'var(--green)' : isLost ? 'var(--red)' : isRefunded ? 'var(--cyan)' : 'var(--gold)';
 
         return `
           <div class="bet-slip-card ${statusClass}">
@@ -2414,15 +2795,15 @@
                 <strong style="color:var(--text); font-size:13px;">${slip.marketName}</strong>
                 <span style="font-size:10px; color:var(--text-muted); font-family:monospace; margin-left:6px;">#${slip.period}</span>
               </div>
-              <span class="badge-pill" style="background:rgba(255,255,255,0.08); color:${statusColor}; font-weight:900;">${slip.status}</span>
+              <span class="badge-pill" style="background:${isRefunded ? 'rgba(0,229,255,0.18)' : 'rgba(255,255,255,0.08)'}; color:${statusColor}; font-weight:900;">${slip.status}</span>
             </div>
             <div style="display:flex; justify-content:space-between; font-size:12px; margin-top:2px;">
               <span>Target: <strong style="color:var(--gold);">${slip.target}</strong> (${slip.mult}X)</span>
-              <span>Stake: <strong style="color:#FFF;">₹${slip.amount.toFixed(2)}</strong></span>
+              <span>Stake: <strong style="color:#FFF;">₹${slip.amount.toFixed(2)}</strong> ${isRefunded ? `<span style="color:var(--cyan); font-weight:800; font-size:11px;">(Refunded +₹${slip.amount.toFixed(2)})</span>` : ''}</span>
             </div>
             <div style="display:flex; justify-content:space-between; font-size:10px; color:var(--text-muted); border-top:1px solid rgba(255,255,255,0.05); padding-top:4px; margin-top:2px;">
               <span>🕒 Placed: ${slip.time}</span>
-              <span style="font-weight:700; color:${statusColor};">${slip.result}</span>
+              <span style="font-weight:700; color:${statusColor};">🎲 Result: ${isRefunded ? 'Refunded' : (slip.result || (isWait ? 'Awaiting Draw' : 'Completed'))}</span>
             </div>
           </div>
         `;
@@ -2467,43 +2848,198 @@
       }
       const b = st.activeBets[index];
       userBalance += b.amount;
+
+      // Locate matching bet slip in userBetSlipsHistory and update it to REFUNDED permanently
+      const slip = userBetSlipsHistory.find(s => (b.id && s.id === b.id) || (s.period === st.currentPeriod && s.marketId === currentMarketId && s.target === b.target && s.status === 'WAIT'));
+      if (slip) {
+        slip.status = 'REFUNDED';
+        slip.result = 'Refunded';
+      }
+
+      // Remove from active bets of current round
       st.activeBets.splice(index, 1);
+
+      // Add refund record to Wallet Ledger
+      walletLedger.unshift({
+        id: 'TX-' + Math.floor(1000 + Math.random() * 9000),
+        type: 'DEPOSIT',
+        title: `Refund: ${b.target} (${MARKETS[currentMarketId].name})`,
+        ref: `Period #${st.currentPeriod} • Cancelled & Refunded`,
+        amount: b.amount,
+        time: 'Just now',
+        status: 'COMPLETED'
+      });
+
       updateBalanceUI();
       renderActiveBets();
-      showToast(`✓ Refunded ₹${b.amount} for ${b.target}`);
+      renderBetSlips();
+      renderWalletLedger();
+      showToast(`✓ Bet on ${b.target} cancelled & refunded! Result: Refunded`);
       playSound('betClick');
+      syncBalanceWithBackend();
     }
 
-    // BET PLACEMENT MODAL
-    let pendingBet = { type: 'COLOR', target: 'GREEN', mult: 2.0, chip: 10, qty: 1 };
+    // BET PLACEMENT MODAL (Matches Android UI & Screenshot 1)
+    let pendingBet = { type: 'COLOR', target: 'GREEN', mult: 2.0, chip: 100, qty: 1 };
+
     function openBetModal(type, target, mult) {
       const st = marketStates[currentMarketId];
       if (st.isBettingLocked) {
         showToast('⚠️ Betting locked for current round (Last 30s)!');
         return;
       }
-      pendingBet = { type, target, mult, chip: 10, qty: 1 };
-      document.getElementById('betModalTitle').innerText = `Place Bet on ${MARKETS[currentMarketId].name}`;
-      document.getElementById('betModalTarget').innerText = target;
-      document.getElementById('betModalMultiplier').innerText = `${mult.toFixed(1)}X`;
-      document.getElementById('betModalQuantityDisplay').innerText = '1';
-      selectChip(10);
+      pendingBet = { type, target, mult, chip: 100, qty: 1 };
+
+      // Determine Theme Color and Labels matching Android UI
+      let themeColor = '#00E676';
+      let themeGlow = 'rgba(0, 230, 118, 0.4)';
+      let avatarText = target.charAt(0);
+      let titleText = target;
+      let subtitleText = 'COLOR Bet';
+      let textColor = '#0a0d14';
+
+      const ut = target.toUpperCase();
+      if (ut === 'GREEN') {
+        themeColor = '#00E676';
+        themeGlow = 'rgba(0, 230, 118, 0.4)';
+        avatarText = 'G';
+        titleText = 'GREEN';
+        subtitleText = 'COLOR Bet';
+        textColor = '#0a0d14';
+      } else if (ut === 'RED') {
+        themeColor = '#FF1744';
+        themeGlow = 'rgba(255, 23, 68, 0.4)';
+        avatarText = 'R';
+        titleText = 'RED';
+        subtitleText = 'COLOR Bet';
+        textColor = '#FFFFFF';
+      } else if (ut === 'VIOLET') {
+        themeColor = '#D500F9';
+        themeGlow = 'rgba(213, 0, 249, 0.4)';
+        avatarText = 'V';
+        titleText = 'VIOLET';
+        subtitleText = 'COLOR Bet';
+        textColor = '#FFFFFF';
+      } else if (ut === 'BIG') {
+        themeColor = '#FF9100';
+        themeGlow = 'rgba(255, 145, 0, 0.4)';
+        avatarText = 'B';
+        titleText = 'BIG (5, 6, 7, 8, 9)';
+        subtitleText = 'Big/Small Bet';
+        textColor = '#0a0d14';
+      } else if (ut === 'SMALL') {
+        themeColor = '#00E5FF';
+        themeGlow = 'rgba(0, 229, 255, 0.4)';
+        avatarText = 'S';
+        titleText = 'SMALL (0, 1, 2, 3, 4)';
+        subtitleText = 'Big/Small Bet';
+        textColor = '#0a0d14';
+      } else {
+        // Number Bet (0-9)
+        avatarText = target;
+        titleText = `Number ${target}`;
+        subtitleText = 'NUMBER Bet';
+        if (target === '0' || target === '5') {
+          themeColor = '#D500F9';
+          themeGlow = 'rgba(213, 0, 249, 0.4)';
+          textColor = '#FFFFFF';
+        } else if (['1', '3', '7', '9'].includes(target)) {
+          themeColor = '#00E676';
+          themeGlow = 'rgba(0, 230, 118, 0.4)';
+          textColor = '#0a0d14';
+        } else {
+          themeColor = '#FF1744';
+          themeGlow = 'rgba(255, 23, 68, 0.4)';
+          textColor = '#FFFFFF';
+        }
+      }
+
+      // Apply dynamic glowing border to Modal Box
+      const modalBox = document.getElementById('betModalBox');
+      if (modalBox) {
+        modalBox.style.borderColor = themeColor;
+        modalBox.style.boxShadow = `0 0 24px ${themeGlow}`;
+      }
+
+      // Header Elements
+      const avatar = document.getElementById('betModalAvatar');
+      if (avatar) {
+        avatar.style.background = themeColor;
+        avatar.style.color = textColor;
+        avatar.innerText = avatarText;
+      }
+      const titleElem = document.getElementById('betModalTargetTitle');
+      if (titleElem) titleElem.innerText = titleText;
+
+      const payoutBadge = document.getElementById('betModalPayoutBadge');
+      if (payoutBadge) {
+        payoutBadge.style.color = themeColor;
+        payoutBadge.style.background = `${themeColor}33`;
+        payoutBadge.innerText = `${mult.toFixed(1)}x Payout`;
+      }
+
+      const subElem = document.getElementById('betModalTypeSubtitle');
+      if (subElem) subElem.innerText = subtitleText;
+
+      const confirmBtn = document.getElementById('betModalConfirmBtn');
+      if (confirmBtn) {
+        confirmBtn.style.background = themeColor;
+        confirmBtn.style.color = textColor;
+      }
+
+      // Reset Quantity & Stepper
+      pendingBet.qty = 1;
+      const qDisp = document.getElementById('betModalQuantityDisplay');
+      if (qDisp) qDisp.innerText = '1X';
+      const minusBtn = document.getElementById('btnStepperMinus');
+      if (minusBtn) minusBtn.disabled = true;
+
+      document.querySelectorAll('#betModal .quick-mult-btn').forEach(b => {
+        b.classList.toggle('active', b.id === 'qmult-1');
+      });
+
+      // Default Chip: ₹100
+      selectChip(100);
+
       document.getElementById('betModal').classList.add('active');
       playSound('betClick');
     }
 
     function selectChip(amount) {
       pendingBet.chip = amount;
-      document.querySelectorAll('#betModal .chip-btn').forEach(b => {
-        b.classList.toggle('selected', b.innerText === `₹${amount.toLocaleString()}`);
+      document.querySelectorAll('#betModal .casino-chip').forEach(b => {
+        b.classList.toggle('selected', parseInt(b.getAttribute('data-amount')) === amount);
       });
       updateBetModalCalculations();
       playSound('betClick');
     }
 
     function changeBetQuantity(delta) {
-      pendingBet.qty = Math.max(1, pendingBet.qty + delta);
-      document.getElementById('betModalQuantityDisplay').innerText = pendingBet.qty;
+      pendingBet.qty = Math.max(1, Math.min(100, pendingBet.qty + delta));
+      const qDisp = document.getElementById('betModalQuantityDisplay');
+      if (qDisp) qDisp.innerText = `${pendingBet.qty}X`;
+      const minusBtn = document.getElementById('btnStepperMinus');
+      if (minusBtn) minusBtn.disabled = pendingBet.qty <= 1;
+
+      document.querySelectorAll('#betModal .quick-mult-btn').forEach(b => {
+        b.classList.toggle('active', b.id === `qmult-${pendingBet.qty}`);
+      });
+
+      updateBetModalCalculations();
+      playSound('betClick');
+    }
+
+    function setQuickMultiplier(factor) {
+      pendingBet.qty = factor;
+      const qDisp = document.getElementById('betModalQuantityDisplay');
+      if (qDisp) qDisp.innerText = `${factor}X`;
+      const minusBtn = document.getElementById('btnStepperMinus');
+      if (minusBtn) minusBtn.disabled = factor <= 1;
+
+      document.querySelectorAll('#betModal .quick-mult-btn').forEach(b => {
+        b.classList.toggle('active', b.id === `qmult-${factor}`);
+      });
+
       updateBetModalCalculations();
       playSound('betClick');
     }
@@ -2511,8 +3047,29 @@
     function updateBetModalCalculations() {
       const total = pendingBet.chip * pendingBet.qty;
       const win = total * pendingBet.mult;
-      document.getElementById('betModalAmountDisplay').innerText = `₹${total.toFixed(2)}`;
-      document.getElementById('betModalPotentialWin').innerText = `₹${win.toFixed(2)}`;
+      const hasSufficient = userBalance >= total;
+
+      document.getElementById('betModalAmountDisplay').innerText = `₹${total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      document.getElementById('betModalPotentialWin').innerText = `₹${win.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+      const balElem = document.getElementById('betModalAvailableBalance');
+      if (balElem) {
+        balElem.innerText = `₹${userBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        balElem.style.color = hasSufficient ? '#FFFFFF' : 'var(--red)';
+      }
+
+      const warnElem = document.getElementById('betModalInsufficientWarning');
+      if (warnElem) {
+        warnElem.style.display = hasSufficient ? 'none' : 'block';
+      }
+
+      const confirmBtn = document.getElementById('betModalConfirmBtn');
+      if (confirmBtn) {
+        confirmBtn.innerText = `Confirm Bet ₹${total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        confirmBtn.disabled = !hasSufficient;
+        confirmBtn.style.opacity = hasSufficient ? '1' : '0.5';
+        confirmBtn.style.cursor = hasSufficient ? 'pointer' : 'not-allowed';
+      }
     }
 
     function confirmPlaceBet() {
@@ -2534,8 +3091,11 @@
       const now = new Date();
       const timeStr = now.toLocaleTimeString();
 
+      const newSlipId = 'SLIP-' + Math.floor(1000 + Math.random() * 9000);
+
       // Add to Active Bets
       st.activeBets.push({
+        id: newSlipId,
         target: pendingBet.target,
         type: pendingBet.type,
         mult: pendingBet.mult,
@@ -2545,7 +3105,7 @@
 
       // Add to Bet Slips History
       userBetSlipsHistory.unshift({
-        id: 'SLIP-' + Math.floor(1000 + Math.random() * 9000),
+        id: newSlipId,
         marketId: currentMarketId,
         marketName: `${MARKETS[currentMarketId].name} MARKET`,
         period: st.currentPeriod,
@@ -2611,17 +3171,24 @@
       let colClass = isViolet ? (winningNumber === 0 ? 'red-violet' : 'green-violet') : (isGreen ? 'green' : 'red');
 
       st.latestResult = { number: winningNumber, color: colClass, isBig };
+      const roundTimeStr = new Date().toTimeString().split(' ')[0];
       st.pastRecords.unshift({
         period: finishedPeriod,
         number: winningNumber,
         isBig: isBig,
         color: isViolet ? 'violet' : (isGreen ? 'green' : 'red'),
+        time: roundTimeStr,
         hash: "hash_" + finishedPeriod
       });
 
       // Resolve bet slips for this market & period
       let totalWon = 0;
       userBetSlipsHistory.forEach(slip => {
+        // Refunded bets are permanently preserved — NEVER change status or result after declaring outcome!
+        if (slip.status === 'REFUNDED' || slip.status === 'CANCELLED') {
+          return;
+        }
+
         if (slip.period === finishedPeriod && slip.marketId === mKey && slip.status === 'WAIT') {
           let won = false;
           let payout = 0;

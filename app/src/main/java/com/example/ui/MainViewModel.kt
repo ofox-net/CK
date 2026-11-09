@@ -524,8 +524,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 when (val cancelRes = walletService.cancelAndRefundBet(tenantId, userId, existingBet.amount, round.roundId, existingBet.id)) {
                     is WalletResult.Error -> postNotification("Cancel failed: ${cancelRes.message}", false)
                     is WalletResult.Success -> {
-                        database.betDao().deleteBetById(existingBet.id)
-                        postNotification("❌ Bet on $selection cancelled. Refunded ${MoneyUtils.formatCents(existingBet.amount)} to wallet!", true)
+                        database.betDao().updateBet(existingBet.copy(status = BetStatus.REFUNDED.name, actualPayout = 0L))
+                        postNotification("❌ Bet on $selection refunded. Result is Refunded!", true)
                     }
                 }
                 return@launch

@@ -368,6 +368,9 @@ class GameEngineService(
         var winningBetsCount = 0
 
         for (bet in bets) {
+            if (bet.status.uppercase() in listOf("REFUNDED", "CANCELLED")) {
+                continue
+            }
             try {
                 val (isWon, multiplier) = evaluateBet(bet, result, config)
                 val payoutCents = if (isWon) {

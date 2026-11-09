@@ -2314,6 +2314,7 @@ fun BetHistoryItem(bet: BetEntity, round: GameRoundEntity? = null) {
     val (statusLabel, statusColor, statusBg) = when (bet.status.uppercase()) {
         "WON" -> Triple("WON", NeonGreen, NeonGreen.copy(alpha = 0.2f))
         "LOST" -> Triple("LOST", NeonRed, NeonRed.copy(alpha = 0.2f))
+        "REFUNDED", "CANCELLED" -> Triple("REFUNDED", ElectricCyan, ElectricCyan.copy(alpha = 0.2f))
         "ACCEPTED", "PENDING" -> Triple("WAIT", AmberGlow, AmberGlow.copy(alpha = 0.2f))
         else -> Triple(bet.status, TextMuted, CardHighlight)
     }
@@ -2436,7 +2437,14 @@ fun BetHistoryItem(bet: BetEntity, round: GameRoundEntity? = null) {
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp
                     )
-                    if (bet.status == "WON") {
+                    if (bet.status.uppercase() in listOf("REFUNDED", "CANCELLED")) {
+                        Text(
+                            text = "Refunded: +" + MoneyUtils.formatCents(bet.amount),
+                            color = ElectricCyan,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 12.sp
+                        )
+                    } else if (bet.status == "WON") {
                         Text(
                             text = "Win: +" + MoneyUtils.formatCents(bet.actualPayout),
                             color = NeonGreen,
@@ -2480,8 +2488,22 @@ fun BetHistoryItem(bet: BetEntity, round: GameRoundEntity? = null) {
                     )
                 }
 
-                // Result display
-                if (round != null && round.resultNumber != null) {
+                // Result display (Refunded bets permanently display Result: Refunded with no status change after round declaration)
+                if (bet.status.uppercase() in listOf("REFUNDED", "CANCELLED")) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Result: ",
+                            color = TextMuted,
+                            fontSize = 11.sp
+                        )
+                        Text(
+                            text = "Refunded",
+                            color = ElectricCyan,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        )
+                    }
+                } else if (round != null && round.resultNumber != null) {
                     val outcomeNum = round.resultNumber
                     val outcomeColor = round.resultColor ?: ""
                     val isOutcomeBig = outcomeNum >= 5
