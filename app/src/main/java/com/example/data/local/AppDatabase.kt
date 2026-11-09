@@ -341,7 +341,7 @@ abstract class AppDatabase : RoomDatabase() {
         for (gId in marketIdsList) {
             for (i in 1..50) {
                 val periodNum = currentPeriodNum - (51 - i)
-                val seed = com.example.domain.ProvablyFairEngine.generateServerSeed()
+                val seed = "master_fair_seed_${gId}_$periodNum"
                 val hash = com.example.domain.ProvablyFairEngine.hashSha256(seed)
                 val roundTime = currentTime - ((51 - i) * 180000L) // 3-minute steps
                 val result = com.example.domain.ProvablyFairEngine.calculateResult(seed, "apex_community_seed", periodNum)

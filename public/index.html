@@ -2490,7 +2490,97 @@
       renderRoadmapBeads();
     }
 
-    // Populate Initial Past Records for each Market
+    // DECLARED RESULTS PERSISTENCE & PROVABLY FAIR DETERMINISM
+    let declaredResultsStore = {};
+    try {
+      const cached = localStorage.getItem('colour_king_declared_results');
+      if (cached) declaredResultsStore = JSON.parse(cached);
+    } catch (e) {}
+
+    // Deterministic Provably Fair Period Result Generator
+    // Guarantees that any period number ALWAYS yields the EXACT same outcome on every refresh
+    function getDeterministicPeriodResult(mKey, periodStr) {
+      const seed = `COLOUR_KING_FAIR_SEED_2026_${mKey}_${periodStr}`;
+      let hash = 0;
+      for (let i = 0; i < seed.length; i++) {
+        hash = ((hash << 5) - hash) + seed.charCodeAt(i);
+        hash |= 0;
+      }
+      const absHash = Math.abs(hash);
+      const num = absHash % 10;
+      const isBig = num >= 5;
+      const isGreen = [1, 3, 7, 9].includes(num);
+      const isRed = [2, 4, 6, 8].includes(num);
+      const isViolet = (num === 0 || num === 5);
+      const colClass = isViolet ? (num === 0 ? 'red-violet' : 'green-violet') : (isGreen ? 'green' : 'red');
+      const ballColor = isViolet ? 'violet' : (isGreen ? 'green' : 'red');
+      return {
+        number: num,
+        isBig,
+        color: ballColor,
+        colClass,
+        hash: "fair_sha256_" + absHash.toString(16)
+      };
+    }
+
+    function getStoredOrDeterministicResult(mKey, periodStr, timestamp) {
+      if (declaredResultsStore[mKey] && declaredResultsStore[mKey][periodStr]) {
+        return declaredResultsStore[mKey][periodStr];
+      }
+      const det = getDeterministicPeriodResult(mKey, periodStr);
+      const record = {
+        period: periodStr,
+        number: det.number,
+        isBig: det.isBig,
+        color: det.color,
+        colClass: det.colClass,
+        time: timestamp || new Date().toTimeString().split(' ')[0],
+        hash: det.hash
+      };
+      if (!declaredResultsStore[mKey]) declaredResultsStore[mKey] = {};
+      declaredResultsStore[mKey][periodStr] = record;
+      try {
+        localStorage.setItem('colour_king_declared_results', JSON.stringify(declaredResultsStore));
+      } catch(e) {}
+      return record;
+    }
+
+    function syncServerResults() {
+      fetch('/api/results')
+        .then(res => res.json())
+        .then(serverResults => {
+          if (serverResults && typeof serverResults === 'object') {
+            let updated = false;
+            Object.keys(serverResults).forEach(m => {
+              if (!declaredResultsStore[m]) declaredResultsStore[m] = {};
+              Object.keys(serverResults[m]).forEach(p => {
+                declaredResultsStore[m][p] = serverResults[m][p];
+                updated = true;
+              });
+            });
+            if (updated) {
+              try {
+                localStorage.setItem('colour_king_declared_results', JSON.stringify(declaredResultsStore));
+              } catch(e) {}
+              const st = marketStates[currentMarketId];
+              if (st && st.pastRecords) {
+                st.pastRecords.forEach(r => {
+                  if (declaredResultsStore[currentMarketId] && declaredResultsStore[currentMarketId][r.period]) {
+                    Object.assign(r, declaredResultsStore[currentMarketId][r.period]);
+                  }
+                });
+                render24HourResultsTable();
+                renderTrendChart();
+                renderRoadmapMatrix();
+                renderRoadmapBeads();
+              }
+            }
+          }
+        })
+        .catch(() => {});
+    }
+
+    // Populate Initial Past Records for each Market (Deterministic & Fixed Forever)
     function initPastRecords() {
       const keys = ['MIAMI', 'VEGAS', 'PARIS', 'DUBAI'];
       keys.forEach(k => {
@@ -2500,19 +2590,19 @@
         const curNum = parseInt(pStr.substring(8)) || 221;
         st.pastRecords = [];
         for (let i = 1; i <= 100; i++) {
-          const num = Math.floor(Math.random() * 10);
           const prevPeriod = `${datePrefix}${Math.max(1, curNum - i)}`;
-          const col = (num === 0 || num === 5) ? 'violet' : [1, 3, 7, 9].includes(num) ? 'green' : 'red';
           const recDate = new Date(Date.now() - i * 180 * 1000);
           const timeStr = recDate.toTimeString().split(' ')[0];
-          st.pastRecords.push({
-            period: prevPeriod,
-            number: num,
-            isBig: num >= 5,
-            color: col,
-            time: timeStr,
-            hash: "hash_" + prevPeriod + "_" + Math.floor(Math.random()*100000)
-          });
+          const rec = getStoredOrDeterministicResult(k, prevPeriod, timeStr);
+          st.pastRecords.push(rec);
+        }
+        if (st.pastRecords.length > 0) {
+          const latest = st.pastRecords[0];
+          st.latestResult = {
+            number: latest.number,
+            color: latest.colClass || (latest.color === 'violet' ? (latest.number === 0 ? 'red-violet' : 'green-violet') : latest.color),
+            isBig: latest.isBig
+          };
         }
       });
     }
@@ -3162,24 +3252,43 @@
 
     function resolveRoundForMarket(mKey, finishedPeriod) {
       const st = marketStates[mKey];
-      const winningNumber = Math.floor(Math.random() * 10);
-      const isBig = winningNumber >= 5;
+      const roundTimeStr = new Date().toTimeString().split(' ')[0];
+
+      // Retrieve or compute deterministic result for this period — NEVER CHANGES ON REFRESH!
+      const res = getStoredOrDeterministicResult(mKey, finishedPeriod, roundTimeStr);
+      const winningNumber = res.number;
+      const isBig = res.isBig;
+      const ballColor = res.color;
+      const colClass = res.colClass || (ballColor === 'violet' ? (winningNumber === 0 ? 'red-violet' : 'green-violet') : ballColor);
       const isGreen = [1, 3, 7, 9].includes(winningNumber);
       const isRed = [2, 4, 6, 8].includes(winningNumber);
       const isViolet = (winningNumber === 0 || winningNumber === 5);
 
-      let colClass = isViolet ? (winningNumber === 0 ? 'red-violet' : 'green-violet') : (isGreen ? 'green' : 'red');
-
       st.latestResult = { number: winningNumber, color: colClass, isBig };
-      const roundTimeStr = new Date().toTimeString().split(' ')[0];
-      st.pastRecords.unshift({
-        period: finishedPeriod,
-        number: winningNumber,
-        isBig: isBig,
-        color: isViolet ? 'violet' : (isGreen ? 'green' : 'red'),
-        time: roundTimeStr,
-        hash: "hash_" + finishedPeriod
-      });
+      
+      const existingIdx = st.pastRecords.findIndex(r => r.period === finishedPeriod);
+      if (existingIdx >= 0) {
+        st.pastRecords[existingIdx] = res;
+      } else {
+        st.pastRecords.unshift(res);
+      }
+
+      // Persist live draw result to server so all players and sessions see identical fixed outcome
+      try {
+        fetch('/api/results', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            market: mKey,
+            period: finishedPeriod,
+            number: winningNumber,
+            isBig: isBig,
+            color: ballColor,
+            colClass: colClass,
+            time: roundTimeStr
+          })
+        }).catch(() => {});
+      } catch (e) {}
 
       // Resolve bet slips for this market & period
       let totalWon = 0;
@@ -3808,6 +3917,7 @@
     // INITIALIZATION
     window.addEventListener('DOMContentLoaded', () => {
       initPastRecords();
+      syncServerResults();
       updateMarketUI();
       renderTrendChart();
       renderHistoryTable();

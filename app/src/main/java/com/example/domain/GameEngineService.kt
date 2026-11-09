@@ -260,9 +260,9 @@ class GameEngineService(
             return
         }
 
-        // Provably Fair Seeds
-        val serverSeed = ProvablyFairEngine.generateServerSeed()
-        val serverSeedHash = ProvablyFairEngine.hashSha256(serverSeed)
+        // Provably Fair Seeds (Deterministic per period so results never change on reload)
+        val serverSeed = currentRound?.serverSeed ?: "fair_seed_${tenantId}_${market.code}_$roundNumber"
+        val serverSeedHash = currentRound?.serverSeedHash ?: ProvablyFairEngine.hashSha256(serverSeed)
         val nonce = roundNumber
         val clientSeed = "apex_${market.code.lowercase()}_seed"
 

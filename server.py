@@ -183,6 +183,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._send_json(state.get("withdrawals", []))
             return
 
+        if path == '/api/results':
+            state = load_state()
+            self._send_json(state.get("declared_results", {}))
+            return
+
         return super().do_GET()
 
     def do_POST(self):
@@ -201,6 +206,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             state["bank_config"].update(payload)
             save_state(state)
             self._send_json({ "success": True, "bank_config": state["bank_config"] })
+            return
+
+        if path == '/api/results':
+            m_key = str(payload.get("market", "MIAMI")).upper()
+            period = str(payload.get("period", "")).strip()
+            if period:
+                if "declared_results" not in state:
+                    state["declared_results"] = {}
+                if m_key not in state["declared_results"]:
+                    state["declared_results"][m_key] = {}
+                state["declared_results"][m_key][period] = payload
+                save_state(state)
+            self._send_json({ "success": True })
             return
 
         if path == '/api/user/balance' or path == '/api/wallet/sync':

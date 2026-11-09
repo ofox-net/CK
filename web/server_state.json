@@ -176,5 +176,17 @@
       "time": "Today, 08:40 AM",
       "status": "APPROVED"
     }
-  ]
+  ],
+  "declared_results": {
+    "MIAMI": {
+      "202611090220": {
+        "market": "MIAMI",
+        "period": "202611090220",
+        "number": 8,
+        "isBig": true,
+        "color": "red",
+        "time": "11:20:00"
+      }
+    }
+  }
 }
