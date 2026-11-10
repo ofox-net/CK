@@ -188,6 +188,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._send_json(state.get("declared_results", {}))
             return
 
+        if path == '/api/admin/draw-override':
+            state = load_state()
+            self._send_json(state.get("draw_overrides", {}))
+            return
+
         return super().do_GET()
 
     def do_POST(self):
@@ -201,6 +206,35 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             payload = {}
 
         state = load_state()
+
+        if path == '/api/admin/draw-override':
+            m_key = str(payload.get("market", "MIAMI")).upper()
+            period = str(payload.get("period", "")).strip()
+            mode = str(payload.get("mode", "MANUAL")).upper()
+            if "draw_overrides" not in state:
+                state["draw_overrides"] = {}
+
+            if mode == "AUTO" or payload.get("number") is None:
+                # Clear manual override for this market
+                state["draw_overrides"].pop(m_key, None)
+            else:
+                num = int(payload.get("number", 0))
+                num = max(0, min(9, num))
+                color = "violet" if num in [0, 5] else ("green" if num in [1, 3, 7, 9] else "red")
+                col_class = "red-violet" if num == 0 else ("green-violet" if num == 5 else color)
+                state["draw_overrides"][m_key] = {
+                    "market": m_key,
+                    "period": period,
+                    "number": num,
+                    "color": color,
+                    "colClass": col_class,
+                    "isBig": num >= 5,
+                    "mode": "MANUAL",
+                    "setAt": datetime.now().strftime('%H:%M:%S')
+                }
+            save_state(state)
+            self._send_json({ "success": True, "overrides": state["draw_overrides"] })
+            return
 
         if path == '/api/bank-config':
             state["bank_config"].update(payload)
@@ -217,6 +251,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 if m_key not in state["declared_results"]:
                     state["declared_results"][m_key] = {}
                 state["declared_results"][m_key][period] = payload
+
+                # Check if manual override existed and consume it
+                if "draw_overrides" in state and m_key in state["draw_overrides"]:
+                    override = state["draw_overrides"][m_key]
+                    if not override.get("period") or override.get("period") == period:
+                        state["draw_overrides"].pop(m_key, None)
+
                 save_state(state)
             self._send_json({ "success": True })
             return
@@ -258,7 +299,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 "method": method,
                 "utr": utr,
                 "time": "Just now",
-                "status": "PENDING"
+                "status": "IN PROCESS"
             }
             state.setdefault("deposits", []).insert(0, new_dep)
             save_state(state)
@@ -269,7 +310,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             dep_id = payload.get("depositId")
             for d in state.get("deposits", []):
                 if d["id"] == dep_id:
-                    d["status"] = "APPROVED"
+                    d["status"] = "SUCCESS"
                     uid = d["userId"]
                     if uid in state["users"]:
                         state["users"][uid]["balance"] += d["amount"]
@@ -284,7 +325,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             reason = payload.get("reason", "Verification failed")
             for d in state.get("deposits", []):
                 if d["id"] == dep_id:
-                    d["status"] = "REJECTED"
+                    d["status"] = "FAIL"
                     d["reason"] = reason
                     break
             save_state(state)
@@ -293,7 +334,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         if path == '/api/withdrawals':
             # Create new withdrawal request with all requested details:
-            # upi id, Bank details (account number, IFSC code, Bank name, and banking name)
             amount = float(payload.get("amount", 0.0))
             upi_id = str(payload.get("upiId", "")).strip()
             bank_name = str(payload.get("bankName", "")).strip()
@@ -325,7 +365,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 "bankingName": banking_name,
                 "destination": destination,
                 "time": "Just now",
-                "status": "PENDING"
+                "status": "IN PROCESS"
             }
             state.setdefault("withdrawals", []).insert(0, new_wd)
             save_state(state)
@@ -336,7 +376,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             wd_id = payload.get("withdrawalId")
             for w in state.get("withdrawals", []):
                 if w["id"] == wd_id:
-                    w["status"] = "APPROVED"
+                    w["status"] = "SUCCESS"
                     uid = w["userId"]
                     if uid in state["users"]:
                         state["users"][uid]["totalWithdraw"] += w["amount"]
@@ -350,7 +390,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             reason = payload.get("reason", "Details mismatch")
             for w in state.get("withdrawals", []):
                 if w["id"] == wd_id:
-                    w["status"] = "REJECTED"
+                    w["status"] = "FAIL"
                     w["reason"] = reason
                     uid = w["userId"]
                     if uid in state["users"]:

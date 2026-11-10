@@ -926,9 +926,9 @@
           <div class="filter-bar">
             <div class="filter-pills">
               <button class="filter-pill active" onclick="filterDeposits('ALL', this)">All Requests</button>
-              <button class="filter-pill" onclick="filterDeposits('PENDING', this)">Pending</button>
-              <button class="filter-pill" onclick="filterDeposits('APPROVED', this)">Approved</button>
-              <button class="filter-pill" onclick="filterDeposits('REJECTED', this)">Rejected</button>
+              <button class="filter-pill" onclick="filterDeposits('IN PROCESS', this)">In Process</button>
+              <button class="filter-pill" onclick="filterDeposits('SUCCESS', this)">Success</button>
+              <button class="filter-pill" onclick="filterDeposits('FAIL', this)">Fail</button>
             </div>
             <input type="text" class="search-input" placeholder="Search by UTR or Username..." id="searchDepositInput" oninput="renderDepositsTable()" />
           </div>
@@ -973,9 +973,9 @@
           <div class="filter-bar">
             <div class="filter-pills">
               <button class="filter-pill active" onclick="filterWithdrawals('ALL', this)">All</button>
-              <button class="filter-pill" onclick="filterWithdrawals('PENDING', this)">Pending</button>
-              <button class="filter-pill" onclick="filterWithdrawals('APPROVED', this)">Approved / Paid</button>
-              <button class="filter-pill" onclick="filterWithdrawals('REJECTED', this)">Rejected</button>
+              <button class="filter-pill" onclick="filterWithdrawals('IN PROCESS', this)">In Process</button>
+              <button class="filter-pill" onclick="filterWithdrawals('SUCCESS', this)">Success</button>
+              <button class="filter-pill" onclick="filterWithdrawals('FAIL', this)">Fail</button>
             </div>
             <input type="text" class="search-input" placeholder="Search User or Bank Account..." id="searchWithdrawalInput" oninput="renderWithdrawalsTable()" />
           </div>
@@ -1134,12 +1134,15 @@
             </div>
 
             <!-- Action Buttons -->
-            <div style="display:flex; gap:10px; margin-top:6px;">
-              <button class="btn btn-gold" style="flex:1;" onclick="applyResultOverrideNow()">
-                ⚡ Force Declare Outcome Now
+            <div style="display:flex; gap:10px; margin-top:8px; flex-wrap:wrap;">
+              <button class="btn btn-gold" style="flex:2; font-weight:800;" onclick="setManualDrawOutcome()">
+                👑 Set Manual Draw Outcome
               </button>
-              <button class="btn btn-secondary" onclick="presetNextRoundOutcome()">
-                ⏳ Preset For Next Round
+              <button class="btn btn-secondary" style="flex:1;" onclick="clearManualDrawOverride()">
+                🎲 Auto-Random Mode
+              </button>
+              <button class="btn btn-secondary" style="flex:1;" onclick="applyResultOverrideNow()">
+                ⚡ Force Draw Now
               </button>
             </div>
           </div>
@@ -1899,11 +1902,11 @@
 
     // 4. DEPOSIT REQUESTS
     const defaultDeposits = [
-      { id: "DEP-88401", userId: "USR-1001", userName: "Rahul_Player", amount: 5000.00, method: "UPI (GooglePay)", utr: "429188402911", time: "Today, 11:24 AM", status: "PENDING" },
-      { id: "DEP-88402", userId: "USR-1002", userName: "Aman_Trader", amount: 10000.00, method: "IMPS SBI NetBanking", utr: "902184716294", time: "Today, 11:18 AM", status: "PENDING" },
-      { id: "DEP-88403", userId: "USR-1006", userName: "Karan_Pro", amount: 2500.00, method: "Paytm UPI QR", utr: "419082736184", time: "Today, 10:45 AM", status: "PENDING" },
-      { id: "DEP-88399", userId: "USR-1003", userName: "Priya_VIP", amount: 50000.00, method: "HDFC IMPS", utr: "389271628190", time: "Today, 09:12 AM", status: "APPROVED" },
-      { id: "DEP-88398", userId: "USR-1005", userName: "Suspicious_Bot1", amount: 15000.00, method: "UPI", utr: "000000000000", time: "Yesterday, 18:30 PM", status: "REJECTED", reason: "Invalid / fake UTR" }
+      { id: "DEP-88401", userId: "USR-1001", userName: "Rahul_Player", amount: 5000.00, method: "UPI (GooglePay)", utr: "429188402911", time: "Today, 11:24 AM", status: "IN PROCESS" },
+      { id: "DEP-88402", userId: "USR-1002", userName: "Aman_Trader", amount: 10000.00, method: "IMPS SBI NetBanking", utr: "902184716294", time: "Today, 11:18 AM", status: "IN PROCESS" },
+      { id: "DEP-88403", userId: "USR-1006", userName: "Karan_Pro", amount: 2500.00, method: "Paytm UPI QR", utr: "419082736184", time: "Today, 10:45 AM", status: "IN PROCESS" },
+      { id: "DEP-88399", userId: "USR-1003", userName: "Priya_VIP", amount: 50000.00, method: "HDFC IMPS", utr: "389271628190", time: "Today, 09:12 AM", status: "SUCCESS" },
+      { id: "DEP-88398", userId: "USR-1005", userName: "Suspicious_Bot1", amount: 15000.00, method: "UPI", utr: "000000000000", time: "Yesterday, 18:30 PM", status: "FAIL", reason: "Invalid / fake UTR" }
     ];
 
     let depositRequests = JSON.parse(localStorage.getItem(KEY_DEPOSITS)) || defaultDeposits;
@@ -1922,7 +1925,7 @@
         ifsc: "SBIN0001824",
         destination: "Rahul Kumar Sharma • SBI (A/C: 40928172901, IFSC: SBIN0001824) • UPI: rahul@oksbi",
         time: "Today, 11:32 AM",
-        status: "PENDING"
+        status: "IN PROCESS"
       },
       {
         id: "WD-99413",
@@ -1936,7 +1939,7 @@
         ifsc: "HDFC000124",
         destination: "Vikram Sethi • HDFC (A/C: 5010049281729, IFSC: HDFC000124) • UPI: vikram99@icici",
         time: "Today, 10:55 AM",
-        status: "PENDING"
+        status: "IN PROCESS"
       },
       {
         id: "WD-99410",
@@ -2025,12 +2028,12 @@
     function recalculateMasterKPIs() {
       let totalDep = 0;
       depositRequests.forEach(d => {
-        if (d.status === 'APPROVED') totalDep += d.amount;
+        if (d.status === 'SUCCESS' || d.status === 'APPROVED') totalDep += d.amount;
       });
 
       let totalWd = 0;
       withdrawalRequests.forEach(w => {
-        if (w.status === 'APPROVED') totalWd += w.amount;
+        if (w.status === 'SUCCESS' || w.status === 'APPROVED') totalWd += w.amount;
       });
 
       let netProfit = totalDep - totalWd;
@@ -2050,10 +2053,10 @@
       document.getElementById('kpiBlockedUsers').innerText = `${blockedUsers} Blocked`;
 
       // Badge counts in sidebar
-      const pendingDepCount = depositRequests.filter(d => d.status === 'PENDING').length;
-      const pendingWdCount = withdrawalRequests.filter(w => w.status === 'PENDING').length;
-      document.getElementById('navDepositCount').innerText = `${pendingDepCount} PENDING`;
-      document.getElementById('navWithdrawCount').innerText = `${pendingWdCount} PENDING`;
+      const pendingDepCount = depositRequests.filter(d => d.status === 'IN PROCESS' || d.status === 'PENDING').length;
+      const pendingWdCount = withdrawalRequests.filter(w => w.status === 'IN PROCESS' || w.status === 'PENDING').length;
+      document.getElementById('navDepositCount').innerText = `${pendingDepCount} IN PROCESS`;
+      document.getElementById('navWithdrawCount').innerText = `${pendingWdCount} IN PROCESS`;
     }
 
     // Navigation Switcher
@@ -2091,12 +2094,31 @@
       const q = (document.getElementById('searchDepositInput')?.value || '').toLowerCase();
       const tbody = document.getElementById('depositsTableBody');
       const filtered = depositRequests.filter(d => {
-        const matchesStatus = (currentDepositFilter === 'ALL' || d.status === currentDepositFilter);
-        const matchesQuery = (!q || d.utr.toLowerCase().includes(q) || d.userName.toLowerCase().includes(q) || d.id.toLowerCase().includes(q));
+        const isProcess = d.status === 'IN PROCESS' || d.status === 'PENDING';
+        const isSuccess = d.status === 'SUCCESS' || d.status === 'APPROVED';
+        const isFail = d.status === 'FAIL' || d.status === 'REJECTED';
+        
+        let matchesStatus = true;
+        if (currentDepositFilter === 'IN PROCESS') matchesStatus = isProcess;
+        else if (currentDepositFilter === 'SUCCESS') matchesStatus = isSuccess;
+        else if (currentDepositFilter === 'FAIL') matchesStatus = isFail;
+
+        const matchesQuery = (!q || (d.utr && d.utr.toLowerCase().includes(q)) || (d.userName && d.userName.toLowerCase().includes(q)) || d.id.toLowerCase().includes(q));
         return matchesStatus && matchesQuery;
       });
 
-      tbody.innerHTML = filtered.map(d => `
+      tbody.innerHTML = filtered.map(d => {
+        const isProcess = d.status === 'IN PROCESS' || d.status === 'PENDING';
+        const isSuccess = d.status === 'SUCCESS' || d.status === 'APPROVED';
+        const isFail = d.status === 'FAIL' || d.status === 'REJECTED';
+
+        const badgeHtml = isProcess
+          ? `<span class="badge" style="background:rgba(255, 170, 0, 0.18); color:#FFAA00; border:1px solid #FFAA00;">⏳ IN PROCESS</span>`
+          : isSuccess
+          ? `<span class="badge" style="background:rgba(0, 230, 118, 0.18); color:#00E676; border:1px solid #00E676;">✓ SUCCESS</span>`
+          : `<span class="badge" style="background:rgba(255, 82, 82, 0.18); color:#FF5252; border:1px solid #FF5252;">✕ FAIL${d.reason ? `: ${d.reason}` : ''}</span>`;
+
+        return `
         <tr>
           <td><strong style="color:var(--gold); font-family:monospace;">${d.id}</strong></td>
           <td>
@@ -2113,20 +2135,18 @@
           </td>
           <td style="font-size:11px; color:var(--text-muted);">${d.time}</td>
           <td>
-            <span class="badge ${d.status === 'APPROVED' ? 'badge-approved' : d.status === 'REJECTED' ? 'badge-rejected' : 'badge-pending'}">
-              ${d.status}
-            </span>
+            ${badgeHtml}
           </td>
           <td>
-            ${d.status === 'PENDING' ? `
+            ${isProcess ? `
               <div style="display:flex; gap:6px;">
-                <button class="btn btn-green btn-sm" onclick="approveDeposit('${d.id}')">Approve</button>
-                <button class="btn btn-red btn-sm" onclick="promptRejectDeposit('${d.id}')">Reject</button>
+                <button class="btn btn-green btn-sm" onclick="approveDeposit('${d.id}')">✓ Approve</button>
+                <button class="btn btn-red btn-sm" onclick="promptRejectDeposit('${d.id}')">✕ Reject</button>
               </div>
-            ` : `<span style="font-size:11px; color:var(--text-muted);">Resolved</span>`}
+            ` : `<span style="font-size:11px; color:var(--text-muted); font-weight:700;">Resolved</span>`}
           </td>
         </tr>
-      `).join('');
+      `}).join('');
 
       renderQuickDepositList();
     }
@@ -2134,7 +2154,14 @@
     function approveDeposit(depositId) {
       const dep = depositRequests.find(d => d.id === depositId);
       if (!dep) return;
-      dep.status = 'APPROVED';
+      dep.status = 'SUCCESS';
+
+      // Call backend API to approve deposit & credit balance on server
+      fetch('/api/deposits/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ depositId })
+      }).catch(() => {});
 
       // Credit to user's wallet
       const user = usersList.find(u => u.id === dep.userId);
@@ -2148,14 +2175,14 @@
         actor: "SuperAdmin",
         action: "DEPOSIT_APPROVE",
         entity: depositId,
-        desc: `Approved deposit of ₹${dep.amount.toFixed(2)} for ${dep.userName} (${dep.userId})`
+        desc: `Approved deposit of ₹${dep.amount.toFixed(2)} for ${dep.userName} (${dep.userId}) - Status: SUCCESS`
       });
 
       persistAllState();
       renderDepositsTable();
       renderUsersTable();
       renderAuditTable();
-      showToast(`✅ Approved ₹${dep.amount} deposit for ${dep.userName}!`);
+      showToast(`✅ Approved ₹${dep.amount} deposit (SUCCESS) for ${dep.userName}!`);
     }
 
     function promptRejectDeposit(depositId) {
@@ -2231,6 +2258,8 @@
     // ----------------------------------------------------
     // WITHDRAWAL REQUESTS LOGIC
     // ----------------------------------------------------
+    // WITHDRAWAL REQUESTS LOGIC
+    // ----------------------------------------------------
     let currentWithdrawalFilter = 'ALL';
     function filterWithdrawals(status, btn) {
       currentWithdrawalFilter = status;
@@ -2243,12 +2272,31 @@
       const q = (document.getElementById('searchWithdrawalInput')?.value || '').toLowerCase();
       const tbody = document.getElementById('withdrawalsTableBody');
       const filtered = withdrawalRequests.filter(w => {
-        const matchesStatus = (currentWithdrawalFilter === 'ALL' || w.status === currentWithdrawalFilter);
-        const matchesQuery = (!q || w.userName.toLowerCase().includes(q) || w.destination.toLowerCase().includes(q) || w.id.toLowerCase().includes(q));
+        const isProcess = w.status === 'IN PROCESS' || w.status === 'PENDING';
+        const isSuccess = w.status === 'SUCCESS' || w.status === 'APPROVED';
+        const isFail = w.status === 'FAIL' || w.status === 'REJECTED';
+        
+        let matchesStatus = true;
+        if (currentWithdrawalFilter === 'IN PROCESS') matchesStatus = isProcess;
+        else if (currentWithdrawalFilter === 'SUCCESS') matchesStatus = isSuccess;
+        else if (currentWithdrawalFilter === 'FAIL') matchesStatus = isFail;
+
+        const matchesQuery = (!q || (w.userName && w.userName.toLowerCase().includes(q)) || (w.destination && w.destination.toLowerCase().includes(q)) || w.id.toLowerCase().includes(q));
         return matchesStatus && matchesQuery;
       });
 
-      tbody.innerHTML = filtered.map(w => `
+      tbody.innerHTML = filtered.map(w => {
+        const isProcess = w.status === 'IN PROCESS' || w.status === 'PENDING';
+        const isSuccess = w.status === 'SUCCESS' || w.status === 'APPROVED';
+        const isFail = w.status === 'FAIL' || w.status === 'REJECTED';
+
+        const badgeHtml = isProcess
+          ? `<span class="badge" style="background:rgba(255, 170, 0, 0.18); color:#FFAA00; border:1px solid #FFAA00;">⏳ IN PROCESS</span>`
+          : isSuccess
+          ? `<span class="badge" style="background:rgba(0, 230, 118, 0.18); color:#00E676; border:1px solid #00E676;">✓ SUCCESS</span>`
+          : `<span class="badge" style="background:rgba(255, 82, 82, 0.18); color:#FF5252; border:1px solid #FF5252;">✕ FAIL${w.reason ? `: ${w.reason}` : ''}</span>`;
+
+        return `
         <tr>
           <td><strong style="color:var(--gold); font-family:monospace;">${w.id}</strong></td>
           <td>
@@ -2274,20 +2322,18 @@
           </td>
           <td style="font-size:11px; color:var(--text-muted);">${w.time}</td>
           <td>
-            <span class="badge ${w.status === 'APPROVED' ? 'badge-approved' : w.status === 'REJECTED' ? 'badge-rejected' : 'badge-pending'}">
-              ${w.status}
-            </span>
+            ${badgeHtml}
           </td>
           <td>
-            ${w.status === 'PENDING' ? `
+            ${isProcess ? `
               <div style="display:flex; gap:6px;">
-                <button class="btn btn-green btn-sm" onclick="approveWithdrawal('${w.id}')">Approve & Pay</button>
-                <button class="btn btn-red btn-sm" onclick="promptRejectWithdrawal('${w.id}')">Reject</button>
+                <button class="btn btn-green btn-sm" onclick="approveWithdrawal('${w.id}')">✓ Approve & Pay</button>
+                <button class="btn btn-red btn-sm" onclick="promptRejectWithdrawal('${w.id}')">✕ Reject</button>
               </div>
-            ` : `<span style="font-size:11px; color:var(--text-muted);">Processed</span>`}
+            ` : `<span style="font-size:11px; color:var(--text-muted); font-weight:700;">Processed</span>`}
           </td>
         </tr>
-      `).join('');
+      `}).join('');
 
       renderQuickWithdrawalList();
     }
@@ -2295,7 +2341,14 @@
     function approveWithdrawal(withdrawalId) {
       const wd = withdrawalRequests.find(w => w.id === withdrawalId);
       if (!wd) return;
-      wd.status = 'APPROVED';
+      wd.status = 'SUCCESS';
+
+      // Call backend API
+      fetch('/api/withdrawals/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ withdrawalId })
+      }).catch(() => {});
 
       const user = usersList.find(u => u.id === wd.userId);
       if (user) {
@@ -2307,14 +2360,14 @@
         actor: "SuperAdmin",
         action: "WITHDRAWAL_PAYOUT",
         entity: withdrawalId,
-        desc: `Executed payout of ₹${wd.amount.toFixed(2)} to ${wd.destination} for ${wd.userName}`
+        desc: `Executed payout of ₹${wd.amount.toFixed(2)} to ${wd.destination} for ${wd.userName} - Status: SUCCESS`
       });
 
       persistAllState();
       renderWithdrawalsTable();
       renderUsersTable();
       renderAuditTable();
-      showToast(`💸 Processed ₹${wd.amount} payout to ${wd.userName}!`);
+      showToast(`💸 Processed ₹${wd.amount} payout (SUCCESS) to ${wd.userName}!`);
     }
 
     function promptRejectWithdrawal(withdrawalId) {
@@ -2325,7 +2378,7 @@
 
     function renderQuickWithdrawalList() {
       const el = document.getElementById('quickWithdrawalList');
-      const pending = withdrawalRequests.filter(w => w.status === 'PENDING').slice(0, 3);
+      const pending = withdrawalRequests.filter(w => w.status === 'IN PROCESS' || w.status === 'PENDING').slice(0, 3);
       if (pending.length === 0) {
         el.innerHTML = `<p style="font-size:12px; color:var(--text-muted); text-align:center; padding:16px;">Withdrawal escrow queue is clear. No pending payouts.</p>`;
         return;
@@ -2338,7 +2391,7 @@
           </div>
           <div style="text-align:right;">
             <div style="font-size:14px; font-weight:900; color:var(--gold);">₹${w.amount.toFixed(2)}</div>
-            <button class="btn btn-green btn-sm" style="margin-top:4px;" onclick="approveWithdrawal('${w.id}')">Approve & Pay</button>
+            <button class="btn btn-green btn-sm" style="margin-top:4px;" onclick="approveWithdrawal('${w.id}')">✓ Approve & Pay</button>
           </div>
         </div>
       `).join('');
@@ -2354,12 +2407,12 @@
         amount: amount,
         destination: `UPI: ${randUser.name.toLowerCase()}@okhdfcbank`,
         time: "Just now",
-        status: "PENDING"
+        status: "IN PROCESS"
       };
       withdrawalRequests.unshift(newWd);
       persistAllState();
       renderWithdrawalsTable();
-      showToast(`📤 New Withdrawal Request from ${randUser.name}: ₹${amount}!`);
+      showToast(`📤 New Withdrawal Request from ${randUser.name}: ₹${amount}! Status: IN PROCESS`);
     }
 
     // Confirm Rejection Modal Logic
@@ -2378,21 +2431,35 @@
       if (pendingRejectAction.type === 'DEPOSIT') {
         const dep = depositRequests.find(d => d.id === pendingRejectAction.id);
         if (dep) {
-          dep.status = 'REJECTED';
+          dep.status = 'FAIL';
           dep.reason = reason;
+
+          fetch('/api/deposits/reject', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ depositId: dep.id, reason })
+          }).catch(() => {});
+
           auditLogs.unshift({
             time: new Date().toLocaleTimeString(),
             actor: "SuperAdmin",
             action: "DEPOSIT_REJECT",
             entity: dep.id,
-            desc: `Rejected deposit of ₹${dep.amount}: ${reason}`
+            desc: `Rejected deposit of ₹${dep.amount}: FAIL (${reason})`
           });
         }
       } else if (pendingRejectAction.type === 'WITHDRAWAL') {
         const wd = withdrawalRequests.find(w => w.id === pendingRejectAction.id);
         if (wd) {
-          wd.status = 'REJECTED';
+          wd.status = 'FAIL';
           wd.reason = reason;
+
+          fetch('/api/withdrawals/reject', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ withdrawalId: wd.id, reason })
+          }).catch(() => {});
+
           // Refund back to user's wallet balance
           const user = usersList.find(u => u.id === wd.userId);
           if (user) {
@@ -2403,7 +2470,7 @@
             actor: "SuperAdmin",
             action: "WITHDRAWAL_REJECT",
             entity: wd.id,
-            desc: `Rejected withdrawal of ₹${wd.amount} and refunded balance: ${reason}`
+            desc: `Rejected withdrawal of ₹${wd.amount} and refunded balance: FAIL (${reason})`
           });
         }
       }
@@ -2427,6 +2494,7 @@
         if (btn) btn.className = (k === mKey ? 'btn btn-gold btn-sm active' : 'btn btn-secondary btn-sm');
       });
       updateDeciderPeriodDisplay();
+      updateAdminOverrideBadge();
     }
 
     function pickWinningNumber(num) {
@@ -2488,8 +2556,68 @@
       showToast(`🎯 Outcome ${selectedWinningNumber} (${color}) published for ${selectedDeciderMarket}!`);
     }
 
-    function presetNextRoundOutcome() {
-      showToast(`⏳ Outcome ${selectedWinningNumber} pre-scheduled for next round in ${selectedDeciderMarket}!`);
+    function setManualDrawOutcome() {
+      const sync = getGlobalSyncedRoundState();
+      const currentPeriodNum = sync.fullPeriodId;
+      const color = (selectedWinningNumber === 0 ? 'VIOLET+RED' : selectedWinningNumber === 5 ? 'VIOLET+GREEN' : [1, 3, 7, 9].includes(selectedWinningNumber) ? 'GREEN' : 'RED');
+
+      fetch('/api/admin/draw-override', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          market: selectedDeciderMarket,
+          period: currentPeriodNum,
+          number: selectedWinningNumber,
+          mode: 'MANUAL'
+        })
+      })
+      .then(res => res.json())
+      .then(data => {
+        showToast(`👑 Manual Draw SET: Number ${selectedWinningNumber} (${color}) will declare for ${selectedDeciderMarket} #${currentPeriodNum}!`);
+        updateAdminOverrideBadge();
+      })
+      .catch(() => {
+        showToast(`Set manual draw locally for ${selectedDeciderMarket} #${currentPeriodNum}`);
+        updateAdminOverrideBadge();
+      });
+    }
+
+    function clearManualDrawOverride() {
+      fetch('/api/admin/draw-override', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          market: selectedDeciderMarket,
+          mode: 'AUTO'
+        })
+      })
+      .then(res => res.json())
+      .then(data => {
+        showToast(`🎲 Set to AUTO-RANDOM: ${selectedDeciderMarket} will draw randomly when timer expires.`);
+        updateAdminOverrideBadge();
+      })
+      .catch(() => {
+        showToast(`Set to AUTO-RANDOM mode.`);
+        updateAdminOverrideBadge();
+      });
+    }
+
+    function updateAdminOverrideBadge() {
+      fetch('/api/admin/draw-override')
+        .then(res => res.json())
+        .then(overrides => {
+          const badge = document.getElementById('adminOverrideBadge');
+          if (!badge) return;
+          const ov = overrides && overrides[selectedDeciderMarket];
+          if (ov && ov.mode === 'MANUAL') {
+            badge.className = 'badge badge-alert';
+            badge.innerText = `MANUAL DRAW: [${ov.number} - ${ov.color.toUpperCase()}]`;
+          } else {
+            badge.className = 'badge badge-approved';
+            badge.innerText = 'MODE: AUTO RANDOM';
+          }
+        })
+        .catch(() => {});
     }
 
     function updateDeciderPeriodDisplay() {

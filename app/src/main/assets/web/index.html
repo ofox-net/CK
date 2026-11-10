@@ -2166,11 +2166,23 @@
   <!-- JAVASCRIPT APP LOGIC                       -->
   <!-- ========================================== -->
   <script>
-    // Global User State
-    let currentUserId = 'USR-1001';
-    let currentUserName = 'Rahul_Player';
-    let userBalance = 50200.00;
+    // Global User State - Authenticated session handling
+    let currentUserId = null;
+    let currentUserName = 'Guest';
+    let userBalance = 0.00;
     let isSoundEnabled = true;
+
+    try {
+      const savedSession = localStorage.getItem('colour_king_user_session');
+      if (savedSession) {
+        const parsed = JSON.parse(savedSession);
+        if (parsed && parsed.id) {
+          currentUserId = parsed.id;
+          currentUserName = parsed.name || 'Player';
+          userBalance = typeof parsed.balance === 'number' ? parsed.balance : 50200.00;
+        }
+      }
+    } catch (e) {}
 
     // 4 MARKETS CONFIGURATION
     const MARKETS = {
@@ -2269,48 +2281,45 @@
       }
     };
 
-    // User Placed Bet Slips History
-    let userBetSlipsHistory = [
-      {
-        id: 'SLIP-9901',
-        marketId: 'MIAMI',
-        marketName: 'MIAMI MARKET',
-        period: initialSync.fullPeriodId,
-        target: 'BIG',
-        type: 'BIG_SMALL',
-        mult: 2.0,
-        amount: 500,
-        time: 'Today, 11:28:45 AM',
-        status: 'WAIT', // WAIT, WON, LOST
-        result: 'Awaiting Draw'
-      },
-      {
-        id: 'SLIP-9892',
-        marketId: 'MIAMI',
-        marketName: 'MIAMI MARKET',
-        period: (parseInt(initialSync.fullPeriodId) - 1).toString(),
-        target: 'RED',
-        type: 'COLOR',
-        mult: 2.0,
-        amount: 1000,
-        time: 'Today, 11:25:12 AM',
-        status: 'WON',
-        result: 'Won ₹2,000.00 (Outcome 8 RED)'
-      },
-      {
-        id: 'SLIP-9884',
-        marketId: 'VEGAS',
-        marketName: 'VEGAS MARKET',
-        period: (parseInt(initialSync.fullPeriodId) - 2).toString(),
-        target: 'GREEN',
-        type: 'COLOR',
-        mult: 2.0,
-        amount: 250,
-        time: 'Today, 11:21:40 AM',
-        status: 'LOST',
-        result: 'Lost (Outcome 4 RED)'
+    // User Placed Bet Slips History (Loaded from localStorage or empty, NEVER hardcoding active WAIT bets)
+    let userBetSlipsHistory = [];
+    try {
+      const savedSlips = localStorage.getItem('colour_king_user_bet_slips');
+      if (savedSlips) {
+        userBetSlipsHistory = JSON.parse(savedSlips);
       }
-    ];
+    } catch (e) {}
+
+    if (!Array.isArray(userBetSlipsHistory) || userBetSlipsHistory.length === 0) {
+      userBetSlipsHistory = [
+        {
+          id: 'SLIP-9892',
+          marketId: 'MIAMI',
+          marketName: 'MIAMI MARKET',
+          period: (parseInt(initialSync.fullPeriodId) - 1).toString(),
+          target: 'RED',
+          type: 'COLOR',
+          mult: 2.0,
+          amount: 1000,
+          time: 'Today, 11:25:12 AM',
+          status: 'WON',
+          result: 'Won ₹2,000.00 (Outcome 8 RED)'
+        },
+        {
+          id: 'SLIP-9884',
+          marketId: 'VEGAS',
+          marketName: 'VEGAS MARKET',
+          period: (parseInt(initialSync.fullPeriodId) - 2).toString(),
+          target: 'GREEN',
+          type: 'COLOR',
+          mult: 2.0,
+          amount: 250,
+          time: 'Today, 11:21:40 AM',
+          status: 'LOST',
+          result: 'Lost (Outcome 4 RED)'
+        }
+      ];
+    }
 
     // Transaction Ledger History
     let walletLedger = [
@@ -2575,6 +2584,19 @@
                 renderRoadmapBeads();
               }
             }
+          }
+        })
+        .catch(() => {});
+    }
+
+    // Admin Manual Draw Override Sync
+    let activeAdminOverrides = {};
+    function syncAdminDrawOverrides() {
+      fetch('/api/admin/draw-override')
+        .then(res => res.json())
+        .then(data => {
+          if (data && typeof data === 'object') {
+            activeAdminOverrides = data;
           }
         })
         .catch(() => {});
@@ -2973,6 +2995,11 @@
     let pendingBet = { type: 'COLOR', target: 'GREEN', mult: 2.0, chip: 100, qty: 1 };
 
     function openBetModal(type, target, mult) {
+      if (!currentUserId || currentUserId === 'Guest') {
+        showToast('⚠️ Please login or register to place bets!');
+        openAuthModal();
+        return;
+      }
       const st = marketStates[currentMarketId];
       if (st.isBettingLocked) {
         showToast('⚠️ Betting locked for current round (Last 30s)!');
@@ -3228,8 +3255,15 @@
     }
 
     // GAME ENGINE & GLOBAL CLOCK TICKER
+    let engineTickCount = 0;
     function startEngineLoop() {
+      syncAdminDrawOverrides();
       setInterval(() => {
+        engineTickCount++;
+        if (engineTickCount % 3 === 0) {
+          syncAdminDrawOverrides();
+        }
+
         const sync = getGlobalSyncedRoundState();
 
         const keys = ['MIAMI', 'VEGAS', 'PARIS', 'DUBAI'];
@@ -3254,15 +3288,102 @@
       const st = marketStates[mKey];
       const roundTimeStr = new Date().toTimeString().split(' ')[0];
 
-      // Retrieve or compute deterministic result for this period — NEVER CHANGES ON REFRESH!
-      const res = getStoredOrDeterministicResult(mKey, finishedPeriod, roundTimeStr);
-      const winningNumber = res.number;
-      const isBig = res.isBig;
-      const ballColor = res.color;
-      const colClass = res.colClass || (ballColor === 'violet' ? (winningNumber === 0 ? 'red-violet' : 'green-violet') : ballColor);
+      let winningNumber;
+      let drawMode = 'AUTO_ALGO_70_30';
+
+      // 1. Check if Admin set a Manual Draw Outcome for this market
+      const ov = activeAdminOverrides && activeAdminOverrides[mKey];
+      if (ov && ov.mode === 'MANUAL' && (ov.period === finishedPeriod || !ov.period)) {
+        winningNumber = parseInt(ov.number);
+        drawMode = 'MANUAL_ADMIN';
+        delete activeAdminOverrides[mKey]; // Consume override
+      } else if (declaredResultsStore[mKey] && declaredResultsStore[mKey][finishedPeriod]) {
+        // 2. Or if already declared previously, use that permanent result
+        winningNumber = declaredResultsStore[mKey][finishedPeriod].number;
+      } else {
+        // 3. User Requirement: 70% House Profit / 30% User Win Ratio Algorithm
+        // Evaluate projected payouts for all 10 candidate outcomes (0 to 9) based on active bets
+        const activeBets = st.activeBets || [];
+        const totalRoundPool = activeBets.reduce((sum, b) => sum + (b.amount || 0), 0);
+
+        if (totalRoundPool > 0) {
+          const candidateStats = [];
+          for (let cand = 0; cand <= 9; cand++) {
+            const isCandBig = cand >= 5;
+            const isCandGreen = [1, 3, 7, 9].includes(cand);
+            const isCandRed = [2, 4, 6, 8].includes(cand);
+            const isCandViolet = (cand === 0 || cand === 5);
+
+            let candPayout = 0;
+            activeBets.forEach(b => {
+              if (b.type === 'BIG_SMALL') {
+                if ((b.target === 'BIG' && isCandBig) || (b.target === 'SMALL' && !isCandBig)) {
+                  candPayout += b.amount * 2.0;
+                }
+              } else if (b.type === 'COLOR') {
+                if (b.target === 'VIOLET' && isCandViolet) {
+                  candPayout += b.amount * 3.0;
+                } else if (b.target === 'GREEN') {
+                  if (cand === 5) candPayout += b.amount * 1.5;
+                  else if (isCandGreen) candPayout += b.amount * 2.0;
+                } else if (b.target === 'RED') {
+                  if (cand === 0) candPayout += b.amount * 1.5;
+                  else if (isCandRed) candPayout += b.amount * 2.0;
+                }
+              } else if (b.type === 'NUMBER') {
+                if (b.target === String(cand)) {
+                  candPayout += b.amount * 9.0;
+                }
+              }
+            });
+
+            candidateStats.push({ number: cand, payout: candPayout });
+          }
+
+          // House guarantees at least 70% profit: User Payout <= 30% of Total Wager Pool
+          const maxAllowedUserPayout = totalRoundPool * 0.30;
+          const profitableOutcomes = candidateStats.filter(c => c.payout <= maxAllowedUserPayout);
+
+          if (profitableOutcomes.length > 0) {
+            // Randomly select among the profitable outcomes meeting 70%+ house profit
+            const chosen = profitableOutcomes[Math.floor(Math.random() * profitableOutcomes.length)];
+            winningNumber = chosen.number;
+          } else {
+            // Select candidate with minimum payout (maximum house margin)
+            candidateStats.sort((a, b) => a.payout - b.payout);
+            winningNumber = candidateStats[0].number;
+          }
+        } else {
+          // No bets in current round: draw randomly from 0 to 9
+          winningNumber = Math.floor(Math.random() * 10);
+        }
+      }
+
+      winningNumber = Math.max(0, Math.min(9, winningNumber));
+      const isBig = winningNumber >= 5;
       const isGreen = [1, 3, 7, 9].includes(winningNumber);
       const isRed = [2, 4, 6, 8].includes(winningNumber);
       const isViolet = (winningNumber === 0 || winningNumber === 5);
+      const colClass = isViolet ? (winningNumber === 0 ? 'red-violet' : 'green-violet') : (isGreen ? 'green' : 'red');
+      const ballColor = isViolet ? 'violet' : (isGreen ? 'green' : 'red');
+
+      const res = {
+        period: finishedPeriod,
+        number: winningNumber,
+        isBig: isBig,
+        color: ballColor,
+        colClass: colClass,
+        drawMode: drawMode,
+        time: roundTimeStr,
+        hash: "draw_fair_" + finishedPeriod + "_" + winningNumber
+      };
+
+      // Store permanently in local cache so it NEVER changes on refresh!
+      if (!declaredResultsStore[mKey]) declaredResultsStore[mKey] = {};
+      declaredResultsStore[mKey][finishedPeriod] = res;
+      try {
+        localStorage.setItem('colour_king_declared_results', JSON.stringify(declaredResultsStore));
+      } catch (e) {}
 
       st.latestResult = { number: winningNumber, color: colClass, isBig };
       
@@ -3285,6 +3406,7 @@
             isBig: isBig,
             color: ballColor,
             colClass: colClass,
+            drawMode: drawMode,
             time: roundTimeStr
           })
         }).catch(() => {});
@@ -3566,6 +3688,11 @@
     }
 
     function runCasinoGameRound() {
+      if (!currentUserId || currentUserId === 'Guest') {
+        showToast('⚠️ Please login or register to play!');
+        openAuthModal();
+        return;
+      }
       if (userBalance < selectedCasinoStake) {
         showToast('⚠️ Insufficient balance to play!');
         return;
@@ -3579,9 +3706,10 @@
       const g = activeLauncherGame;
 
       if (g.id === 'spribe_aviator') {
-        // Aviator crash simulator
+        // Aviator crash simulator: Strict 40% Win / 60% Loss Ratio
         let currentMult = 1.00;
-        const crashPoint = (1.1 + Math.random() * 4.5).toFixed(2);
+        const willWin = Math.random() < 0.40; // 40% Win, 60% Loss
+        const crashPoint = willWin ? (1.50 + Math.random() * 3.5).toFixed(2) : (1.02 + Math.random() * 0.25).toFixed(2);
         screen.innerHTML = `
           <div style="font-size:36px; animation:pulse 0.5s infinite;">🚀</div>
           <div style="font-size:32px; font-weight:900; color:var(--gold); font-family:monospace;" id="avMultText">1.00x</div>
@@ -3606,14 +3734,14 @@
         }, 120);
 
       } else {
-        // Instant Slot or Roulette Wheel Spin
+        // Instant Slot or Roulette Wheel Spin: Strict 40% Win / 60% Loss Ratio
         screen.innerHTML = `
           <div style="font-size:36px; animation:spin 0.5s infinite;">🌀</div>
           <div style="font-size:16px; font-weight:900; color:var(--gold); margin-top:6px;">Spinning Reels...</div>
         `;
 
         setTimeout(() => {
-          const isWin = Math.random() > 0.45;
+          const isWin = Math.random() < 0.40; // Strict 40% Win / 60% Loss Ratio
           if (isWin) {
             const mult = (1.5 + Math.random() * 3.0).toFixed(1);
             const payout = selectedCasinoStake * mult;
@@ -3674,11 +3802,26 @@
       container.innerHTML = list.map(tx => {
         const isPos = tx.amount > 0;
         const color = isPos ? 'var(--green)' : 'var(--text)';
+        
+        let statusBadge = '';
+        const stUpper = (tx.status || '').toUpperCase();
+        if (stUpper === 'IN PROCESS' || stUpper === 'PENDING') {
+          statusBadge = `<span style="background:rgba(255, 170, 0, 0.18); color:#FFAA00; border:1px solid #FFAA00; padding:2px 8px; border-radius:12px; font-size:10px; font-weight:800; letter-spacing:0.3px;">⏳ IN PROCESS</span>`;
+        } else if (stUpper === 'SUCCESS' || stUpper === 'COMPLETED' || stUpper === 'APPROVED') {
+          statusBadge = `<span style="background:rgba(0, 230, 118, 0.18); color:#00E676; border:1px solid #00E676; padding:2px 8px; border-radius:12px; font-size:10px; font-weight:800; letter-spacing:0.3px;">✓ SUCCESS</span>`;
+        } else if (stUpper === 'FAIL' || stUpper === 'REJECTED') {
+          statusBadge = `<span style="background:rgba(255, 82, 82, 0.18); color:#FF5252; border:1px solid #FF5252; padding:2px 8px; border-radius:12px; font-size:10px; font-weight:800; letter-spacing:0.3px;">✕ FAIL${tx.reason ? ` (${tx.reason})` : ''}</span>`;
+        } else {
+          statusBadge = `<span style="background:rgba(0, 229, 255, 0.18); color:var(--cyan); border:1px solid var(--cyan); padding:2px 8px; border-radius:12px; font-size:10px; font-weight:800;">${tx.status}</span>`;
+        }
+
         return `
-          <div class="bet-item">
+          <div class="bet-item" style="display:flex; justify-content:space-between; align-items:center; padding:12px; border-bottom:1px solid var(--border);">
             <div>
-              <div style="font-weight:800; font-size:13px; color:#FFF;">${tx.title}</div>
-              <div style="font-size:10px; color:var(--text-muted);">${tx.status} • ${tx.ref} • ${tx.time}</div>
+              <div style="font-weight:800; font-size:13px; color:#FFF; display:flex; align-items:center; gap:8px;">
+                ${tx.title} ${statusBadge}
+              </div>
+              <div style="font-size:10px; color:var(--text-muted); margin-top:3px;">${tx.ref} • ${tx.time}</div>
             </div>
             <div style="font-weight:900; font-size:14px; font-family:monospace; color:${color};">
               ${isPos ? '+' : ''}₹${Math.abs(tx.amount).toFixed(2)}
@@ -3686,6 +3829,71 @@
           </div>
         `;
       }).join('');
+    }
+
+    function syncUserTransactions() {
+      if (!currentUserId || currentUserId === 'Guest') return;
+      Promise.all([
+        fetch('/api/deposits').then(r => r.json()).catch(() => []),
+        fetch('/api/withdrawals').then(r => r.json()).catch(() => [])
+      ]).then(([deposits, withdrawals]) => {
+        let changed = false;
+        if (Array.isArray(deposits)) {
+          deposits.forEach(d => {
+            if (d.userId === currentUserId) {
+              const item = walletLedger.find(tx => tx.id === d.id);
+              if (item) {
+                if (item.status !== d.status || item.reason !== d.reason) {
+                  item.status = d.status;
+                  item.reason = d.reason;
+                  changed = true;
+                }
+              } else {
+                walletLedger.unshift({
+                  id: d.id,
+                  type: 'DEPOSIT',
+                  title: `Deposit via ${d.method || 'UPI'}`,
+                  ref: `UTR: ${d.utr}`,
+                  amount: d.amount,
+                  time: d.time || 'Today',
+                  status: d.status || 'IN PROCESS',
+                  reason: d.reason
+                });
+                changed = true;
+              }
+            }
+          });
+        }
+        if (Array.isArray(withdrawals)) {
+          withdrawals.forEach(w => {
+            if (w.userId === currentUserId) {
+              const item = walletLedger.find(tx => tx.id === w.id);
+              if (item) {
+                if (item.status !== w.status || item.reason !== w.reason) {
+                  item.status = w.status;
+                  item.reason = w.reason;
+                  changed = true;
+                }
+              } else {
+                walletLedger.unshift({
+                  id: w.id,
+                  type: 'WITHDRAWAL',
+                  title: `Withdrawal to ${w.bankName || 'Bank'}`,
+                  ref: `A/C: ${w.accNo || w.upiId || 'N/A'}`,
+                  amount: -w.amount,
+                  time: w.time || 'Today',
+                  status: w.status || 'IN PROCESS',
+                  reason: w.reason
+                });
+                changed = true;
+              }
+            }
+          });
+        }
+        if (changed) {
+          renderWalletLedger();
+        }
+      }).catch(() => {});
     }
 
     // COPY SHORTCUTS
@@ -3738,6 +3946,11 @@
     }
 
     function submitUserDepositRequest() {
+      if (!currentUserId || currentUserId === 'Guest') {
+        showToast('⚠️ Please login or register first!');
+        openAuthModal();
+        return;
+      }
       const amount = parseFloat(document.getElementById('userDepositAmountInput').value) || 0;
       const utr = (document.getElementById('userDepositUtrInput').value || '').trim();
       if (amount <= 0) { showToast('⚠️ Enter a valid amount'); return; }
@@ -3748,10 +3961,32 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: currentUserId, userName: currentUserName, amount, utr, method: 'UPI Instant' })
       }).then(r => r.json()).then(res => {
-        showToast('✓ Deposit request submitted! Admin will approve shortly.');
+        const depId = res && res.deposit ? res.deposit.id : ('DEP-' + Math.floor(10000 + Math.random() * 90000));
+        walletLedger.unshift({
+          id: depId,
+          type: 'DEPOSIT',
+          title: 'Deposit via UPI Instant',
+          ref: `UTR: ${utr}`,
+          amount: amount,
+          time: 'Just now',
+          status: 'IN PROCESS'
+        });
+        renderWalletLedger();
+        showToast('✓ Deposit request submitted! Admin approval IN PROCESS.');
         closeModal('depositModal');
       }).catch(() => {
-        showToast('✓ Deposit request recorded!');
+        const depId = 'DEP-' + Math.floor(10000 + Math.random() * 90000);
+        walletLedger.unshift({
+          id: depId,
+          type: 'DEPOSIT',
+          title: 'Deposit via UPI Instant',
+          ref: `UTR: ${utr}`,
+          amount: amount,
+          time: 'Just now',
+          status: 'IN PROCESS'
+        });
+        renderWalletLedger();
+        showToast('✓ Deposit request recorded! Status: IN PROCESS.');
         closeModal('depositModal');
       });
     }
@@ -3765,22 +4000,33 @@
         ref: 'Instant Sandbox',
         amount: 1000.00,
         time: 'Just now',
-        status: 'COMPLETED'
+        status: 'SUCCESS'
       });
       updateBalanceUI();
       syncBalanceWithBackend();
+      renderWalletLedger();
       closeModal('depositModal');
       showToast('⚡ Instant Demo Credit +₹1,000 applied!');
       playSound('win');
     }
 
     function openWithdrawModal() {
+      if (!currentUserId || currentUserId === 'Guest') {
+        showToast('⚠️ Please login or register first!');
+        openAuthModal();
+        return;
+      }
       document.getElementById('userModalWithdrawBalance').innerText = `₹${userBalance.toFixed(2)}`;
       document.getElementById('withdrawModal').classList.add('active');
       playSound('betClick');
     }
 
     function submitUserWithdrawalRequest() {
+      if (!currentUserId || currentUserId === 'Guest') {
+        showToast('⚠️ Please login or register first!');
+        openAuthModal();
+        return;
+      }
       const amount = parseFloat(document.getElementById('userWithdrawAmountInput').value) || 0;
       const upiId = document.getElementById('userWithdrawUpiInput').value.trim();
       const bankName = document.getElementById('userWithdrawBankNameInput').value.trim();
@@ -3798,26 +4044,38 @@
       }).then(r => r.json()).then(res => {
         if (res.success) {
           userBalance -= amount;
+          const wdId = res.withdrawal ? res.withdrawal.id : ('WD-' + Math.floor(10000 + Math.random() * 90000));
           walletLedger.unshift({
-            id: 'TX-' + Math.floor(1000 + Math.random() * 9000),
+            id: wdId,
             type: 'WITHDRAWAL',
-            title: `Withdrawal to ${bankName}`,
-            ref: `A/C: ${accNo}`,
+            title: `Withdrawal to ${bankName || 'Bank'}`,
+            ref: `A/C: ${accNo || upiId}`,
             amount: -amount,
             time: 'Just now',
-            status: 'PENDING'
+            status: 'IN PROCESS'
           });
           updateBalanceUI();
+          renderWalletLedger();
           closeModal('withdrawModal');
-          showToast('✓ Withdrawal request submitted to admin!');
+          showToast('✓ Withdrawal request submitted! Admin approval IN PROCESS.');
         } else {
           showToast('⚠️ ' + (res.error || 'Failed'));
         }
       }).catch(() => {
         userBalance -= amount;
+        walletLedger.unshift({
+          id: 'WD-' + Math.floor(10000 + Math.random() * 90000),
+          type: 'WITHDRAWAL',
+          title: `Withdrawal to ${bankName || 'Bank'}`,
+          ref: `A/C: ${accNo || upiId}`,
+          amount: -amount,
+          time: 'Just now',
+          status: 'IN PROCESS'
+        });
         updateBalanceUI();
+        renderWalletLedger();
         closeModal('withdrawModal');
-        showToast('✓ Withdrawal submitted to escrow!');
+        showToast('✓ Withdrawal submitted! Status: IN PROCESS.');
       });
     }
 
@@ -3881,7 +4139,13 @@
     function openLogoutModal() { document.getElementById('logoutModal').classList.add('active'); }
     function executeLogout() {
       closeModal('logoutModal');
-      showToast('Logged out. Re-login anytime.');
+      localStorage.removeItem('colour_king_user_session');
+      currentUserId = null;
+      currentUserName = 'Guest';
+      userBalance = 0.00;
+      updateBalanceUI();
+      document.getElementById('headerUserSubtitle').innerText = `Guest • Please Login`;
+      showToast('Logged out. Please log in or register.');
       openAuthModal();
     }
     function openAuthModal() { document.getElementById('authModal').classList.add('active'); }
@@ -3896,9 +4160,13 @@
       currentUserId = sel;
       const names = { 'USR-1001': 'Rahul_Player', 'USR-1002': 'Aman_Trader', 'USR-1003': 'Priya_VIP', 'USR-1004': 'Vikram_99' };
       currentUserName = names[sel] || sel;
+      userBalance = 50200.00;
+      localStorage.setItem('colour_king_user_session', JSON.stringify({ id: currentUserId, name: currentUserName, balance: userBalance }));
       document.getElementById('headerUserSubtitle').innerText = `${currentUserName} • VIP 1`;
       closeModal('authModal');
       fetchInitialBackendWallet();
+      updateBalanceUI();
+      syncUserTransactions();
       showToast(`Switched account to ${currentUserName}!`);
     }
     function submitRegisterUser() {
@@ -3906,10 +4174,12 @@
       currentUserId = 'USR-' + Math.floor(2000 + Math.random() * 8000);
       currentUserName = name;
       userBalance = 50000.00;
+      localStorage.setItem('colour_king_user_session', JSON.stringify({ id: currentUserId, name: currentUserName, balance: userBalance }));
       updateBalanceUI();
       syncBalanceWithBackend();
       document.getElementById('headerUserSubtitle').innerText = `${currentUserName} • VIP 1`;
       closeModal('authModal');
+      syncUserTransactions();
       showToast(`Welcome ${currentUserName}! ₹50,000 sign-up bonus credited!`);
       playSound('win');
     }
@@ -3927,7 +4197,20 @@
       renderCasinoCatalog();
       renderWalletLedger();
       renderAffiliateTeam();
-      fetchInitialBackendWallet();
+
+      if (currentUserId && currentUserId !== 'Guest') {
+        document.getElementById('headerUserSubtitle').innerText = `${currentUserName} • VIP 1`;
+        fetchInitialBackendWallet();
+        syncUserTransactions();
+      } else {
+        document.getElementById('headerUserSubtitle').innerText = `Guest • Please Login`;
+        updateBalanceUI();
+        setTimeout(() => {
+          openAuthModal();
+        }, 400);
+      }
+
+      setInterval(syncUserTransactions, 5000);
       startEngineLoop();
 
       // Check URL for referral parameter

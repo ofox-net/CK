@@ -59,7 +59,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _notification = MutableStateFlow<UiNotification?>(null)
     val notification = _notification.asStateFlow()
 
-    private val _isLoggedIn = MutableStateFlow(true)
+    private val _isLoggedIn = MutableStateFlow(false)
     val isLoggedIn = _isLoggedIn.asStateFlow()
 
     private val _isSoundEnabled = MutableStateFlow(true)
