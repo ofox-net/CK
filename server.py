@@ -2,12 +2,14 @@ import http.server
 import socketserver
 import json
 import os
+import sqlite3
 import urllib.parse
 from datetime import datetime
 
 PORT = 3000
 DIRECTORY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 STATE_FILE = os.path.join(DIRECTORY, "server_state.json")
+DB_FILE = os.path.join(DIRECTORY, "colour_king.db")
 
 DEFAULT_STATE = {
     "bank_config": {
@@ -31,10 +33,11 @@ DEFAULT_STATE = {
         "USR-1006": { "id": "USR-1006", "name": "Karan_Pro", "balance": 38400.00, "totalDeposit": 60000.00, "totalWithdraw": 24000.00, "betsCount": 94, "status": "ACTIVE" }
     },
     "deposits": [
-        { "id": "DEP-88401", "userId": "USR-1001", "userName": "Rahul_Player", "amount": 5000.00, "method": "UPI (GooglePay)", "utr": "429188402911", "time": "Today, 11:24 AM", "status": "PENDING" },
-        { "id": "DEP-88402", "userId": "USR-1002", "userName": "Aman_Trader", "amount": 10000.00, "method": "IMPS SBI NetBanking", "utr": "902184716294", "time": "Today, 11:18 AM", "status": "PENDING" },
-        { "id": "DEP-88403", "userId": "USR-1006", "userName": "Karan_Pro", "amount": 2500.00, "method": "Paytm UPI QR", "utr": "419082736184", "time": "Today, 10:45 AM", "status": "PENDING" },
-        { "id": "DEP-88399", "userId": "USR-1003", "userName": "Priya_VIP", "amount": 50000.00, "method": "HDFC IMPS", "utr": "389271628190", "time": "Today, 09:12 AM", "status": "APPROVED" }
+        { "id": "DEP-88401", "userId": "USR-1001", "userName": "Rahul_Player", "amount": 5000.00, "method": "UPI (GooglePay)", "utr": "429188402911", "time": "Today, 11:24 AM", "status": "IN PROCESS" },
+        { "id": "DEP-88402", "userId": "USR-1002", "userName": "Aman_Trader", "amount": 10000.00, "method": "IMPS SBI NetBanking", "utr": "902184716294", "time": "Today, 11:18 AM", "status": "IN PROCESS" },
+        { "id": "DEP-88403", "userId": "USR-1006", "userName": "Karan_Pro", "amount": 2500.00, "method": "Paytm UPI QR", "utr": "419082736184", "time": "Today, 10:45 AM", "status": "IN PROCESS" },
+        { "id": "DEP-88399", "userId": "USR-1003", "userName": "Priya_VIP", "amount": 50000.00, "method": "HDFC IMPS", "utr": "389271628190", "time": "Today, 09:12 AM", "status": "SUCCESS" },
+        { "id": "DEP-88398", "userId": "USR-1005", "userName": "Suspicious_Bot1", "amount": 15000.00, "method": "UPI", "utr": "000000000000", "time": "Yesterday, 18:30 PM", "status": "FAIL", "reason": "Invalid / fake UTR" }
     ],
     "withdrawals": [
         {
@@ -49,7 +52,7 @@ DEFAULT_STATE = {
             "bankingName": "Rahul Kumar Sharma",
             "destination": "Rahul Kumar Sharma • SBI (A/C: 40928172901, IFSC: SBIN0001824) • UPI: rahul@oksbi",
             "time": "Today, 11:32 AM",
-            "status": "PENDING"
+            "status": "IN PROCESS"
         },
         {
             "id": "WD-99413",
@@ -63,7 +66,7 @@ DEFAULT_STATE = {
             "bankingName": "Vikram Sethi",
             "destination": "Vikram Sethi • HDFC (A/C: 5010049281729, IFSC: HDFC000124) • UPI: vikram99@icici",
             "time": "Today, 10:55 AM",
-            "status": "PENDING"
+            "status": "IN PROCESS"
         },
         {
             "id": "WD-99410",
@@ -77,26 +80,67 @@ DEFAULT_STATE = {
             "bankingName": "Priya Singhania",
             "destination": "Priya Singhania • ICICI (A/C: 002101928374, IFSC: ICIC0000021) • UPI: priya@axl",
             "time": "Today, 08:40 AM",
-            "status": "APPROVED"
+            "status": "SUCCESS"
         }
-    ]
+    ],
+    "declared_results": {},
+    "draw_overrides": {}
 }
 
+def init_db():
+    os.makedirs(DIRECTORY, exist_ok=True)
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS app_state (
+            key TEXT PRIMARY KEY,
+            value TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+    conn.close()
+
 def load_state():
+    init_db()
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute("SELECT value FROM app_state WHERE key = 'master_state'")
+        row = c.fetchone()
+        conn.close()
+        if row and row[0]:
+            return json.loads(row[0])
+    except Exception as e:
+        print(f"Error reading DB: {e}")
+
+    # Fallback to STATE_FILE if exists
     if os.path.exists(STATE_FILE):
         try:
             with open(STATE_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                st = json.load(f)
+                save_state(st)
+                return st
         except Exception:
             pass
+
     save_state(DEFAULT_STATE)
     return DEFAULT_STATE
 
 def save_state(state):
     try:
         os.makedirs(DIRECTORY, exist_ok=True)
+        # 1. Save to SQLite database
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        payload_str = json.dumps(state, indent=2)
+        c.execute("INSERT OR REPLACE INTO app_state (key, value, updated_at) VALUES ('master_state', ?, CURRENT_TIMESTAMP)", (payload_str,))
+        conn.commit()
+        conn.close()
+
+        # 2. Also save to server_state.json for fast file reading & inspection
         with open(STATE_FILE, "w", encoding="utf-8") as f:
-            json.dump(state, f, indent=2)
+            f.write(payload_str)
     except Exception as e:
         print(f"Error saving state: {e}")
 
@@ -157,7 +201,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     "betsCount": 0,
                     "status": "ACTIVE"
                 }
-                state["users"][user_id] = new_user
+                state.setdefault("users", {})[user_id] = new_user
                 save_state(state)
                 self._send_json(new_user)
             return
@@ -169,7 +213,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._send_json({
                 "userId": user_id,
                 "name": user.get("name", "Rahul_Player"),
-                "balance": user.get("balance", 50200.00)
+                "balance": user.get("balance", 50200.00),
+                "status": user.get("status", "ACTIVE")
             })
             return
 
@@ -237,7 +282,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
 
         if path == '/api/bank-config':
-            state["bank_config"].update(payload)
+            state.setdefault("bank_config", {}).update(payload)
             save_state(state)
             self._send_json({ "success": True, "bank_config": state["bank_config"] })
             return
@@ -255,17 +300,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 # Check if manual override existed and consume it
                 if "draw_overrides" in state and m_key in state["draw_overrides"]:
                     override = state["draw_overrides"][m_key]
-                    if not override.get("period") or override.get("period") == period:
+                    if not override.get("period") or str(override.get("period")) == str(period):
                         state["draw_overrides"].pop(m_key, None)
 
                 save_state(state)
-            self._send_json({ "success": True })
+            self._send_json({ "success": True, "declared_results": state.get("declared_results", {}) })
             return
 
         if path == '/api/user/balance' or path == '/api/wallet/sync':
             user_id = payload.get("userId", "USR-1001")
             new_balance = float(payload.get("balance", 0.0))
-            if user_id not in state["users"]:
+            if user_id not in state.setdefault("users", {}):
                 state["users"][user_id] = {
                     "id": user_id,
                     "name": payload.get("name", user_id),
@@ -280,6 +325,32 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
             save_state(state)
             self._send_json({ "success": True, "userId": user_id, "balance": new_balance })
+            return
+
+        if path == '/api/user/adjust':
+            uid = payload.get("userId")
+            adj_type = payload.get("type", "CREDIT")
+            amount = float(payload.get("amount", 0.0))
+            if uid in state.setdefault("users", {}):
+                if adj_type == "CREDIT":
+                    state["users"][uid]["balance"] += amount
+                else:
+                    state["users"][uid]["balance"] = max(0.0, state["users"][uid]["balance"] - amount)
+                save_state(state)
+                self._send_json({ "success": True, "userId": uid, "balance": state["users"][uid]["balance"] })
+            else:
+                self._send_json({ "success": False, "error": "User not found" }, status=404)
+            return
+
+        if path == '/api/user/status':
+            uid = payload.get("userId")
+            new_status = payload.get("status", "ACTIVE")
+            if uid in state.setdefault("users", {}):
+                state["users"][uid]["status"] = new_status
+                save_state(state)
+                self._send_json({ "success": True, "userId": uid, "status": new_status })
+            else:
+                self._send_json({ "success": False, "error": "User not found" }, status=404)
             return
 
         if path == '/api/deposits':
@@ -312,7 +383,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 if d["id"] == dep_id:
                     d["status"] = "SUCCESS"
                     uid = d["userId"]
-                    if uid in state["users"]:
+                    if uid in state.setdefault("users", {}):
                         state["users"][uid]["balance"] += d["amount"]
                         state["users"][uid]["totalDeposit"] += d["amount"]
                     break
@@ -333,7 +404,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
 
         if path == '/api/withdrawals':
-            # Create new withdrawal request with all requested details:
             amount = float(payload.get("amount", 0.0))
             upi_id = str(payload.get("upiId", "")).strip()
             bank_name = str(payload.get("bankName", "")).strip()
@@ -344,7 +414,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             user_name = payload.get("userName", state.get("users", {}).get(user_id, {}).get("name", "Rahul_Player"))
 
             # Deduct balance into escrow
-            if user_id in state["users"]:
+            if user_id in state.setdefault("users", {}):
                 if state["users"][user_id]["balance"] >= amount:
                     state["users"][user_id]["balance"] -= amount
                 else:
@@ -378,7 +448,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 if w["id"] == wd_id:
                     w["status"] = "SUCCESS"
                     uid = w["userId"]
-                    if uid in state["users"]:
+                    if uid in state.setdefault("users", {}):
                         state["users"][uid]["totalWithdraw"] += w["amount"]
                     break
             save_state(state)
@@ -393,7 +463,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     w["status"] = "FAIL"
                     w["reason"] = reason
                     uid = w["userId"]
-                    if uid in state["users"]:
+                    if uid in state.setdefault("users", {}):
                         # Refund balance
                         state["users"][uid]["balance"] += w["amount"]
                     break
@@ -401,10 +471,30 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._send_json({ "success": True })
             return
 
+        if path == '/api/admin/sync-state':
+            if "bank_config" in payload and isinstance(payload["bank_config"], dict):
+                state.setdefault("bank_config", {}).update(payload["bank_config"])
+            if "users" in payload:
+                if isinstance(payload["users"], list):
+                    for u in payload["users"]:
+                        if "id" in u:
+                            state.setdefault("users", {})[u["id"]] = u
+                elif isinstance(payload["users"], dict):
+                    state.setdefault("users", {}).update(payload["users"])
+            if "deposits" in payload and isinstance(payload["deposits"], list):
+                state["deposits"] = payload["deposits"]
+            if "withdrawals" in payload and isinstance(payload["withdrawals"], list):
+                state["withdrawals"] = payload["withdrawals"]
+            if "declared_results" in payload and isinstance(payload["declared_results"], dict):
+                state.setdefault("declared_results", {}).update(payload["declared_results"])
+            save_state(state)
+            self._send_json({ "success": True, "message": "Admin state saved to database & storage successfully" })
+            return
+
         self._send_json({ "error": "Endpoint not found" }, status=404)
 
 if __name__ == "__main__":
     socketserver.TCPServer.allow_reuse_address = True
     with socketserver.TCPServer(("", PORT), Handler) as httpd:
-        print(f"Serving Colour King Master Full-Stack API & Web on port {PORT} from {DIRECTORY}")
+        print(f"Serving Colour King Master Full-Stack API & Web on port {PORT} with SQLite database backing from {DIRECTORY}")
         httpd.serve_forever()

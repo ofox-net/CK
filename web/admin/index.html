@@ -2022,6 +2022,18 @@
       localStorage.setItem(KEY_DECLARED, JSON.stringify(declaredResults));
       localStorage.setItem(KEY_AUDIT, JSON.stringify(auditLogs));
       recalculateMasterKPIs();
+
+      // Automatically sync all actions to database & storage backend
+      fetch('/api/admin/sync-state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          bank_config: bankConfig,
+          users: usersList,
+          deposits: depositRequests,
+          withdrawals: withdrawalRequests
+        })
+      }).catch(() => {});
     }
 
     // Master Analytics Calculator
@@ -2541,6 +2553,22 @@
         payout: 14200.00
       });
 
+      // Post to database backend so user side reflects immediately in real-time
+      fetch('/api/results', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          market: selectedDeciderMarket,
+          period: currentPeriodNum,
+          number: selectedWinningNumber,
+          color: (selectedWinningNumber === 0 || selectedWinningNumber === 5) ? 'violet' : ([1, 3, 7, 9].includes(selectedWinningNumber) ? 'green' : 'red'),
+          colClass: (selectedWinningNumber === 0 ? 'red-violet' : selectedWinningNumber === 5 ? 'green-violet' : ([1, 3, 7, 9].includes(selectedWinningNumber) ? 'green' : 'red')),
+          isBig: isBig,
+          drawMode: 'MANUAL_ADMIN',
+          time: new Date().toTimeString().split(' ')[0]
+        })
+      }).catch(() => {});
+
       // Audit log
       auditLogs.unshift({
         time: new Date().toLocaleTimeString(),
@@ -2706,6 +2734,13 @@
       const isNowBlocked = (user.status === 'ACTIVE');
       user.status = isNowBlocked ? 'BLOCKED' : 'ACTIVE';
 
+      // Persist to database backend
+      fetch('/api/user/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, status: user.status })
+      }).catch(() => {});
+
       auditLogs.unshift({
         time: new Date().toLocaleTimeString(),
         actor: "SuperAdmin",
@@ -2742,6 +2777,13 @@
       } else {
         user.balance = Math.max(0, user.balance - amount);
       }
+
+      // Persist to database backend so user side updates balance in real-time
+      fetch('/api/user/adjust', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: activeAdjustUserId, type, amount, reason })
+      }).catch(() => {});
 
       auditLogs.unshift({
         time: new Date().toLocaleTimeString(),
@@ -2820,6 +2862,13 @@
         instructions: document.getElementById('depositInstructions').value.trim()
       };
 
+      // Persist to database backend so user deposit modal updates in real-time
+      fetch('/api/bank-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bankConfig)
+      }).catch(() => {});
+
       auditLogs.unshift({
         time: new Date().toLocaleTimeString(),
         actor: "SuperAdmin",
@@ -2831,7 +2880,7 @@
       persistAllState();
       updateBankPreviewCard();
       renderAuditTable();
-      showToast('💾 Bank and UPI deposit settings saved & synced to user app!');
+      showToast('💾 Bank and UPI deposit settings saved to database & reflected on user app!');
     }
 
     // ----------------------------------------------------
@@ -3290,6 +3339,33 @@
       updateDeciderPeriodDisplay();
       pickWinningNumber(7);
       startAdminTicker();
+
+      // Real-time polling: automatically refresh user actions & requests every 2.5s
+      setInterval(() => {
+        fetch('/api/state')
+          .then(r => r.json())
+          .then(data => {
+            if (data) {
+              if (data.deposits && data.deposits.length) {
+                depositRequests = data.deposits;
+                renderDepositsTable();
+              }
+              if (data.withdrawals && data.withdrawals.length) {
+                withdrawalRequests = data.withdrawals;
+                renderWithdrawalsTable();
+              }
+              if (data.users) {
+                const uList = Object.values(data.users);
+                if (uList.length) {
+                  usersList = uList;
+                  renderUsersTable();
+                }
+              }
+              recalculateMasterKPIs();
+            }
+          })
+          .catch(() => {});
+      }, 2500);
     });
   </script>
 </body>

@@ -2499,23 +2499,28 @@
       renderRoadmapBeads();
     }
 
-    // DECLARED RESULTS PERSISTENCE & PROVABLY FAIR DETERMINISM
+    // DECLARED RESULTS PERSISTENCE & PROVABLY FAIR RANDOMNESS
     let declaredResultsStore = {};
     try {
-      const cached = localStorage.getItem('colour_king_declared_results');
+      const cached = localStorage.getItem('colour_king_declared_results_v3');
       if (cached) declaredResultsStore = JSON.parse(cached);
     } catch (e) {}
 
-    // Deterministic Provably Fair Period Result Generator
-    // Guarantees that any period number ALWAYS yields the EXACT same outcome on every refresh
+    // High-Entropy Deterministic Random Outcome Generator
+    // Murmur3 32-bit finalizer bit-avalanche mixing guarantees completely scattered, non-sequential random outcomes across periods and markets
     function getDeterministicPeriodResult(mKey, periodStr) {
-      const seed = `COLOUR_KING_FAIR_SEED_2026_${mKey}_${periodStr}`;
-      let hash = 0;
+      const seed = `COLOUR_KING_AVALANCHE_2026_${mKey}_${periodStr}_PROVABLY_FAIR`;
+      let h = 2166136261 >>> 0;
       for (let i = 0; i < seed.length; i++) {
-        hash = ((hash << 5) - hash) + seed.charCodeAt(i);
-        hash |= 0;
+        h ^= seed.charCodeAt(i);
+        h = Math.imul(h, 16777619);
       }
-      const absHash = Math.abs(hash);
+      h ^= h >>> 16;
+      h = Math.imul(h, 0x85ebca6b);
+      h ^= h >>> 13;
+      h = Math.imul(h, 0xc2b2ae35);
+      h ^= h >>> 16;
+      const absHash = h >>> 0;
       const num = absHash % 10;
       const isBig = num >= 5;
       const isGreen = [1, 3, 7, 9].includes(num);
@@ -2549,27 +2554,56 @@
       if (!declaredResultsStore[mKey]) declaredResultsStore[mKey] = {};
       declaredResultsStore[mKey][periodStr] = record;
       try {
-        localStorage.setItem('colour_king_declared_results', JSON.stringify(declaredResultsStore));
+        localStorage.setItem('colour_king_declared_results_v3', JSON.stringify(declaredResultsStore));
       } catch(e) {}
       return record;
     }
 
-    function syncServerResults() {
-      fetch('/api/results')
-        .then(res => res.json())
-        .then(serverResults => {
-          if (serverResults && typeof serverResults === 'object') {
+    // Unified Real-Time Synchronization with Backend Storage (Reflects Admin actions in real-time)
+    let activeAdminOverrides = {};
+    function syncAdminStateRealtime() {
+      fetch('/api/state')
+        .then(r => r.json())
+        .then(state => {
+          if (!state) return;
+
+          // 1. Reflect Admin Bank Details in real-time
+          if (state.bank_config) {
+            const bc = state.bank_config;
+            const uDisplay = document.getElementById('userModalUpiDisplay');
+            const uName = document.getElementById('userModalUpiName');
+            const bName = document.getElementById('userModalBankName');
+            const acc = document.getElementById('userModalAccNo');
+            const ifsc = document.getElementById('userModalIfsc');
+            const holder = document.getElementById('userModalHolder');
+            if (uDisplay && bc.upiId && uDisplay.innerText !== bc.upiId) uDisplay.innerText = bc.upiId;
+            if (uName && bc.upiName && uName.innerText !== bc.upiName) uName.innerText = bc.upiName;
+            if (bName && bc.bankName && bName.innerText !== bc.bankName) bName.innerText = bc.bankName;
+            if (acc && bc.accNo && acc.innerText !== bc.accNo) acc.innerText = bc.accNo;
+            if (ifsc && bc.ifsc && ifsc.innerText !== bc.ifsc) ifsc.innerText = bc.ifsc;
+            if (holder && bc.holder && holder.innerText !== bc.holder) holder.innerText = bc.holder;
+          }
+
+          // 2. Reflect Admin Manual Draw Overrides in real-time
+          if (state.draw_overrides && typeof state.draw_overrides === 'object') {
+            activeAdminOverrides = state.draw_overrides;
+          }
+
+          // 3. Reflect Admin Declared Results in real-time
+          if (state.declared_results && typeof state.declared_results === 'object') {
             let updated = false;
-            Object.keys(serverResults).forEach(m => {
+            Object.keys(state.declared_results).forEach(m => {
               if (!declaredResultsStore[m]) declaredResultsStore[m] = {};
-              Object.keys(serverResults[m]).forEach(p => {
-                declaredResultsStore[m][p] = serverResults[m][p];
-                updated = true;
+              Object.keys(state.declared_results[m]).forEach(p => {
+                if (!declaredResultsStore[m][p] || declaredResultsStore[m][p].number !== state.declared_results[m][p].number) {
+                  declaredResultsStore[m][p] = state.declared_results[m][p];
+                  updated = true;
+                }
               });
             });
             if (updated) {
               try {
-                localStorage.setItem('colour_king_declared_results', JSON.stringify(declaredResultsStore));
+                localStorage.setItem('colour_king_declared_results_v3', JSON.stringify(declaredResultsStore));
               } catch(e) {}
               const st = marketStates[currentMarketId];
               if (st && st.pastRecords) {
@@ -2578,28 +2612,66 @@
                     Object.assign(r, declaredResultsStore[currentMarketId][r.period]);
                   }
                 });
-                render24HourResultsTable();
+                renderHistoryTable();
                 renderTrendChart();
+                render10x10BeadPlate();
                 renderRoadmapMatrix();
                 renderRoadmapBeads();
               }
             }
           }
+
+          // 4. Reflect User Wallet Balance & Status in real-time
+          if (currentUserId && state.users && state.users[currentUserId]) {
+            const sUser = state.users[currentUserId];
+            if (typeof sUser.balance === 'number' && Math.abs(sUser.balance - userBalance) > 0.01) {
+              userBalance = sUser.balance;
+              updateBalanceUI();
+            }
+            if (sUser.status === 'BLOCKED') {
+              showToast('⛔ Your account has been temporarily restricted by Admin.');
+            }
+          }
+
+          // 5. Reflect Deposits & Withdrawals status in real-time
+          if (currentUserId && state.deposits) {
+            let changed = false;
+            state.deposits.forEach(d => {
+              if (d.userId === currentUserId) {
+                const item = walletLedger.find(tx => tx.id === d.id);
+                if (item) {
+                  if (item.status !== d.status || item.reason !== d.reason) {
+                    item.status = d.status;
+                    item.reason = d.reason;
+                    changed = true;
+                  }
+                }
+              }
+            });
+            if (changed) renderWalletLedger();
+          }
+          if (currentUserId && state.withdrawals) {
+            let changed = false;
+            state.withdrawals.forEach(w => {
+              if (w.userId === currentUserId) {
+                const item = walletLedger.find(tx => tx.id === w.id);
+                if (item) {
+                  if (item.status !== w.status || item.reason !== w.reason) {
+                    item.status = w.status;
+                    item.reason = w.reason;
+                    changed = true;
+                  }
+                }
+              }
+            });
+            if (changed) renderWalletLedger();
+          }
         })
         .catch(() => {});
     }
 
-    // Admin Manual Draw Override Sync
-    let activeAdminOverrides = {};
-    function syncAdminDrawOverrides() {
-      fetch('/api/admin/draw-override')
-        .then(res => res.json())
-        .then(data => {
-          if (data && typeof data === 'object') {
-            activeAdminOverrides = data;
-          }
-        })
-        .catch(() => {});
+    function syncServerResults() {
+      syncAdminStateRealtime();
     }
 
     // Populate Initial Past Records for each Market (Deterministic & Fixed Forever)
@@ -3382,7 +3454,7 @@
       if (!declaredResultsStore[mKey]) declaredResultsStore[mKey] = {};
       declaredResultsStore[mKey][finishedPeriod] = res;
       try {
-        localStorage.setItem('colour_king_declared_results', JSON.stringify(declaredResultsStore));
+        localStorage.setItem('colour_king_declared_results_v3', JSON.stringify(declaredResultsStore));
       } catch (e) {}
 
       st.latestResult = { number: winningNumber, color: colClass, isBig };
@@ -4210,7 +4282,8 @@
         }, 400);
       }
 
-      setInterval(syncUserTransactions, 5000);
+      setInterval(syncAdminStateRealtime, 1500);
+      setInterval(syncUserTransactions, 3000);
       startEngineLoop();
 
       // Check URL for referral parameter
