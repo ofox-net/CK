@@ -2554,19 +2554,17 @@
       });
 
       // Post to database backend so user side reflects immediately in real-time
-      fetch('/api/results', {
+      fetch('/api/admin/declare-result', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           market: selectedDeciderMarket,
           period: currentPeriodNum,
           number: selectedWinningNumber,
-          color: (selectedWinningNumber === 0 || selectedWinningNumber === 5) ? 'violet' : ([1, 3, 7, 9].includes(selectedWinningNumber) ? 'green' : 'red'),
-          colClass: (selectedWinningNumber === 0 ? 'red-violet' : selectedWinningNumber === 5 ? 'green-violet' : ([1, 3, 7, 9].includes(selectedWinningNumber) ? 'green' : 'red')),
-          isBig: isBig,
-          drawMode: 'MANUAL_ADMIN',
-          time: new Date().toTimeString().split(' ')[0]
+          force: true
         })
+      }).then(() => {
+        showToast(`🎯 Result ${selectedWinningNumber} officially declared & settled for ${selectedDeciderMarket} #${currentPeriodNum}!`);
       }).catch(() => {});
 
       // Audit log
@@ -2581,7 +2579,6 @@
       persistAllState();
       renderDeclaredResultsTable();
       renderAuditTable();
-      showToast(`🎯 Outcome ${selectedWinningNumber} (${color}) published for ${selectedDeciderMarket}!`);
     }
 
     function setManualDrawOutcome() {
@@ -3220,57 +3217,76 @@
         const secs = sync.secondsLeft % 60;
         const formatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 
-        ['MIAMI', 'VEGAS', 'PARIS', 'DUBAI'].forEach(k => {
-          const timerEl = document.getElementById('market-timer-' + k);
-          const badgeEl = document.getElementById('market-badge-' + k);
-          const periodEl = document.getElementById('market-period-' + k);
+        let adminAuthoritativeMarkets = null;
 
-          if (timerEl) timerEl.innerText = formatted;
-          if (periodEl) periodEl.innerText = sync.fullPeriodId;
+        async function syncAdminMarketsLive() {
+          try {
+            const res = await fetch('/api/markets');
+            if (res.ok) {
+              const data = await res.json();
+              adminAuthoritativeMarkets = data.markets;
 
-          if (sync.isBettingLocked) {
-            if (badgeEl) {
-              badgeEl.className = 'badge badge-rejected';
-              badgeEl.innerText = 'BET CLOSE';
+              ['MIAMI', 'VEGAS', 'PARIS', 'DUBAI'].forEach(k => {
+                const m = adminAuthoritativeMarkets[k];
+                if (!m) return;
+
+                const timerEl = document.getElementById('market-timer-' + k);
+                const badgeEl = document.getElementById('market-badge-' + k);
+                const periodEl = document.getElementById('market-period-' + k);
+
+                const mins = Math.floor(m.remaining_seconds / 60);
+                const secs = m.remaining_seconds % 60;
+                const fmt = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+                if (timerEl) timerEl.innerText = fmt;
+                if (periodEl) periodEl.innerText = m.period;
+
+                if (badgeEl) {
+                  if (m.is_betting_locked) {
+                    badgeEl.className = 'badge badge-rejected';
+                    badgeEl.innerText = 'BETTING LOCKED';
+                  } else {
+                    badgeEl.className = 'badge badge-approved';
+                    badgeEl.innerText = 'BETTING OPEN';
+                  }
+                }
+              });
+
+              // Decider selected market
+              const selM = adminAuthoritativeMarkets[selectedDeciderMarket];
+              if (selM) {
+                const deciderCountdown = document.getElementById('deciderCountdown');
+                const deciderBadge = document.getElementById('deciderBetStatusBadge');
+                const deciderStatus = document.getElementById('activeDeciderStatus');
+                const deciderPeriod = document.getElementById('activeDeciderPeriod');
+
+                const dmins = Math.floor(selM.remaining_seconds / 60);
+                const dsecs = selM.remaining_seconds % 60;
+                const dfmt = `${String(dmins).padStart(2, '0')}:${String(dsecs).padStart(2, '0')}`;
+
+                if (deciderCountdown) deciderCountdown.innerText = dfmt;
+                if (deciderPeriod) deciderPeriod.innerText = `#${selM.period}`;
+
+                if (deciderBadge && deciderStatus) {
+                  if (selM.is_betting_locked) {
+                    deciderBadge.className = 'badge badge-alert';
+                    deciderBadge.innerText = 'BETTING LOCKED (Ready for Outcome)';
+                    deciderStatus.innerText = `Status: Betting Locked (${selM.remaining_seconds}s remaining until settlement)`;
+                  } else {
+                    deciderBadge.className = 'badge badge-approved';
+                    deciderBadge.innerText = 'BETTING OPEN';
+                    deciderStatus.innerText = `Status: Betting Open (${dfmt} remaining)`;
+                  }
+                }
+              }
             }
-          } else {
-            if (badgeEl) {
-              badgeEl.className = 'badge badge-approved';
-              badgeEl.innerText = 'BET OPEN';
-            }
-          }
-        });
-
-        // Update Result Decider live indicators
-        const deciderCountdown = document.getElementById('deciderCountdown');
-        const deciderBadge = document.getElementById('deciderBetStatusBadge');
-        const deciderStatus = document.getElementById('activeDeciderStatus');
-        const deciderPeriod = document.getElementById('activeDeciderPeriod');
-
-        if (deciderCountdown) deciderCountdown.innerText = formatted;
-        if (deciderPeriod) deciderPeriod.innerText = `#${sync.fullPeriodId}`;
-
-        if (sync.isBettingLocked) {
-          if (deciderBadge) {
-            deciderBadge.className = 'badge badge-rejected';
-            deciderBadge.innerText = 'Bet Close';
-          }
-          if (deciderStatus) {
-            deciderStatus.innerText = `Status: Bet Closed (${sync.secondsLeft}s remaining)`;
-          }
-        } else {
-          if (deciderBadge) {
-            deciderBadge.className = 'badge badge-approved';
-            deciderBadge.innerText = 'Bet Open';
-          }
-          if (deciderStatus) {
-            deciderStatus.innerText = `Status: Bet Open (${formatted} left)`;
-          }
+          } catch (e) {}
         }
-      }
 
+        syncAdminMarketsLive();
+        setInterval(syncAdminMarketsLive, 1000);
+      }
       tick();
-      setInterval(tick, 1000);
     }
 
     // Helper utilities

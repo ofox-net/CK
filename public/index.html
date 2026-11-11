@@ -2194,11 +2194,44 @@
     let currentMarketId = 'MIAMI';
     let roadmapSelectedMarketId = 'MIAMI';
 
+    // Authoritative Server Clock and Markets State
+    let serverClockOffsetMs = 0;
+    let authoritativeMarketsData = null;
+
+    async function syncServerClock() {
+      try {
+        const t0 = Date.now();
+        const res = await fetch('/api/clock');
+        if (res.ok) {
+          const data = await res.json();
+          const t1 = Date.now();
+          const latency = (t1 - t0) / 2;
+          serverClockOffsetMs = data.server_time_ms - (t1 - latency);
+        }
+      } catch (e) {}
+    }
+
     // Global Device Clock Synchronization Engine
     // Everyday at 11:00 AM, Period starts at 221 across all 4 markets (#YYYYMMDD221)
     // 3-Minute duration (180s total: 150s Bet Open, 30s Bet Close)
-    function getGlobalSyncedRoundState() {
-      const now = new Date();
+    function getGlobalSyncedRoundState(mCode = 'MIAMI') {
+      const nowMs = Date.now() + serverClockOffsetMs;
+      
+      // If authoritative backend market state is available, prioritize it
+      if (authoritativeMarketsData && authoritativeMarketsData[mCode]) {
+        const m = authoritativeMarketsData[mCode];
+        const remaining = Math.max(0, Math.ceil((m.end_time_ms - nowMs) / 1000));
+        return {
+          dateStr: String(m.period).substring(0, 8),
+          periodNumber: m.period,
+          fullPeriodId: String(m.period),
+          secondsLeft: remaining,
+          isBettingLocked: (remaining <= 30),
+          status: m.status
+        };
+      }
+
+      const now = new Date(nowMs);
       const ref11AM = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 11, 0, 0, 0);
       let diffSeconds = Math.floor((now.getTime() - ref11AM.getTime()) / 1000);
 
@@ -2228,7 +2261,8 @@
         fullPeriodId,
         secondsLeft,
         isBettingLocked,
-        roundIndex
+        roundIndex,
+        status: isBettingLocked ? 'BETTING_LOCKED' : 'BETTING_OPEN'
       };
     }
 
@@ -2965,36 +2999,62 @@
       }
 
       container.innerHTML = filtered.map(slip => {
-        const isWon = slip.status === 'WON';
-        const isLost = slip.status === 'LOST';
-        const isWait = slip.status === 'WAIT';
-        const isRefunded = slip.status === 'REFUNDED';
-        const statusClass = isWon ? 'status-won' : isLost ? 'status-lost' : isRefunded ? 'status-refunded' : 'status-wait';
-        const statusColor = isWon ? 'var(--green)' : isLost ? 'var(--red)' : isRefunded ? 'var(--cyan)' : 'var(--gold)';
+        const status = (slip.status || 'PENDING').toUpperCase();
+        const isWon = status === 'WON';
+        const isLost = status === 'LOST';
+        const isPending = status === 'PENDING' || status === 'WAIT';
+        const isLocked = status === 'LOCKED';
+        const isCancelled = status === 'CANCELLED' || status === 'REFUNDED';
+
+        let statusClass = 'status-wait';
+        let statusColor = 'var(--gold)';
+        let badgeBg = 'rgba(255,215,0,0.12)';
+
+        if (isWon) {
+          statusClass = 'status-won';
+          statusColor = 'var(--green)';
+          badgeBg = 'rgba(0,230,118,0.15)';
+        } else if (isLost) {
+          statusClass = 'status-lost';
+          statusColor = 'var(--red)';
+          badgeBg = 'rgba(255,23,68,0.15)';
+        } else if (isLocked) {
+          statusClass = 'status-locked';
+          statusColor = '#FF9100';
+          badgeBg = 'rgba(255,145,0,0.15)';
+        } else if (isCancelled) {
+          statusClass = 'status-refunded';
+          statusColor = 'var(--cyan)';
+          badgeBg = 'rgba(0,229,255,0.18)';
+        }
+
+        const betAmt = Number(slip.amount || 0);
+        const winAmt = Number(slip.winAmount || 0);
 
         return `
           <div class="bet-slip-card ${statusClass}">
             <div style="display:flex; justify-content:space-between; align-items:center;">
               <div>
-                <strong style="color:var(--text); font-size:13px;">${slip.marketName}</strong>
+                <strong style="color:var(--text); font-size:13px;">${slip.marketName || (slip.marketId + ' MARKET')}</strong>
                 <span style="font-size:10px; color:var(--text-muted); font-family:monospace; margin-left:6px;">#${slip.period}</span>
+                <span style="font-size:9px; color:var(--text-muted); margin-left:4px;">(${slip.id})</span>
               </div>
-              <span class="badge-pill" style="background:${isRefunded ? 'rgba(0,229,255,0.18)' : 'rgba(255,255,255,0.08)'}; color:${statusColor}; font-weight:900;">${slip.status}</span>
+              <span class="badge-pill" style="background:${badgeBg}; color:${statusColor}; font-weight:900; font-size:11px; padding:3px 8px; border-radius:12px;">${status}</span>
             </div>
-            <div style="display:flex; justify-content:space-between; font-size:12px; margin-top:2px;">
+            <div style="display:flex; justify-content:space-between; font-size:12px; margin-top:4px;">
               <span>Target: <strong style="color:var(--gold);">${slip.target}</strong> (${slip.mult}X)</span>
-              <span>Stake: <strong style="color:#FFF;">₹${slip.amount.toFixed(2)}</strong> ${isRefunded ? `<span style="color:var(--cyan); font-weight:800; font-size:11px;">(Refunded +₹${slip.amount.toFixed(2)})</span>` : ''}</span>
+              <span>Stake: <strong style="color:#FFF;">₹${betAmt.toFixed(2)}</strong> ${isCancelled ? `<span style="color:var(--cyan); font-weight:800; font-size:11px;">(Refunded +₹${betAmt.toFixed(2)})</span>` : (isWon ? `<span style="color:var(--green); font-weight:800; font-size:11px;">(+₹${winAmt.toFixed(2)})</span>` : '')}</span>
             </div>
-            <div style="display:flex; justify-content:space-between; font-size:10px; color:var(--text-muted); border-top:1px solid rgba(255,255,255,0.05); padding-top:4px; margin-top:2px;">
-              <span>🕒 Placed: ${slip.time}</span>
-              <span style="font-weight:700; color:${statusColor};">🎲 Result: ${isRefunded ? 'Refunded' : (slip.result || (isWait ? 'Awaiting Draw' : 'Completed'))}</span>
+            <div style="display:flex; justify-content:space-between; font-size:10px; color:var(--text-muted); border-top:1px solid rgba(255,255,255,0.05); padding-top:4px; margin-top:4px;">
+              <span>🕒 Placed: ${slip.time || 'Just now'}</span>
+              <span style="font-weight:700; color:${statusColor};">🎲 Result: ${isCancelled ? 'Cancelled & Refunded' : (slip.result || (isPending ? 'Awaiting Draw' : (isLocked ? 'Locked (Drawing)' : 'Completed')))}</span>
             </div>
           </div>
         `;
       }).join('');
     }
 
-    // Active Placed Bets for Current Round
+    // Active Placed Bets for Current Round (Real-time DB-backed status)
     function renderActiveBets() {
       const st = marketStates[currentMarketId];
       const container = document.getElementById('activeBetsList');
@@ -3007,60 +3067,93 @@
         return;
       }
 
-      container.innerHTML = st.activeBets.map((b, idx) => `
+      container.innerHTML = st.activeBets.map((b, idx) => {
+        const isLocked = st.isBettingLocked || b.status === 'LOCKED';
+        const bStatus = isLocked ? 'LOCKED' : (b.status || 'PENDING');
+        const badgeColor = isLocked ? '#FF9100' : 'var(--gold)';
+
+        return `
         <div class="bet-item">
           <div>
-            <div style="font-size:13px; font-weight:800; color:#FFF;">${b.target} (${b.mult}X)</div>
-            <div style="font-size:10px; color:var(--text-muted);">Period #${st.currentPeriod} • Placed at ${b.time}</div>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-size:13px; font-weight:800; color:#FFF;">${b.target} (${b.mult}X)</span>
+              <span style="font-size:9px; font-weight:800; padding:2px 6px; border-radius:8px; background:rgba(255,255,255,0.08); color:${badgeColor};">${bStatus}</span>
+            </div>
+            <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">ID: ${b.id} • Period #${st.currentPeriod} • ${b.time || 'Placed'}</div>
           </div>
           <div style="display:flex; align-items:center; gap:8px;">
             <div style="text-align:right;">
-              <strong style="color:var(--gold); font-size:14px;">₹${b.amount.toFixed(2)}</strong>
-              <div style="font-size:10px; color:var(--green);">Win: ₹${(b.amount * b.mult).toFixed(2)}</div>
+              <strong style="color:var(--gold); font-size:14px;">₹${Number(b.amount).toFixed(2)}</strong>
+              <div style="font-size:10px; color:var(--green);">Win: ₹${(Number(b.amount) * Number(b.mult)).toFixed(2)}</div>
             </div>
-            ${!st.isBettingLocked ? `<button class="btn-secondary" style="padding:4px 8px; font-size:10px; color:var(--red);" onclick="cancelActiveBet(${idx})">✕ Refund</button>` : ''}
+            ${!isLocked ? `<button class="btn-secondary" style="padding:4px 8px; font-size:10px; color:var(--red);" onclick="cancelActiveBet(${idx})">✕ Refund</button>` : `<span style="font-size:10px; color:var(--text-muted);">Locked</span>`}
           </div>
         </div>
-      `).join('');
+      `;
+      }).join('');
     }
 
-    function cancelActiveBet(index) {
+    async function cancelActiveBet(index) {
       const st = marketStates[currentMarketId];
-      if (st.isBettingLocked) {
-        showToast('⚠️ Bets locked for this round!');
+      if (st.isBettingLocked || st.secondsLeft <= 30) {
+        showToast('⚠️ BETTING LOCKED: Cannot cancel bet in the last 30 seconds!');
         return;
       }
       const b = st.activeBets[index];
-      userBalance += b.amount;
+      if (!b) return;
 
-      // Locate matching bet slip in userBetSlipsHistory and update it to REFUNDED permanently
-      const slip = userBetSlipsHistory.find(s => (b.id && s.id === b.id) || (s.period === st.currentPeriod && s.marketId === currentMarketId && s.target === b.target && s.status === 'WAIT'));
-      if (slip) {
-        slip.status = 'REFUNDED';
-        slip.result = 'Refunded';
+      try {
+        const res = await fetch('/api/bets/cancel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            betId: b.id,
+            userId: currentUserId || 'USR-1001'
+          })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          showToast(`❌ ${data.error || 'Cancellation failed'}`);
+          return;
+        }
+
+        userBalance = data.newBalance;
+        b.status = 'CANCELLED';
+        b.result = 'Cancelled & Refunded';
+
+        const slip = userBetSlipsHistory.find(s => s.id === b.id);
+        if (slip) {
+          slip.status = 'CANCELLED';
+          slip.result = 'Cancelled & Refunded';
+        }
+
+        st.activeBets.splice(index, 1);
+        try {
+          localStorage.setItem('colour_king_user_bet_slips', JSON.stringify(userBetSlipsHistory));
+        } catch (e) {}
+
+        walletLedger.unshift({
+          id: 'TX-' + Math.floor(1000 + Math.random() * 9000),
+          type: 'DEPOSIT',
+          title: `Refund: ${b.target} (${MARKETS[currentMarketId].name})`,
+          ref: `Period #${st.currentPeriod} • Cancelled & Refunded`,
+          amount: b.amount,
+          time: 'Just now',
+          status: 'COMPLETED'
+        });
+
+        updateBalanceUI();
+        renderActiveBets();
+        renderBetSlips();
+        renderWalletLedger();
+        showToast(`✓ Bet ${b.id} refunded (+₹${Number(b.amount).toFixed(2)})`);
+        playSound('betClick');
+        if (window.AndroidBridge && window.AndroidBridge.syncWalletBalance) {
+          window.AndroidBridge.syncWalletBalance(userBalance, `Refund for bet ${b.id}`);
+        }
+      } catch (e) {
+        showToast('⚠️ Error connecting to server to cancel bet.');
       }
-
-      // Remove from active bets of current round
-      st.activeBets.splice(index, 1);
-
-      // Add refund record to Wallet Ledger
-      walletLedger.unshift({
-        id: 'TX-' + Math.floor(1000 + Math.random() * 9000),
-        type: 'DEPOSIT',
-        title: `Refund: ${b.target} (${MARKETS[currentMarketId].name})`,
-        ref: `Period #${st.currentPeriod} • Cancelled & Refunded`,
-        amount: b.amount,
-        time: 'Just now',
-        status: 'COMPLETED'
-      });
-
-      updateBalanceUI();
-      renderActiveBets();
-      renderBetSlips();
-      renderWalletLedger();
-      showToast(`✓ Bet on ${b.target} cancelled & refunded! Result: Refunded`);
-      playSound('betClick');
-      syncBalanceWithBackend();
     }
 
     // BET PLACEMENT MODAL (Matches Android UI & Screenshot 1)
@@ -3261,10 +3354,10 @@
       }
     }
 
-    function confirmPlaceBet() {
+    async function confirmPlaceBet() {
       const st = marketStates[currentMarketId];
-      if (st.isBettingLocked) {
-        showToast('⚠️ Betting locked for current round!');
+      if (st.isBettingLocked || st.secondsLeft <= 30) {
+        showToast('⚠️ BETTING LOCKED: Betting is closed for current round (last 30s cutoff)!');
         closeModal('betModal');
         return;
       }
@@ -3274,296 +3367,217 @@
         return;
       }
 
-      userBalance -= total;
-      updateBalanceUI();
+      const confirmBtn = document.getElementById('betModalConfirmBtn');
+      if (confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.innerText = 'Submitting Bet...';
+      }
 
-      const now = new Date();
-      const timeStr = now.toLocaleTimeString();
+      try {
+        const res = await fetch('/api/bets/place', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: currentUserId || 'USR-1001',
+            market: currentMarketId,
+            roundId: `RND_${currentMarketId}_${st.currentPeriod}`,
+            period: st.currentPeriod,
+            amount: total,
+            type: pendingBet.type,
+            target: pendingBet.target,
+            mult: pendingBet.mult
+          })
+        });
 
-      const newSlipId = 'SLIP-' + Math.floor(1000 + Math.random() * 9000);
-
-      // Add to Active Bets
-      st.activeBets.push({
-        id: newSlipId,
-        target: pendingBet.target,
-        type: pendingBet.type,
-        mult: pendingBet.mult,
-        amount: total,
-        time: timeStr
-      });
-
-      // Add to Bet Slips History
-      userBetSlipsHistory.unshift({
-        id: newSlipId,
-        marketId: currentMarketId,
-        marketName: `${MARKETS[currentMarketId].name} MARKET`,
-        period: st.currentPeriod,
-        target: pendingBet.target,
-        type: pendingBet.type,
-        mult: pendingBet.mult,
-        amount: total,
-        time: `Today, ${timeStr}`,
-        status: 'WAIT',
-        result: 'Awaiting Draw'
-      });
-
-      // Add to Ledger
-      walletLedger.unshift({
-        id: 'TX-' + Math.floor(1000 + Math.random() * 9000),
-        type: 'BET',
-        title: `Bet on ${MARKETS[currentMarketId].name}`,
-        ref: `Target ${pendingBet.target} (${pendingBet.mult}X)`,
-        amount: -total,
-        time: 'Just now',
-        status: 'COMPLETED'
-      });
-
-      closeModal('betModal');
-      renderActiveBets();
-      renderBetSlips();
-      showToast(`✓ Bet placed: ₹${total} on ${pendingBet.target}!`);
-      playSound('betClick');
-      syncBalanceWithBackend();
-    }
-
-    // GAME ENGINE & GLOBAL CLOCK TICKER
-    let engineTickCount = 0;
-    function startEngineLoop() {
-      syncAdminDrawOverrides();
-      setInterval(() => {
-        engineTickCount++;
-        if (engineTickCount % 3 === 0) {
-          syncAdminDrawOverrides();
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          showToast(`❌ ${data.error || 'Bet submission failed'}`);
+          if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.innerText = `Confirm Bet ₹${total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+          }
+          return;
         }
 
-        const sync = getGlobalSyncedRoundState();
+        // Successfully saved in database!
+        userBalance = data.newBalance;
+        updateBalanceUI();
+
+        const confirmedBet = data.bet;
+        st.activeBets.push(confirmedBet);
+        userBetSlipsHistory.unshift(confirmedBet);
+
+        try {
+          localStorage.setItem('colour_king_user_bet_slips', JSON.stringify(userBetSlipsHistory));
+        } catch (e) {}
+
+        walletLedger.unshift({
+          id: 'TX-' + Math.floor(1000 + Math.random() * 9000),
+          type: 'BET',
+          title: `Bet on ${MARKETS[currentMarketId].name}`,
+          ref: `Target ${pendingBet.target} (${pendingBet.mult}X)`,
+          amount: -total,
+          time: 'Just now',
+          status: 'COMPLETED'
+        });
+
+        closeModal('betModal');
+        renderActiveBets();
+        renderBetSlips();
+        showToast(`✓ Bet placed: ₹${total.toFixed(2)} on ${pendingBet.target}! (ID: ${confirmedBet.id})`);
+        playSound('betClick');
+
+        if (window.AndroidBridge && window.AndroidBridge.syncWalletBalance) {
+          window.AndroidBridge.syncWalletBalance(userBalance, `Bet placed on ${currentMarketId}`);
+        }
+      } catch (err) {
+        showToast('⚠️ Network error placing bet. Please retry.');
+      } finally {
+        if (confirmBtn) {
+          confirmBtn.disabled = false;
+        }
+      }
+    }
+
+    // Load User Bets Directly From Backend (Database Single Source of Truth)
+    async function loadUserBetsFromBackend() {
+      const uid = currentUserId || 'USR-1001';
+      try {
+        const res = await fetch(`/api/bets?userId=${encodeURIComponent(uid)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.betHistory)) {
+            userBetSlipsHistory = data.betHistory;
+            try {
+              localStorage.setItem('colour_king_user_bet_slips', JSON.stringify(userBetSlipsHistory));
+            } catch (e) {}
+          }
+          if (Array.isArray(data.activeBets)) {
+            ['MIAMI', 'VEGAS', 'PARIS', 'DUBAI'].forEach(mKey => {
+              if (marketStates[mKey]) {
+                marketStates[mKey].activeBets = data.activeBets.filter(b => b.marketId === mKey);
+              }
+            });
+          }
+          renderActiveBets();
+          renderBetSlips();
+        }
+      } catch (e) {
+        console.warn('Error fetching bets from backend:', e);
+      }
+    }
+
+    // Sync 4 Independent Markets from Backend
+    async function syncAuthoritativeMarkets() {
+      try {
+        const res = await fetch('/api/markets');
+        if (res.ok) {
+          const data = await res.json();
+          authoritativeMarketsData = data.markets;
+
+          const nowMs = Date.now() + serverClockOffsetMs;
+          const keys = ['MIAMI', 'VEGAS', 'PARIS', 'DUBAI'];
+
+          keys.forEach(k => {
+            const m = authoritativeMarketsData[k];
+            if (!m) return;
+            const st = marketStates[k];
+
+            const remaining = Math.max(0, Math.ceil((m.end_time_ms - nowMs) / 1000));
+            st.secondsLeft = remaining;
+            st.isBettingLocked = (remaining <= 30);
+
+            // Check if period changed (Round Completed & Next Round Started!)
+            if (st.currentPeriod && st.currentPeriod !== String(m.period)) {
+              st.currentPeriod = String(m.period);
+              // Fetch user bets and updated wallet balance from backend
+              loadUserBetsFromBackend();
+              syncBalanceWithBackend();
+              fetchMarketHistory(k);
+            } else {
+              st.currentPeriod = String(m.period);
+            }
+
+            if (m.latest_result) {
+              st.latestResult = {
+                number: m.latest_result.number,
+                color: m.latest_result.colClass || (m.latest_result.number === 0 ? 'red-violet' : m.latest_result.number === 5 ? 'green-violet' : ([1,3,7,9].includes(m.latest_result.number) ? 'green' : 'red')),
+                isBig: m.latest_result.isBig
+              };
+            }
+          });
+
+          updateMarketUI();
+        }
+      } catch (e) {}
+    }
+
+    async function fetchMarketHistory(mKey) {
+      try {
+        const res = await fetch(`/api/markets/history?market=${mKey}&limit=50`);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.records) && data.records.length > 0) {
+            marketStates[mKey].pastRecords = data.records;
+            if (mKey === currentMarketId) {
+              renderTrendChart();
+              renderHistoryTable();
+              render10x10BeadPlate();
+            }
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Background Tab & Focus Handlers (Continuous Authoritative Countdown)
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        syncServerClock();
+        syncAuthoritativeMarkets();
+        loadUserBetsFromBackend();
+      }
+    });
+    window.addEventListener('focus', () => {
+      syncServerClock();
+      syncAuthoritativeMarkets();
+      loadUserBetsFromBackend();
+    });
+
+    // GAME ENGINE & AUTHORITATIVE CLOCK TICKER
+    let engineTickCount = 0;
+    function startEngineLoop() {
+      syncServerClock();
+      syncAuthoritativeMarkets();
+      loadUserBetsFromBackend();
+      syncAdminDrawOverrides();
+
+      // High-resolution local ticker using server timestamps
+      setInterval(() => {
+        engineTickCount++;
+        const nowMs = Date.now() + serverClockOffsetMs;
 
         const keys = ['MIAMI', 'VEGAS', 'PARIS', 'DUBAI'];
         keys.forEach(k => {
           const st = marketStates[k];
-          st.secondsLeft = sync.secondsLeft;
-          st.isBettingLocked = sync.isBettingLocked;
-
-          if (st.currentPeriod !== sync.fullPeriodId) {
-            // New round triggered! Reveal previous round outcome
-            resolveRoundForMarket(k, st.currentPeriod);
-            st.currentPeriod = sync.fullPeriodId;
-            st.activeBets = [];
+          if (authoritativeMarketsData && authoritativeMarketsData[k]) {
+            const m = authoritativeMarketsData[k];
+            const remaining = Math.max(0, Math.ceil((m.end_time_ms - nowMs) / 1000));
+            st.secondsLeft = remaining;
+            st.isBettingLocked = (remaining <= 30);
+          } else {
+            const sync = getGlobalSyncedRoundState(k);
+            st.secondsLeft = sync.secondsLeft;
+            st.isBettingLocked = sync.isBettingLocked;
           }
         });
 
         updateMarketUI();
+
+        // Every 1.5 seconds, poll backend for authoritative synchronization
+        if (engineTickCount % 2 === 0) {
+          syncAuthoritativeMarkets();
+        }
       }, 1000);
-    }
-
-    function resolveRoundForMarket(mKey, finishedPeriod) {
-      const st = marketStates[mKey];
-      const roundTimeStr = new Date().toTimeString().split(' ')[0];
-
-      let winningNumber;
-      let drawMode = 'AUTO_ALGO_70_30';
-
-      // 1. Check if Admin set a Manual Draw Outcome for this market
-      const ov = activeAdminOverrides && activeAdminOverrides[mKey];
-      if (ov && ov.mode === 'MANUAL' && (ov.period === finishedPeriod || !ov.period)) {
-        winningNumber = parseInt(ov.number);
-        drawMode = 'MANUAL_ADMIN';
-        delete activeAdminOverrides[mKey]; // Consume override
-      } else if (declaredResultsStore[mKey] && declaredResultsStore[mKey][finishedPeriod]) {
-        // 2. Or if already declared previously, use that permanent result
-        winningNumber = declaredResultsStore[mKey][finishedPeriod].number;
-      } else {
-        // 3. User Requirement: 70% House Profit / 30% User Win Ratio Algorithm
-        // Evaluate projected payouts for all 10 candidate outcomes (0 to 9) based on active bets
-        const activeBets = st.activeBets || [];
-        const totalRoundPool = activeBets.reduce((sum, b) => sum + (b.amount || 0), 0);
-
-        if (totalRoundPool > 0) {
-          const candidateStats = [];
-          for (let cand = 0; cand <= 9; cand++) {
-            const isCandBig = cand >= 5;
-            const isCandGreen = [1, 3, 7, 9].includes(cand);
-            const isCandRed = [2, 4, 6, 8].includes(cand);
-            const isCandViolet = (cand === 0 || cand === 5);
-
-            let candPayout = 0;
-            activeBets.forEach(b => {
-              if (b.type === 'BIG_SMALL') {
-                if ((b.target === 'BIG' && isCandBig) || (b.target === 'SMALL' && !isCandBig)) {
-                  candPayout += b.amount * 2.0;
-                }
-              } else if (b.type === 'COLOR') {
-                if (b.target === 'VIOLET' && isCandViolet) {
-                  candPayout += b.amount * 3.0;
-                } else if (b.target === 'GREEN') {
-                  if (cand === 5) candPayout += b.amount * 1.5;
-                  else if (isCandGreen) candPayout += b.amount * 2.0;
-                } else if (b.target === 'RED') {
-                  if (cand === 0) candPayout += b.amount * 1.5;
-                  else if (isCandRed) candPayout += b.amount * 2.0;
-                }
-              } else if (b.type === 'NUMBER') {
-                if (b.target === String(cand)) {
-                  candPayout += b.amount * 9.0;
-                }
-              }
-            });
-
-            candidateStats.push({ number: cand, payout: candPayout });
-          }
-
-          // House guarantees at least 70% profit: User Payout <= 30% of Total Wager Pool
-          const maxAllowedUserPayout = totalRoundPool * 0.30;
-          const profitableOutcomes = candidateStats.filter(c => c.payout <= maxAllowedUserPayout);
-
-          if (profitableOutcomes.length > 0) {
-            // Randomly select among the profitable outcomes meeting 70%+ house profit
-            const chosen = profitableOutcomes[Math.floor(Math.random() * profitableOutcomes.length)];
-            winningNumber = chosen.number;
-          } else {
-            // Select candidate with minimum payout (maximum house margin)
-            candidateStats.sort((a, b) => a.payout - b.payout);
-            winningNumber = candidateStats[0].number;
-          }
-        } else {
-          // No bets in current round: draw randomly from 0 to 9
-          winningNumber = Math.floor(Math.random() * 10);
-        }
-      }
-
-      winningNumber = Math.max(0, Math.min(9, winningNumber));
-      const isBig = winningNumber >= 5;
-      const isGreen = [1, 3, 7, 9].includes(winningNumber);
-      const isRed = [2, 4, 6, 8].includes(winningNumber);
-      const isViolet = (winningNumber === 0 || winningNumber === 5);
-      const colClass = isViolet ? (winningNumber === 0 ? 'red-violet' : 'green-violet') : (isGreen ? 'green' : 'red');
-      const ballColor = isViolet ? 'violet' : (isGreen ? 'green' : 'red');
-
-      const res = {
-        period: finishedPeriod,
-        number: winningNumber,
-        isBig: isBig,
-        color: ballColor,
-        colClass: colClass,
-        drawMode: drawMode,
-        time: roundTimeStr,
-        hash: "draw_fair_" + finishedPeriod + "_" + winningNumber
-      };
-
-      // Store permanently in local cache so it NEVER changes on refresh!
-      if (!declaredResultsStore[mKey]) declaredResultsStore[mKey] = {};
-      declaredResultsStore[mKey][finishedPeriod] = res;
-      try {
-        localStorage.setItem('colour_king_declared_results_v3', JSON.stringify(declaredResultsStore));
-      } catch (e) {}
-
-      st.latestResult = { number: winningNumber, color: colClass, isBig };
-      
-      const existingIdx = st.pastRecords.findIndex(r => r.period === finishedPeriod);
-      if (existingIdx >= 0) {
-        st.pastRecords[existingIdx] = res;
-      } else {
-        st.pastRecords.unshift(res);
-      }
-
-      // Persist live draw result to server so all players and sessions see identical fixed outcome
-      try {
-        fetch('/api/results', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            market: mKey,
-            period: finishedPeriod,
-            number: winningNumber,
-            isBig: isBig,
-            color: ballColor,
-            colClass: colClass,
-            drawMode: drawMode,
-            time: roundTimeStr
-          })
-        }).catch(() => {});
-      } catch (e) {}
-
-      // Resolve bet slips for this market & period
-      let totalWon = 0;
-      userBetSlipsHistory.forEach(slip => {
-        // Refunded bets are permanently preserved — NEVER change status or result after declaring outcome!
-        if (slip.status === 'REFUNDED' || slip.status === 'CANCELLED') {
-          return;
-        }
-
-        if (slip.period === finishedPeriod && slip.marketId === mKey && slip.status === 'WAIT') {
-          let won = false;
-          let payout = 0;
-
-          if (slip.type === 'BIG_SMALL') {
-            if ((slip.target === 'BIG' && isBig) || (slip.target === 'SMALL' && !isBig)) {
-              won = true;
-              payout = slip.amount * 2.0;
-            }
-          } else if (slip.type === 'COLOR') {
-            if (slip.target === 'VIOLET' && isViolet) {
-              won = true;
-              payout = slip.amount * 3.0; // 3.0X Violet payout!
-            } else if (slip.target === 'GREEN') {
-              if (winningNumber === 5) {
-                // Half-win 1.5x on Violet outcome
-                won = true;
-                payout = slip.amount * 1.5;
-              } else if (isGreen) {
-                won = true;
-                payout = slip.amount * 2.0;
-              }
-            } else if (slip.target === 'RED') {
-              if (winningNumber === 0) {
-                // Half-win 1.5x on Violet outcome
-                won = true;
-                payout = slip.amount * 1.5;
-              } else if (isRed) {
-                won = true;
-                payout = slip.amount * 2.0;
-              }
-            }
-          } else if (slip.type === 'NUMBER') {
-            if (slip.target === `${winningNumber}`) {
-              won = true;
-              payout = slip.amount * 9.0;
-            }
-          }
-
-          if (won) {
-            slip.status = 'WON';
-            slip.result = `Won ₹${payout.toFixed(2)}`;
-            totalWon += payout;
-          } else {
-            slip.status = 'LOST';
-            slip.result = `Lost (Result ${winningNumber})`;
-          }
-        }
-      });
-
-      if (totalWon > 0) {
-        userBalance += totalWon;
-        walletLedger.unshift({
-          id: 'TX-' + Math.floor(1000 + Math.random() * 9000),
-          type: 'WIN',
-          title: `Round Win ${MARKETS[mKey].name}`,
-          ref: `Period #${finishedPeriod}`,
-          amount: totalWon,
-          time: 'Just now',
-          status: 'COMPLETED'
-        });
-        updateBalanceUI();
-        playSound('win');
-        showToast(`🎉 Congratulations! Won ₹${totalWon.toFixed(2)} in ${MARKETS[mKey].name}!`);
-        syncBalanceWithBackend();
-      }
-
-      renderTrendChart();
-      renderHistoryTable();
-      render10x10BeadPlate();
-      renderBetSlips();
-      renderActiveBets();
     }
 
     function updateMarketUI() {
@@ -3578,15 +3592,19 @@
       const circle = document.getElementById('timerCircle');
       if (circle) circle.classList.toggle('danger', st.isBettingLocked);
 
+      // Display 5 Clear Statuses: BETTING OPEN, BETTING LOCKED, WAITING FOR RESULT, RESULT DECLARED, NEXT ROUND
       const statusBadge = document.getElementById('bettingStatusBadge');
       const statusText = document.getElementById('bettingStatusText');
       if (statusBadge && statusText) {
-        if (st.isBettingLocked) {
-          statusBadge.className = 'status-badge closed';
-          statusText.innerText = 'Bet Closed (30s)';
-        } else {
+        if (st.secondsLeft > 30) {
           statusBadge.className = 'status-badge open';
-          statusText.innerText = 'Bet Open';
+          statusText.innerText = 'BETTING OPEN';
+        } else if (st.secondsLeft > 0) {
+          statusBadge.className = 'status-badge closed';
+          statusText.innerText = 'BETTING LOCKED';
+        } else if (st.secondsLeft === 0) {
+          statusBadge.className = 'status-badge waiting';
+          statusText.innerText = 'WAITING FOR RESULT';
         }
       }
 
