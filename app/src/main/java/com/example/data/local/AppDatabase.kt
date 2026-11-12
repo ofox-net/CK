@@ -330,30 +330,35 @@ abstract class AppDatabase : RoomDatabase() {
         )
         auditDao().insertLog(auditLog)
 
-        // 7. Seed 50 historical completed rounds for all 4 markets sharing synchronized period numbers
-        val syncedClock = com.example.domain.GlobalRoundClock.getSyncedState()
-        val currentPeriodNum = syncedClock.periodNumber
+        // 7. Seed 50 historical completed rounds for all 4 markets sharing synchronized period numbers & Web-identical results
         val historicalRounds = mutableListOf<GameRoundEntity>()
         val currentTime = System.currentTimeMillis()
 
-        val marketIdsList = listOf("market_miami", "market_vegas", "market_paris", "market_dubai", "color_prediction")
+        val marketCodeByGameId = mapOf(
+            "market_miami" to "MIAMI",
+            "market_vegas" to "VEGAS",
+            "market_paris" to "PARIS",
+            "market_dubai" to "DUBAI",
+            "color_prediction" to "MIAMI"
+        )
 
-        for (gId in marketIdsList) {
+        for ((gId, mCode) in marketCodeByGameId) {
             for (i in 1..50) {
-                val periodNum = currentPeriodNum - (51 - i)
-                val seed = "master_fair_seed_${gId}_$periodNum"
-                val hash = com.example.domain.ProvablyFairEngine.hashSha256(seed)
                 val roundTime = currentTime - ((51 - i) * 180000L) // 3-minute steps
-                val result = com.example.domain.ProvablyFairEngine.calculateResult(seed, "apex_community_seed", periodNum)
+                val synced = com.example.domain.GlobalRoundClock.getSyncedState(roundTime)
+                val periodNum = synced.periodNumber
+                val seed = com.example.domain.ProvablyFairEngine.avalancheSeed(mCode, periodNum.toString())
+                val hash = com.example.domain.ProvablyFairEngine.hashSha256(seed)
+                val result = com.example.domain.ProvablyFairEngine.calculateAvalancheResult(mCode, periodNum.toString())
 
                 historicalRounds.add(
                     GameRoundEntity(
-                        roundId = "rnd_${tenantId}_${gId}_$periodNum",
+                        roundId = if (gId == "color_prediction") "rnd_${tenantId}_LEGACY_$periodNum" else "rnd_${tenantId}_${mCode}_$periodNum",
                         gameId = gId,
                         tenantId = tenantId,
                         roundNumber = periodNum,
                         startTime = roundTime - 180000L,
-                        bettingCloseTime = roundTime - 5000L,
+                        bettingCloseTime = roundTime - 30000L,
                         resultTime = roundTime,
                         status = com.example.data.model.RoundStatus.COMPLETED.name,
                         resultNumber = result.number,
@@ -362,7 +367,7 @@ abstract class AppDatabase : RoomDatabase() {
                         serverSeedHash = hash,
                         serverSeed = seed,
                         nonce = periodNum,
-                        clientSeed = "apex_community_seed",
+                        clientSeed = "PROVABLY_FAIR_AVALANCHE",
                         createdAt = roundTime - 180000L,
                         settledAt = roundTime
                     )

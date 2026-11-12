@@ -1697,10 +1697,12 @@
       if (p) p.value = 'Prince@124735';
     }
 
+    let adminClockOffsetMs = 0;
+    let adminAuthoritativeMarkets = null;
+
     function getIndianTimeDate(date = new Date()) {
-      const utcMs = date.getTime() + (date.getTimezoneOffset() * 60000);
       const istOffsetMs = 5.5 * 3600 * 1000;
-      return new Date(utcMs + istOffsetMs);
+      return new Date(date.getTime() + istOffsetMs);
     }
 
     function formatIndianTimeString(date = new Date()) {
@@ -1731,24 +1733,39 @@
     // Everyday at 11:00 AM IST, Period starts at 221 across all 4 markets (#YYYYMMDD221)
     // 3-Minute duration (180s total: 150s Bet Open, 30s Bet Close)
     // ----------------------------------------------------
-    function getGlobalSyncedRoundState() {
-      const now = new Date();
-      const istNow = getIndianTimeDate(now);
+    function getGlobalSyncedRoundState(mCode = 'MIAMI') {
+      const nowMs = Date.now() + adminClockOffsetMs;
 
-      // Daily 11:00:00 reference point in Indian Clock Time (IST)
-      const ref11AM = new Date(istNow.getFullYear(), istNow.getMonth(), istNow.getDate(), 11, 0, 0, 0);
-      let diffSeconds = Math.floor((istNow.getTime() - ref11AM.getTime()) / 1000);
-
-      // If before 11:00 AM IST today, reference 11:00 AM IST of yesterday
-      let refDate = ref11AM;
-      if (diffSeconds < 0) {
-        refDate = new Date(ref11AM.getTime() - 24 * 3600 * 1000);
-        diffSeconds = Math.floor((istNow.getTime() - refDate.getTime()) / 1000);
+      if (adminAuthoritativeMarkets && adminAuthoritativeMarkets[mCode]) {
+        const m = adminAuthoritativeMarkets[mCode];
+        const rawDiff = m.end_time_ms - nowMs;
+        if (rawDiff > 0) {
+          const secondsLeft = Math.min(180, Math.max(1, Math.ceil(rawDiff / 1000)));
+          return {
+            dateStr: String(m.period).substring(0, 8),
+            periodNumber: m.period,
+            fullPeriodId: String(m.period),
+            secondsLeft,
+            isBettingLocked: (secondsLeft <= 30),
+            istTimeString: formatIndianTimeString(new Date(nowMs))
+          };
+        }
       }
 
-      const year = refDate.getFullYear();
-      const month = String(refDate.getMonth() + 1).padStart(2, '0');
-      const day = String(refDate.getDate()).padStart(2, '0');
+      const istOffsetMs = 5.5 * 3600 * 1000;
+      const istNow = new Date(nowMs + istOffsetMs);
+      let ref11AmUtcMs = Date.UTC(istNow.getUTCFullYear(), istNow.getUTCMonth(), istNow.getUTCDate(), 11, 0, 0, 0);
+      let diffSeconds = Math.floor(((nowMs + istOffsetMs) - ref11AmUtcMs) / 1000);
+
+      if (diffSeconds < 0) {
+        ref11AmUtcMs -= 24 * 3600 * 1000;
+        diffSeconds = Math.floor(((nowMs + istOffsetMs) - ref11AmUtcMs) / 1000);
+      }
+
+      const refDate = new Date(ref11AmUtcMs);
+      const year = refDate.getUTCFullYear();
+      const month = String(refDate.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(refDate.getUTCDate()).padStart(2, '0');
       const dateStr = `${year}${month}${day}`;
 
       const roundDuration = 180; // 3 minutes per round
@@ -1756,11 +1773,10 @@
       const currentPeriodNumber = 221 + roundIndex;
       const fullPeriodId = `${dateStr}${currentPeriodNumber}`;
 
-      const secondsPassed = diffSeconds % roundDuration;
-      const secondsLeft = roundDuration - secondsPassed;
+      const roundEndIstMs = ref11AmUtcMs + ((roundIndex + 1) * roundDuration * 1000);
+      const remainingMs = roundEndIstMs - (nowMs + istOffsetMs);
+      const secondsLeft = Math.min(roundDuration, Math.max(0, Math.ceil(remainingMs / 1000)));
       const isBettingLocked = (secondsLeft <= 30); // 30 second Bet Close
-
-      const istTimeString = formatIndianTimeString(now);
 
       return {
         dateStr,
@@ -1769,7 +1785,7 @@
         secondsLeft,
         isBettingLocked,
         roundIndex,
-        istTimeString
+        istTimeString: formatIndianTimeString(new Date(nowMs))
       };
     }
 
@@ -3211,82 +3227,81 @@
     // GLOBAL SYNCHRONIZED TICKER (All 4 Markets & Devices)
     // ----------------------------------------------------
     function startAdminTicker() {
-      function tick() {
-        const sync = getGlobalSyncedRoundState();
-        const mins = Math.floor(sync.secondsLeft / 60);
-        const secs = sync.secondsLeft % 60;
-        const formatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+      let adminTickCount = 0;
 
-        let adminAuthoritativeMarkets = null;
+      function renderAdminTimersSmooth() {
+        try {
+          adminTickCount++;
+          ['MIAMI', 'VEGAS', 'PARIS', 'DUBAI'].forEach(k => {
+            const sync = getGlobalSyncedRoundState(k);
+            const timerEl = document.getElementById('market-timer-' + k);
+            const badgeEl = document.getElementById('market-badge-' + k);
+            const periodEl = document.getElementById('market-period-' + k);
 
-        async function syncAdminMarketsLive() {
-          try {
-            const res = await fetch('/api/markets');
-            if (res.ok) {
-              const data = await res.json();
-              adminAuthoritativeMarkets = data.markets;
+            const mins = Math.floor(sync.secondsLeft / 60);
+            const secs = sync.secondsLeft % 60;
+            const fmt = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 
-              ['MIAMI', 'VEGAS', 'PARIS', 'DUBAI'].forEach(k => {
-                const m = adminAuthoritativeMarkets[k];
-                if (!m) return;
-
-                const timerEl = document.getElementById('market-timer-' + k);
-                const badgeEl = document.getElementById('market-badge-' + k);
-                const periodEl = document.getElementById('market-period-' + k);
-
-                const mins = Math.floor(m.remaining_seconds / 60);
-                const secs = m.remaining_seconds % 60;
-                const fmt = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-
-                if (timerEl) timerEl.innerText = fmt;
-                if (periodEl) periodEl.innerText = m.period;
-
-                if (badgeEl) {
-                  if (m.is_betting_locked) {
-                    badgeEl.className = 'badge badge-rejected';
-                    badgeEl.innerText = 'BETTING LOCKED';
-                  } else {
-                    badgeEl.className = 'badge badge-approved';
-                    badgeEl.innerText = 'BETTING OPEN';
-                  }
-                }
-              });
-
-              // Decider selected market
-              const selM = adminAuthoritativeMarkets[selectedDeciderMarket];
-              if (selM) {
-                const deciderCountdown = document.getElementById('deciderCountdown');
-                const deciderBadge = document.getElementById('deciderBetStatusBadge');
-                const deciderStatus = document.getElementById('activeDeciderStatus');
-                const deciderPeriod = document.getElementById('activeDeciderPeriod');
-
-                const dmins = Math.floor(selM.remaining_seconds / 60);
-                const dsecs = selM.remaining_seconds % 60;
-                const dfmt = `${String(dmins).padStart(2, '0')}:${String(dsecs).padStart(2, '0')}`;
-
-                if (deciderCountdown) deciderCountdown.innerText = dfmt;
-                if (deciderPeriod) deciderPeriod.innerText = `#${selM.period}`;
-
-                if (deciderBadge && deciderStatus) {
-                  if (selM.is_betting_locked) {
-                    deciderBadge.className = 'badge badge-alert';
-                    deciderBadge.innerText = 'BETTING LOCKED (Ready for Outcome)';
-                    deciderStatus.innerText = `Status: Betting Locked (${selM.remaining_seconds}s remaining until settlement)`;
-                  } else {
-                    deciderBadge.className = 'badge badge-approved';
-                    deciderBadge.innerText = 'BETTING OPEN';
-                    deciderStatus.innerText = `Status: Betting Open (${dfmt} remaining)`;
-                  }
-                }
+            if (timerEl) timerEl.innerText = fmt;
+            if (periodEl) periodEl.innerText = sync.fullPeriodId;
+            if (badgeEl) {
+              if (sync.isBettingLocked) {
+                badgeEl.className = 'badge badge-rejected';
+                badgeEl.innerText = 'BETTING LOCKED';
+              } else {
+                badgeEl.className = 'badge badge-approved';
+                badgeEl.innerText = 'BETTING OPEN';
               }
             }
-          } catch (e) {}
-        }
+          });
 
-        syncAdminMarketsLive();
-        setInterval(syncAdminMarketsLive, 1000);
+          const selSync = getGlobalSyncedRoundState(selectedDeciderMarket || 'MIAMI');
+          const deciderCountdown = document.getElementById('deciderCountdown');
+          const deciderBadge = document.getElementById('deciderBetStatusBadge');
+          const deciderStatus = document.getElementById('activeDeciderStatus');
+          const deciderPeriod = document.getElementById('activeDeciderPeriod');
+
+          const dmins = Math.floor(selSync.secondsLeft / 60);
+          const dsecs = selSync.secondsLeft % 60;
+          const dfmt = `${String(dmins).padStart(2, '0')}:${String(dsecs).padStart(2, '0')}`;
+
+          if (deciderCountdown) deciderCountdown.innerText = dfmt;
+          if (deciderPeriod) deciderPeriod.innerText = `#${selSync.fullPeriodId}`;
+          if (deciderBadge && deciderStatus) {
+            if (selSync.isBettingLocked) {
+              deciderBadge.className = 'badge badge-alert';
+              deciderBadge.innerText = 'BETTING LOCKED (Ready for Outcome)';
+              deciderStatus.innerText = `Status: Betting Locked (${selSync.secondsLeft}s remaining until settlement)`;
+            } else {
+              deciderBadge.className = 'badge badge-approved';
+              deciderBadge.innerText = 'BETTING OPEN';
+              deciderStatus.innerText = `Status: Betting Open (${dfmt} remaining)`;
+            }
+          }
+
+          if (adminTickCount % 8 === 0 || selSync.secondsLeft === 0) {
+            syncAdminMarketsLive();
+          }
+        } catch (e) {}
       }
-      tick();
+
+      async function syncAdminMarketsLive() {
+        try {
+          const res = await fetch('/api/markets');
+          if (res.ok) {
+            const data = await res.json();
+            if (data.server_time_ms) {
+              adminClockOffsetMs = data.server_time_ms - Date.now();
+            }
+            adminAuthoritativeMarkets = data.markets;
+            renderAdminTimersSmooth();
+          }
+        } catch (e) {}
+      }
+
+      setInterval(renderAdminTimersSmooth, 250);
+      renderAdminTimersSmooth();
+      syncAdminMarketsLive();
     }
 
     // Helper utilities

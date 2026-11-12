@@ -29,15 +29,34 @@ object ProvablyFairEngine {
         return hash.joinToString("") { "%02x".format(it) }
     }
 
-    fun calculateResult(serverSeed: String, clientSeed: String, nonce: Long): RoundResult {
-        val message = "$clientSeed:$nonce"
-        val hmacHex = calculateHmacSha256(serverSeed, message)
-        
-        // Take first 8 hex characters (32 bits) and convert to integer
-        val hexSub = hmacHex.substring(0, 8)
-        val value = hexSub.toLong(16)
-        val number = (value % 10).toInt()
+    fun avalancheSeed(marketCode: String, period: String): String {
+        val cleanMarket = marketCode.removePrefix("market_").uppercase()
+        return "COLOUR_KING_AVALANCHE_2026_${cleanMarket}_${period}_PROVABLY_FAIR"
+    }
 
+    // Matches server.py generate_provably_fair_outcome() and web/index.html getDeterministicPeriodResult() bit-for-bit
+    fun calculateAvalancheResult(marketCode: String, period: String): RoundResult {
+        val seed = avalancheSeed(marketCode, period)
+        return calculateAvalancheFromSeed(seed)
+    }
+
+    fun calculateAvalancheFromSeed(seed: String): RoundResult {
+        var h: Long = 0x811c9dc5L
+        for (ch in seed) {
+            h = h xor ch.code.toLong()
+            h = (h * 0x01000193L) and 0xFFFFFFFFL
+        }
+        h = h xor (h ushr 16)
+        h = (h * 0x85ebca6bL) and 0xFFFFFFFFL
+        h = h xor (h ushr 13)
+        h = (h * 0xc2b2ae35L) and 0xFFFFFFFFL
+        h = h xor (h ushr 16)
+        val absHash = h and 0xFFFFFFFFL
+        val number = (absHash % 10L).toInt()
+        return buildRoundResult(number, hashSha256(seed))
+    }
+
+    private fun buildRoundResult(number: Int, proofHex: String): RoundResult {
         val color = when (number) {
             0 -> GameColor.RED_VIOLET
             5 -> GameColor.GREEN_VIOLET
@@ -54,7 +73,22 @@ object ProvablyFairEngine {
             GameColor.GREEN_VIOLET -> "GREEN + VIOLET"
         }
 
-        return RoundResult(number, color, colorString, hmacHex)
+        return RoundResult(number, color, colorString, proofHex)
+    }
+
+    fun calculateResult(serverSeed: String, clientSeed: String, nonce: Long): RoundResult {
+        if (serverSeed.startsWith("COLOUR_KING_AVALANCHE_2026_")) {
+            return calculateAvalancheFromSeed(serverSeed)
+        }
+        val message = "$clientSeed:$nonce"
+        val hmacHex = calculateHmacSha256(serverSeed, message)
+
+        // Take first 8 hex characters (32 bits) and convert to integer
+        val hexSub = hmacHex.substring(0, 8)
+        val value = hexSub.toLong(16)
+        val number = (value % 10).toInt()
+
+        return buildRoundResult(number, hmacHex)
     }
 
     fun verifyFairness(

@@ -105,8 +105,14 @@ interface GameRoundDao {
     @Query("SELECT * FROM game_rounds WHERE tenantId = :tenantId AND gameId = :gameId AND status = 'COMPLETED' ORDER BY roundNumber DESC LIMIT 1")
     suspend fun getLatestCompletedRound(tenantId: String, gameId: String): GameRoundEntity?
 
+    @Query("SELECT * FROM game_rounds WHERE tenantId = :tenantId AND gameId = :gameId AND status = 'COMPLETED' ORDER BY roundNumber DESC LIMIT 60")
+    suspend fun getRecentCompletedRoundsList(tenantId: String, gameId: String): List<GameRoundEntity>
+
     @Query("DELETE FROM game_rounds WHERE tenantId = :tenantId AND roundNumber > :maxRoundNumber")
     suspend fun deleteFutureRounds(tenantId: String, maxRoundNumber: Long)
+
+    @Query("DELETE FROM game_rounds WHERE tenantId = :tenantId AND gameId = :gameId AND roundId LIKE :legacyPrefix")
+    suspend fun deleteRoundsWithPrefix(tenantId: String, gameId: String, legacyPrefix: String)
 
     @Update
     suspend fun updateRound(round: GameRoundEntity)

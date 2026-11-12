@@ -78,4 +78,21 @@ class PlatformDomainUnitTest {
         assertTrue(validPhone.length >= 10)
         assertTrue(invalidPhone.length < 10)
     }
+
+    @Test
+    fun testUnifiedAvalancheMatchesWebBackend() {
+        // Exact verified outputs from server.py generate_provably_fair_outcome() & web/index.html
+        assertEquals(1, ProvablyFairEngine.calculateAvalancheResult("MIAMI", "20261112493").number)
+        assertEquals(7, ProvablyFairEngine.calculateAvalancheResult("MIAMI", "20261112492").number)
+        assertEquals(2, ProvablyFairEngine.calculateAvalancheResult("VEGAS", "20261112492").number)
+        assertEquals(1, ProvablyFairEngine.calculateAvalancheResult("PARIS", "20261112492").number)
+        assertEquals(3, ProvablyFairEngine.calculateAvalancheResult("DUBAI", "20261112492").number)
+
+        // verifyFairness works identically with unified Avalanche seed
+        val seed = ProvablyFairEngine.avalancheSeed("MIAMI", "20261112493")
+        val seedHash = ProvablyFairEngine.hashSha256(seed)
+        val (matches, res) = ProvablyFairEngine.verifyFairness(seed, seedHash, "PROVABLY_FAIR_AVALANCHE", 20261112493L)
+        assertTrue(matches)
+        assertEquals(1, res.number)
+    }
 }

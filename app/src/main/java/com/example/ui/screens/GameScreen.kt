@@ -611,12 +611,10 @@ fun RoundStatusCard(
                     } else null
 
                     if (displayResultNumber != null && displayResultColor != null) {
-                        val numColor = when (displayResultColor.uppercase()) {
-                            "RED" -> NeonRed
-                            "GREEN" -> NeonGreen
-                            "VIOLET" -> NeonViolet
-                            "RED_VIOLET" -> NeonViolet
-                            "GREEN_VIOLET" -> NeonViolet
+                        val numColor = when {
+                            displayResultColor.contains("VIOLET", ignoreCase = true) -> NeonViolet
+                            displayResultColor.equals("RED", ignoreCase = true) -> NeonRed
+                            displayResultColor.equals("GREEN", ignoreCase = true) -> NeonGreen
                             else -> NeonGreen
                         }
                         Box(

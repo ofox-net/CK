@@ -8,6 +8,7 @@ import time
 import urllib.parse
 import hashlib
 import random
+import math
 from datetime import datetime, timezone, timedelta
 
 PORT = 3000
@@ -54,6 +55,8 @@ def init_database():
     with db_lock:
         conn = get_db()
         c = conn.cursor()
+        c.execute("PRAGMA journal_mode=WAL;")
+        c.execute("PRAGMA synchronous=NORMAL;")
 
         c.execute("""
             CREATE TABLE IF NOT EXISTS app_state (
@@ -244,11 +247,11 @@ def calculate_authoritative_round(market_code, now_ms=None):
     ist_now = utc_now.astimezone(ist_tz)
 
     ref_11am = ist_now.replace(hour=11, minute=0, second=0, microsecond=0)
-    diff_sec = int((ist_now.timestamp() - ref_11am.timestamp()))
+    diff_sec = math.floor(ist_now.timestamp() - ref_11am.timestamp())
     ref_date = ref_11am
     if diff_sec < 0:
         ref_date = ref_11am - timedelta(days=1)
-        diff_sec = int((ist_now.timestamp() - ref_date.timestamp()))
+        diff_sec = math.floor(ist_now.timestamp() - ref_date.timestamp())
 
     date_str = ref_date.strftime("%Y%m%d")
     round_index = diff_sec // ROUND_DURATION_SEC
@@ -260,7 +263,7 @@ def calculate_authoritative_round(market_code, now_ms=None):
     lock_time_ms = start_time_ms + ((ROUND_DURATION_SEC - LOCK_CUTOFF_SEC) * 1000)
     end_time_ms = start_time_ms + (ROUND_DURATION_SEC * 1000)
 
-    remaining_sec = max(0, int((end_time_ms - now_ms) / 1000))
+    remaining_sec = min(ROUND_DURATION_SEC, max(0, math.ceil((end_time_ms - now_ms) / 1000.0)))
     is_locked = (now_ms >= lock_time_ms) or (remaining_sec <= LOCK_CUTOFF_SEC)
 
     if remaining_sec <= 0:
@@ -435,92 +438,123 @@ def settle_round_in_db(conn, market_code, round_id, period, winning_number, draw
 
     conn.commit()
 
+def sync_round_lifecycle_once():
+    now_ms = int(time.time() * 1000)
+    with db_lock:
+        conn = get_db()
+        c = conn.cursor()
+
+        for m_code in MARKET_KEYS:
+            auth_round = calculate_authoritative_round(m_code, now_ms)
+            period = auth_round["period"]
+            round_id = auth_round["round_id"]
+            status = auth_round["status"]
+
+            # Check current market record in DB
+            c.execute("SELECT * FROM markets WHERE code = ?", (m_code,))
+            m_row = c.fetchone()
+
+            if not m_row:
+                c.execute("""
+                    INSERT INTO markets (code, name, current_round_id, current_period, round_duration_sec, lock_cutoff_sec, start_time_ms, lock_time_ms, end_time_ms, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (m_code, f"{m_code} MARKET", round_id, period, ROUND_DURATION_SEC, LOCK_CUTOFF_SEC, auth_round["start_time_ms"], auth_round["lock_time_ms"], auth_round["end_time_ms"], status))
+                c.execute("SELECT * FROM markets WHERE code = ?", (m_code,))
+                m_row = c.fetchone()
+
+            # 0. Ensure immediate previous 50 rounds exist and are settled (prevents stale old result on boot/wake or across 11AM boundary)
+            prev_period_id = calculate_authoritative_round(m_code, now_ms - (ROUND_DURATION_SEC * 1000))["period"]
+            c.execute("SELECT period FROM rounds WHERE market = ? AND status = 'SETTLED' AND result_number IS NOT NULL AND period = ?", (m_code, prev_period_id))
+            if not c.fetchone():
+                for back_i in range(1, 51):
+                    past_ms = now_ms - (back_i * ROUND_DURATION_SEC * 1000)
+                    past_auth = calculate_authoritative_round(m_code, past_ms)
+                    past_p = past_auth["period"]
+                    past_rid = past_auth["round_id"]
+                    if past_p == period:
+                        continue
+                    c.execute("SELECT status, result_number FROM rounds WHERE round_id = ?", (past_rid,))
+                    ex = c.fetchone()
+                    if not ex or ex["status"] != "SETTLED" or ex["result_number"] is None:
+                        outcome = generate_provably_fair_outcome(m_code, past_p)
+                        declared_ts = datetime.fromtimestamp(past_auth["end_time_ms"] / 1000.0, tz=timezone.utc).astimezone(timezone(timedelta(hours=5, minutes=30))).strftime("%H:%M:%S")
+                        c.execute("""
+                            INSERT INTO rounds (round_id, market, period, start_time_ms, lock_time_ms, end_time_ms, status, result_number, result_color, result_col_class, is_big, draw_mode, declared_at, declared_by)
+                            VALUES (?, ?, ?, ?, ?, ?, 'SETTLED', ?, ?, ?, ?, 'AUTO_RANDOM', ?, 'SYSTEM_SYNC')
+                            ON CONFLICT(round_id) DO UPDATE SET
+                                status = 'SETTLED',
+                                result_number = COALESCE(rounds.result_number, excluded.result_number),
+                                result_color = COALESCE(rounds.result_color, excluded.result_color),
+                                result_col_class = COALESCE(rounds.result_col_class, excluded.result_col_class),
+                                is_big = COALESCE(rounds.is_big, excluded.is_big),
+                                declared_at = COALESCE(rounds.declared_at, excluded.declared_at)
+                        """, (past_rid, m_code, past_p, past_auth["start_time_ms"], past_auth["lock_time_ms"], past_auth["end_time_ms"], outcome["number"], outcome["color"], outcome["col_class"], outcome["is_big"], declared_ts))
+
+            # 1. Check if previous round was not settled yet (with pending bets)
+            c.execute("""
+                SELECT round_id, period FROM rounds
+                WHERE market = ? AND status != 'SETTLED' AND CAST(period AS INTEGER) < CAST(? AS INTEGER)
+                ORDER BY CAST(period AS INTEGER) ASC LIMIT 10
+            """, (m_code, period))
+            unsettled_past = c.fetchall()
+            for past in unsettled_past:
+                outcome = generate_provably_fair_outcome(m_code, past["period"])
+                settle_round_in_db(conn, m_code, past["round_id"], past["period"], outcome["number"], "AUTO_RECOVERY", "SYSTEM")
+
+            # 2. Check if active round changed (period transition!)
+            last_recorded_period = m_row["current_period"] if m_row else None
+            if last_recorded_period and last_recorded_period != period:
+                # Period just completed! Settle the old period immediately
+                c.execute("SELECT manual_override_num, manual_override_period FROM markets WHERE code = ?", (m_code,))
+                ov_row = c.fetchone()
+                override_num = ov_row["manual_override_num"] if ov_row else None
+                override_period = ov_row["manual_override_period"] if ov_row else None
+
+                if override_num is not None and (override_period == last_recorded_period or not override_period):
+                    winning_num = int(override_num)
+                    draw_mode = "MANUAL_ADMIN"
+                else:
+                    outcome = generate_provably_fair_outcome(m_code, last_recorded_period)
+                    winning_num = outcome["number"]
+                    draw_mode = "AUTO_RANDOM"
+
+                settle_round_in_db(conn, m_code, f"RND_{m_code}_{last_recorded_period}", last_recorded_period, winning_num, draw_mode, "SYSTEM_DAEMON")
+
+            # 3. Update active round state for current period
+            c.execute("""
+                UPDATE markets
+                SET current_round_id = ?, current_period = ?, start_time_ms = ?, lock_time_ms = ?, end_time_ms = ?, status = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE code = ?
+            """, (round_id, period, auth_round["start_time_ms"], auth_round["lock_time_ms"], auth_round["end_time_ms"], status, m_code))
+
+            # 4. If round is locked (last 30s), transition all 'PENDING' bets of this period to 'LOCKED'
+            if auth_round["is_betting_locked"]:
+                c.execute("""
+                    UPDATE bets
+                    SET status = 'LOCKED'
+                    WHERE market = ? AND period = ? AND status = 'PENDING'
+                """, (m_code, period))
+
+            # 5. Ensure current round exists in rounds table
+            c.execute("SELECT round_id FROM rounds WHERE round_id = ?", (round_id,))
+            if not c.fetchone():
+                c.execute("""
+                    INSERT INTO rounds (round_id, market, period, start_time_ms, lock_time_ms, end_time_ms, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (round_id, m_code, period, auth_round["start_time_ms"], auth_round["lock_time_ms"], auth_round["end_time_ms"], status))
+
+        conn.commit()
+        conn.close()
+
 def background_round_lifecycle_daemon():
     """Background engine ensuring continuous 180s countdowns, 30s locks, and atomic settlements across all 4 markets."""
-    time.sleep(1)
     while True:
         try:
-            now_ms = int(time.time() * 1000)
-            with db_lock:
-                conn = get_db()
-                c = conn.cursor()
-
-                for m_code in MARKET_KEYS:
-                    auth_round = calculate_authoritative_round(m_code, now_ms)
-                    period = auth_round["period"]
-                    round_id = auth_round["round_id"]
-                    status = auth_round["status"]
-
-                    # Check current market record in DB
-                    c.execute("SELECT * FROM markets WHERE code = ?", (m_code,))
-                    m_row = c.fetchone()
-
-                    if not m_row:
-                        c.execute("""
-                            INSERT INTO markets (code, name, current_round_id, current_period, round_duration_sec, lock_cutoff_sec, start_time_ms, lock_time_ms, end_time_ms, status)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (m_code, f"{m_code} MARKET", round_id, period, ROUND_DURATION_SEC, LOCK_CUTOFF_SEC, auth_round["start_time_ms"], auth_round["lock_time_ms"], auth_round["end_time_ms"], status))
-                        m_row = c.fetchone()
-
-                    # 1. Check if previous round was not settled yet
-                    c.execute("""
-                        SELECT round_id, period FROM rounds
-                        WHERE market = ? AND status != 'SETTLED' AND period < ?
-                        ORDER BY period ASC LIMIT 5
-                    """, (m_code, period))
-                    unsettled_past = c.fetchall()
-                    for past in unsettled_past:
-                        outcome = generate_provably_fair_outcome(m_code, past["period"])
-                        settle_round_in_db(conn, m_code, past["round_id"], past["period"], outcome["number"], "AUTO_RECOVERY", "SYSTEM")
-
-                    # 2. Check if active round changed (period transition!)
-                    last_recorded_period = m_row["current_period"] if m_row else None
-                    if last_recorded_period and last_recorded_period != period:
-                        # Period just completed! Settle the old period immediately
-                        c.execute("SELECT manual_override_num, manual_override_period FROM markets WHERE code = ?", (m_code,))
-                        ov_row = c.fetchone()
-                        override_num = ov_row["manual_override_num"] if ov_row else None
-                        override_period = ov_row["manual_override_period"] if ov_row else None
-
-                        if override_num is not None and (override_period == last_recorded_period or not override_period):
-                            winning_num = int(override_num)
-                            draw_mode = "MANUAL_ADMIN"
-                        else:
-                            outcome = generate_provably_fair_outcome(m_code, last_recorded_period)
-                            winning_num = outcome["number"]
-                            draw_mode = "AUTO_RANDOM"
-
-                        settle_round_in_db(conn, m_code, f"RND_{m_code}_{last_recorded_period}", last_recorded_period, winning_num, draw_mode, "SYSTEM_DAEMON")
-
-                    # 3. Update active round state for current period
-                    c.execute("""
-                        UPDATE markets
-                        SET current_round_id = ?, current_period = ?, start_time_ms = ?, lock_time_ms = ?, end_time_ms = ?, status = ?, updated_at = CURRENT_TIMESTAMP
-                        WHERE code = ?
-                    """, (round_id, period, auth_round["start_time_ms"], auth_round["lock_time_ms"], auth_round["end_time_ms"], status, m_code))
-
-                    # 4. If round is locked (last 30s), transition all 'PENDING' bets of this period to 'LOCKED'
-                    if auth_round["is_betting_locked"]:
-                        c.execute("""
-                            UPDATE bets
-                            SET status = 'LOCKED'
-                            WHERE market = ? AND period = ? AND status = 'PENDING'
-                        """, (m_code, period))
-
-                    # 5. Ensure current round exists in rounds table
-                    c.execute("SELECT round_id FROM rounds WHERE round_id = ?", (round_id,))
-                    if not c.fetchone():
-                        c.execute("""
-                            INSERT INTO rounds (round_id, market, period, start_time_ms, lock_time_ms, end_time_ms, status)
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """, (round_id, m_code, period, auth_round["start_time_ms"], auth_round["lock_time_ms"], auth_round["end_time_ms"], status))
-
-                conn.commit()
-                conn.close()
+            sync_round_lifecycle_once()
         except Exception as e:
             print(f"Error in background round lifecycle: {e}")
 
-        time.sleep(1.0)
+        time.sleep(0.25)
 
 class AppHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -587,13 +621,26 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     ov_num = m_row["manual_override_num"] if m_row else None
                     ov_period = m_row["manual_override_period"] if m_row else None
 
-                    # Get latest completed result
+                    # Ensure immediate previous period is settled even if polled <250ms after rollover
+                    prev_period_id = calculate_authoritative_round(m_code, now_ms - (ROUND_DURATION_SEC * 1000))["period"]
+                    c.execute("SELECT status, result_number FROM rounds WHERE market = ? AND period = ?", (m_code, prev_period_id))
+                    prev_row = c.fetchone()
+                    if not prev_row or prev_row["status"] != "SETTLED" or prev_row["result_number"] is None:
+                        if ov_num is not None and (ov_period == prev_period_id or not ov_period):
+                            win_num = int(ov_num)
+                            d_mode = "MANUAL_ADMIN"
+                        else:
+                            win_num = generate_provably_fair_outcome(m_code, prev_period_id)["number"]
+                            d_mode = "AUTO_RANDOM"
+                        settle_round_in_db(conn, m_code, f"RND_{m_code}_{prev_period_id}", prev_period_id, win_num, d_mode, "SYSTEM_ROLLOVER")
+
+                    # Get latest completed result (always strictly before current period, sorted numerically)
                     c.execute("""
                         SELECT period, result_number, result_color, result_col_class, is_big, draw_mode, declared_at
                         FROM rounds
-                        WHERE market = ? AND status = 'SETTLED' AND result_number IS NOT NULL
-                        ORDER BY period DESC LIMIT 1
-                    """, (m_code,))
+                        WHERE market = ? AND status = 'SETTLED' AND result_number IS NOT NULL AND CAST(period AS INTEGER) < CAST(? AS INTEGER)
+                        ORDER BY CAST(period AS INTEGER) DESC LIMIT 1
+                    """, (m_code, period))
                     last_res = c.fetchone()
                     latest_result = None
                     if last_res:
@@ -646,15 +693,16 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
         if path == "/api/markets/history":
             m_code = qs.get("market", ["MIAMI"])[0].upper()
             limit = int(qs.get("limit", [50])[0])
+            cur_auth = calculate_authoritative_round(m_code)
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
                 c.execute("""
                     SELECT period, result_number, result_color, result_col_class, is_big, draw_mode, declared_at
                     FROM rounds
-                    WHERE market = ? AND status = 'SETTLED' AND result_number IS NOT NULL
-                    ORDER BY period DESC LIMIT ?
-                """, (m_code, limit))
+                    WHERE market = ? AND status = 'SETTLED' AND result_number IS NOT NULL AND CAST(period AS INTEGER) < CAST(? AS INTEGER)
+                    ORDER BY CAST(period AS INTEGER) DESC LIMIT ?
+                """, (m_code, cur_auth["period"], limit))
                 rows = c.fetchall()
                 records = []
                 for r in rows:
@@ -1380,12 +1428,16 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
 
         self._send_json({ "error": "Endpoint not found" }, status=404)
 
+class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
 if __name__ == "__main__":
     init_database()
+    sync_round_lifecycle_once()
     daemon_thread = threading.Thread(target=background_round_lifecycle_daemon, daemon=True)
     daemon_thread.start()
 
-    socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer(("", PORT), AppHandler) as httpd:
-        print(f"Colour King Master Real-Time Server running on port {PORT} with SQLite database backing.")
+    with ThreadedTCPServer(("", PORT), AppHandler) as httpd:
+        print(f"Colour King Master Real-Time Threaded Server running on port {PORT} with SQLite WAL backing.")
         httpd.serve_forever()
