@@ -82,6 +82,7 @@ fun GameScreen(
     var showProvablyFairDialog by remember { mutableStateOf(false) }
     var activeTab by remember { mutableStateOf(0) } // 0: Game, 1: My Bets
     var betFilterMarketId by remember { mutableStateOf("ALL") }
+    var betSlipsPage by remember { mutableStateOf(0) }
 
     val csvLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/csv")
@@ -151,6 +152,12 @@ fun GameScreen(
             commissions = emptyList(),
             days = statementDays
         )
+    }
+    val betsPerPage = 10
+    val totalBetPages = maxOf(1, (filteredBets.size + betsPerPage - 1) / betsPerPage)
+    val safeBetSlipsPage = betSlipsPage.coerceIn(0, totalBetPages - 1)
+    val pagedBets = remember(filteredBets, safeBetSlipsPage) {
+        filteredBets.drop(safeBetSlipsPage * betsPerPage).take(betsPerPage)
     }
 
     LazyColumn(
@@ -416,11 +423,14 @@ fun GameScreen(
                         ) {
                             listOf(90 to "90 Days", 30 to "30 Days", 7 to "7 Days").forEach { (d, label) ->
                                 val active = statementDays == d
-                                Box(
+                                    Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(8.dp))
                                         .background(if (active) ElectricCyan else CardHighlight)
-                                        .clickable { viewModel.setStatementDays(d) }
+                                        .clickable {
+                                            betSlipsPage = 0
+                                            viewModel.setStatementDays(d)
+                                        }
                                         .padding(horizontal = 10.dp, vertical = 6.dp)
                                 ) {
                                     Text(
@@ -438,7 +448,10 @@ fun GameScreen(
 
                 MarketBetsFilterRow(
                     selectedFilter = betFilterMarketId,
-                    onSelectFilter = { betFilterMarketId = it }
+                    onSelectFilter = {
+                        betFilterMarketId = it
+                        betSlipsPage = 0
+                    }
                 )
                 Spacer(modifier = Modifier.height(10.dp))
             }
@@ -453,9 +466,61 @@ fun GameScreen(
                     )
                 }
             } else {
-                items(filteredBets) { bet ->
+                items(pagedBets, key = { it.id }) { bet ->
                     BetHistoryItem(bet = bet, round = allRoundsMap[bet.roundId])
                     Spacer(modifier = Modifier.height(8.dp))
+                }
+                item {
+                    val startNum = safeBetSlipsPage * betsPerPage + 1
+                    val endNum = safeBetSlipsPage * betsPerPage + pagedBets.size
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(SurfaceDark)
+                            .border(1.dp, CardBorder, RoundedCornerShape(12.dp))
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            onClick = { if (safeBetSlipsPage > 0) betSlipsPage = safeBetSlipsPage - 1 },
+                            enabled = safeBetSlipsPage > 0,
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
+                            border = borderStroke(1.dp, if (safeBetSlipsPage > 0) ElectricCyan else CardBorder),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .defaultMinSize(minHeight = 48.dp)
+                                .testTag("bet_slips_prev_btn")
+                        ) {
+                            Text(text = "◀ Prev 10", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Text(
+                            text = "$startNum-$endNum / ${filteredBets.size}\nPage ${safeBetSlipsPage + 1}/$totalBetPages",
+                            color = GoldAccent,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            textAlign = TextAlign.Center
+                        )
+
+                        OutlinedButton(
+                            onClick = { if (safeBetSlipsPage < totalBetPages - 1) betSlipsPage = safeBetSlipsPage + 1 },
+                            enabled = safeBetSlipsPage < totalBetPages - 1,
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
+                            border = borderStroke(1.dp, if (safeBetSlipsPage < totalBetPages - 1) ElectricCyan else CardBorder),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .defaultMinSize(minHeight = 48.dp)
+                                .testTag("bet_slips_next_btn")
+                        ) {
+                            Text(text = "Next 10 ▶", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
             item { Spacer(modifier = Modifier.height(30.dp)) }

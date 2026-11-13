@@ -1398,6 +1398,11 @@
           <div class="bets-list" id="userBetSlipsList">
             <p style="font-size:12px; color:var(--text-muted); text-align:center; padding:10px;">All bet records up to 90 days (Market, Period #, Result, Profit/Loss & Status) are stored and shown here!</p>
           </div>
+          <div class="history-pagination-bar" id="betSlipsPaginationBar" style="display:none; margin-top:10px;">
+            <button class="btn-pagination" id="btnBetSlipsPrev" onclick="prevBetSlipsPage()">◀ Prev 10</button>
+            <span class="pagination-page-label" id="betSlipsPageLabel">1-10 / 10 (Page 1 of 1)</span>
+            <button class="btn-pagination" id="btnBetSlipsNext" onclick="nextBetSlipsPage()">Next 10 ▶</button>
+          </div>
         </div>
 
       </div>
@@ -3064,17 +3069,46 @@
       playSound('betClick');
     }
 
-    // Bet Slips Filter (90-Day Records & Profit/Loss)
+    // Bet Slips Filter & 10-per-page Pagination (90-Day Records & Profit/Loss)
     let activeSlipFilter = 'ALL';
+    let betSlipsCurrentPage = 0;
+    const betSlipsPerPage = 10;
+
     function filterBetSlips(marketKey, btn) {
       activeSlipFilter = marketKey;
+      betSlipsCurrentPage = 0;
       document.querySelectorAll('#slipsMarketFilterRow .chip-filter-btn').forEach(b => b.classList.remove('active'));
       if (btn) btn.classList.add('active');
       renderBetSlips();
     }
 
+    function prevBetSlipsPage() {
+      if (betSlipsCurrentPage > 0) {
+        betSlipsCurrentPage--;
+        renderBetSlips();
+        playSound('betClick');
+      }
+    }
+
+    function nextBetSlipsPage() {
+      const cutoffMs = Date.now() - (statementDaysFilter * 24 * 60 * 60 * 1000);
+      const filteredCount = userBetSlipsHistory.filter(s => {
+        const mOk = activeSlipFilter === 'ALL' || s.marketId === activeSlipFilter;
+        const ts = Number(s.createdAtMs || 0);
+        const dOk = !ts || ts >= cutoffMs;
+        return mOk && dOk;
+      }).length;
+      const totalPages = Math.max(1, Math.ceil(filteredCount / betSlipsPerPage));
+      if (betSlipsCurrentPage < totalPages - 1) {
+        betSlipsCurrentPage++;
+        renderBetSlips();
+        playSound('betClick');
+      }
+    }
+
     function setStatementDays(days, btn) {
       statementDaysFilter = Number(days) || 90;
+      betSlipsCurrentPage = 0;
       document.querySelectorAll('#walletDaysFilterRow .chip-filter-btn, #tab-arena .filter-chips-row .chip-filter-btn').forEach(b => {
         if (['90D', '30D', '7D', '90 Days', '30 Days', '7 Days'].includes(b.innerText.trim())) {
           const isMatch = b.innerText.trim().startsWith(String(statementDaysFilter));
@@ -3120,12 +3154,30 @@
         plEl.style.color = netPL >= 0 ? 'var(--green)' : 'var(--red)';
       }
 
+      const pagBar = document.getElementById('betSlipsPaginationBar');
+      const prevBtn = document.getElementById('btnBetSlipsPrev');
+      const nextBtn = document.getElementById('btnBetSlipsNext');
+      const pageLabel = document.getElementById('betSlipsPageLabel');
+
       if (filtered.length === 0) {
+        if (pagBar) pagBar.style.display = 'none';
         container.innerHTML = `<p style="font-size:12px; color:var(--text-muted); text-align:center; padding:10px;">No placed bet slips found in last ${statementDaysFilter} days for ${activeSlipFilter}.</p>`;
         return;
       }
 
-      container.innerHTML = filtered.map(slip => {
+      const totalPages = Math.max(1, Math.ceil(filtered.length / betSlipsPerPage));
+      if (betSlipsCurrentPage >= totalPages) betSlipsCurrentPage = totalPages - 1;
+      if (betSlipsCurrentPage < 0) betSlipsCurrentPage = 0;
+
+      const startIdx = betSlipsCurrentPage * betSlipsPerPage;
+      const pageSlips = filtered.slice(startIdx, startIdx + betSlipsPerPage);
+
+      if (pagBar) pagBar.style.display = 'flex';
+      if (prevBtn) prevBtn.disabled = betSlipsCurrentPage === 0;
+      if (nextBtn) nextBtn.disabled = betSlipsCurrentPage >= totalPages - 1;
+      if (pageLabel) pageLabel.innerText = `${startIdx + 1}-${startIdx + pageSlips.length} of ${filtered.length} (Page ${betSlipsCurrentPage + 1}/${totalPages})`;
+
+      container.innerHTML = pageSlips.map(slip => {
         const status = (slip.status || 'PENDING').toUpperCase();
         const isWon = status === 'WON';
         const isLost = status === 'LOST';
