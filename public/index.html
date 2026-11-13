@@ -2684,119 +2684,238 @@
       return record;
     }
 
-    // Unified Real-Time Synchronization with Backend Storage (Reflects Admin actions in real-time)
+    // Unified Real-Time Synchronization with SQLite Backend (SSE Push + Fallback Poll)
     let activeAdminOverrides = {};
-    function syncAdminStateRealtime() {
-      fetch('/api/state')
-        .then(r => r.json())
+    let lastUserStateVersion = -1;
+    let lastKnownAccountStatus = 'ACTIVE';
+    let isSyncingAdminState = false;
+    let userEventSource = null;
+    let activeBankLimits = { minDep: 100, maxDep: 100000 };
+
+    function setAccountBlockedBanner(isBlocked) {
+      let banner = document.getElementById('accountBlockedNotice');
+      if (isBlocked) {
+        if (!banner) {
+          banner = document.createElement('div');
+          banner.id = 'accountBlockedNotice';
+          banner.style.cssText = 'background:rgba(255,61,113,0.16); border:1px solid var(--red); color:#FFD7E0; padding:8px 12px; margin:8px 12px 0; border-radius:10px; font-size:12px; font-weight:700; text-align:center;';
+          banner.innerText = '⛔ Account temporarily restricted by Admin. Betting, deposits & withdrawals are paused.';
+          const header = document.querySelector('header');
+          if (header && header.parentNode) {
+            header.parentNode.insertBefore(banner, header.nextSibling);
+          } else {
+            document.body.prepend(banner);
+          }
+        }
+      } else if (banner) {
+        banner.remove();
+      }
+    }
+
+    function applyUserStateSnapshot(state, force = false, reasonEvent = null) {
+      if (!state) return;
+      const newVer = typeof state.state_version === 'number' ? state.state_version : -1;
+      const versionChanged = (newVer !== -1 && newVer !== lastUserStateVersion);
+      if (newVer !== -1) lastUserStateVersion = newVer;
+
+      // 1. Reflect Admin Bank Details & Deposit Limits in real-time
+      if (state.bank_config) {
+        const bc = state.bank_config;
+        const uDisplay = document.getElementById('userModalUpiDisplay');
+        const uName = document.getElementById('userModalUpiName');
+        const bName = document.getElementById('userModalBankName');
+        const acc = document.getElementById('userModalAccNo');
+        const ifsc = document.getElementById('userModalIfsc');
+        const holder = document.getElementById('userModalHolder');
+        const depInput = document.getElementById('userDepositAmountInput');
+        if (uDisplay && bc.upiId && uDisplay.innerText !== bc.upiId) uDisplay.innerText = bc.upiId;
+        if (uName && bc.upiName && uName.innerText !== bc.upiName) uName.innerText = bc.upiName;
+        if (bName && bc.bankName && bName.innerText !== bc.bankName) bName.innerText = bc.bankName;
+        if (acc && bc.accNo && acc.innerText !== bc.accNo) acc.innerText = bc.accNo;
+        if (ifsc && bc.ifsc && ifsc.innerText !== bc.ifsc) ifsc.innerText = bc.ifsc;
+        if (holder && bc.holder && holder.innerText !== bc.holder) holder.innerText = bc.holder;
+        if (typeof bc.minDep === 'number' && bc.minDep > 0) activeBankLimits.minDep = bc.minDep;
+        if (typeof bc.maxDep === 'number' && bc.maxDep > 0) activeBankLimits.maxDep = bc.maxDep;
+        if (depInput) {
+          depInput.min = activeBankLimits.minDep;
+          depInput.max = activeBankLimits.maxDep;
+          depInput.placeholder = `₹${activeBankLimits.minDep.toLocaleString()} - ₹${activeBankLimits.maxDep.toLocaleString()}`;
+        }
+      }
+
+      // 2. Reflect Admin Manual Draw Overrides in real-time
+      if (state.draw_overrides && typeof state.draw_overrides === 'object') {
+        activeAdminOverrides = state.draw_overrides;
+      }
+
+      // 3. Reflect Admin Declared Results in real-time
+      if (state.declared_results && typeof state.declared_results === 'object') {
+        let updated = false;
+        Object.keys(state.declared_results).forEach(m => {
+          if (!declaredResultsStore[m]) declaredResultsStore[m] = {};
+          Object.keys(state.declared_results[m]).forEach(p => {
+            const incoming = state.declared_results[m][p];
+            const existing = declaredResultsStore[m][p];
+            if (!existing || existing.number !== incoming.number || existing.mode !== incoming.mode) {
+              declaredResultsStore[m][p] = incoming;
+              updated = true;
+            }
+          });
+        });
+        if (updated) {
+          try {
+            localStorage.setItem('colour_king_declared_results_v3', JSON.stringify(declaredResultsStore));
+          } catch(e) {}
+          const st = marketStates[currentMarketId];
+          if (st && st.pastRecords) {
+            st.pastRecords.forEach(r => {
+              if (declaredResultsStore[currentMarketId] && declaredResultsStore[currentMarketId][r.period]) {
+                Object.assign(r, declaredResultsStore[currentMarketId][r.period]);
+              }
+            });
+            const latestPeriod = st.pastRecords[0] ? String(st.pastRecords[0].period) : null;
+            if (latestPeriod && declaredResultsStore[currentMarketId] && declaredResultsStore[currentMarketId][latestPeriod]) {
+              const lr = declaredResultsStore[currentMarketId][latestPeriod];
+              st.latestResult = {
+                number: lr.number,
+                color: lr.colClass || lr.color,
+                isBig: !!lr.isBig
+              };
+            }
+            renderHistoryTable();
+            renderTrendChart();
+            render10x10BeadPlate();
+            renderRoadmapMatrix();
+            renderRoadmapBeads();
+            updateMarketUI();
+          }
+        }
+      }
+
+      // 4. Reflect User Wallet Balance & Account Status in real-time
+      let walletChanged = false;
+      if (currentUserId && state.users && state.users[currentUserId]) {
+        const sUser = state.users[currentUserId];
+        if (typeof sUser.balance === 'number' && Math.abs(sUser.balance - userBalance) > 0.01) {
+          const diff = sUser.balance - userBalance;
+          userBalance = sUser.balance;
+          walletChanged = true;
+          updateBalanceUI();
+          try {
+            localStorage.setItem('colour_king_user_session', JSON.stringify({ id: currentUserId, name: sUser.name || currentUserName, balance: userBalance }));
+          } catch(e) {}
+          if (window.AndroidBridge && window.AndroidBridge.syncWalletBalance) {
+            window.AndroidBridge.syncWalletBalance(userBalance, 'Real-time Admin/Server sync');
+          }
+          if (reasonEvent && (reasonEvent.eventType === 'balance_adjusted' || reasonEvent.eventType === 'deposit_approved')) {
+            showToast(diff >= 0 ? `💰 Wallet credited +₹${diff.toFixed(2)} by Admin!` : `💸 Wallet adjusted -₹${Math.abs(diff).toFixed(2)} by Admin.`);
+          }
+        }
+        const curStatus = String(sUser.status || 'ACTIVE').toUpperCase();
+        setAccountBlockedBanner(curStatus === 'BLOCKED');
+        if (curStatus !== lastKnownAccountStatus) {
+          if (curStatus === 'BLOCKED') {
+            showToast('⛔ Your account has been temporarily restricted by Admin.');
+          } else if (lastKnownAccountStatus === 'BLOCKED') {
+            showToast('✅ Your account restriction has been lifted by Admin.');
+          }
+          lastKnownAccountStatus = curStatus;
+        }
+      }
+
+      // 5. Reflect Deposits & Withdrawals status + refresh full SQLite bet slips & wallet ledger on changes
+      let txChanged = false;
+      if (currentUserId && state.deposits) {
+        state.deposits.forEach(d => {
+          if (d.userId === currentUserId) {
+            const item = walletLedger.find(tx => tx.id === d.id);
+            if (!item || item.status !== d.status || item.reason !== d.reason) {
+              txChanged = true;
+            }
+          }
+        });
+      }
+      if (currentUserId && state.withdrawals) {
+        state.withdrawals.forEach(w => {
+          if (w.userId === currentUserId) {
+            const item = walletLedger.find(tx => tx.id === w.id);
+            if (!item || item.status !== w.status || item.reason !== w.reason) {
+              txChanged = true;
+            }
+          }
+        });
+      }
+
+      if (versionChanged || walletChanged || txChanged || force) {
+        if (currentUserId && currentUserId !== 'Guest') {
+          syncUserTransactions();
+          if (force || (reasonEvent && ['result_declared', 'round_settled', 'bets_locked', 'bet_placed', 'bet_cancelled', 'balance_adjusted', 'admin_sync'].includes(reasonEvent.eventType))) {
+            loadUserBetsFromBackend();
+          }
+        }
+      }
+    }
+
+    function syncAdminStateRealtime(force = false, reasonEvent = null) {
+      if (window.location.protocol === 'file:' || isSyncingAdminState) return;
+      isSyncingAdminState = true;
+      fetch('/api/state?t=' + Date.now(), { cache: 'no-store' })
+        .then(r => r.ok ? r.json() : null)
         .then(state => {
-          if (!state) return;
-
-          // 1. Reflect Admin Bank Details in real-time
-          if (state.bank_config) {
-            const bc = state.bank_config;
-            const uDisplay = document.getElementById('userModalUpiDisplay');
-            const uName = document.getElementById('userModalUpiName');
-            const bName = document.getElementById('userModalBankName');
-            const acc = document.getElementById('userModalAccNo');
-            const ifsc = document.getElementById('userModalIfsc');
-            const holder = document.getElementById('userModalHolder');
-            if (uDisplay && bc.upiId && uDisplay.innerText !== bc.upiId) uDisplay.innerText = bc.upiId;
-            if (uName && bc.upiName && uName.innerText !== bc.upiName) uName.innerText = bc.upiName;
-            if (bName && bc.bankName && bName.innerText !== bc.bankName) bName.innerText = bc.bankName;
-            if (acc && bc.accNo && acc.innerText !== bc.accNo) acc.innerText = bc.accNo;
-            if (ifsc && bc.ifsc && ifsc.innerText !== bc.ifsc) ifsc.innerText = bc.ifsc;
-            if (holder && bc.holder && holder.innerText !== bc.holder) holder.innerText = bc.holder;
-          }
-
-          // 2. Reflect Admin Manual Draw Overrides in real-time
-          if (state.draw_overrides && typeof state.draw_overrides === 'object') {
-            activeAdminOverrides = state.draw_overrides;
-          }
-
-          // 3. Reflect Admin Declared Results in real-time
-          if (state.declared_results && typeof state.declared_results === 'object') {
-            let updated = false;
-            Object.keys(state.declared_results).forEach(m => {
-              if (!declaredResultsStore[m]) declaredResultsStore[m] = {};
-              Object.keys(state.declared_results[m]).forEach(p => {
-                if (!declaredResultsStore[m][p] || declaredResultsStore[m][p].number !== state.declared_results[m][p].number) {
-                  declaredResultsStore[m][p] = state.declared_results[m][p];
-                  updated = true;
-                }
-              });
-            });
-            if (updated) {
-              try {
-                localStorage.setItem('colour_king_declared_results_v3', JSON.stringify(declaredResultsStore));
-              } catch(e) {}
-              const st = marketStates[currentMarketId];
-              if (st && st.pastRecords) {
-                st.pastRecords.forEach(r => {
-                  if (declaredResultsStore[currentMarketId] && declaredResultsStore[currentMarketId][r.period]) {
-                    Object.assign(r, declaredResultsStore[currentMarketId][r.period]);
-                  }
-                });
-                renderHistoryTable();
-                renderTrendChart();
-                render10x10BeadPlate();
-                renderRoadmapMatrix();
-                renderRoadmapBeads();
-              }
-            }
-          }
-
-          // 4. Reflect User Wallet Balance & Status in real-time
-          if (currentUserId && state.users && state.users[currentUserId]) {
-            const sUser = state.users[currentUserId];
-            if (typeof sUser.balance === 'number' && Math.abs(sUser.balance - userBalance) > 0.01) {
-              userBalance = sUser.balance;
-              updateBalanceUI();
-            }
-            if (sUser.status === 'BLOCKED') {
-              showToast('⛔ Your account has been temporarily restricted by Admin.');
-            }
-          }
-
-          // 5. Reflect Deposits & Withdrawals status in real-time
-          if (currentUserId && state.deposits) {
-            let changed = false;
-            state.deposits.forEach(d => {
-              if (d.userId === currentUserId) {
-                const item = walletLedger.find(tx => tx.id === d.id);
-                if (item) {
-                  if (item.status !== d.status || item.reason !== d.reason) {
-                    item.status = d.status;
-                    item.reason = d.reason;
-                    changed = true;
-                  }
-                }
-              }
-            });
-            if (changed) renderWalletLedger();
-          }
-          if (currentUserId && state.withdrawals) {
-            let changed = false;
-            state.withdrawals.forEach(w => {
-              if (w.userId === currentUserId) {
-                const item = walletLedger.find(tx => tx.id === w.id);
-                if (item) {
-                  if (item.status !== w.status || item.reason !== w.reason) {
-                    item.status = w.status;
-                    item.reason = w.reason;
-                    changed = true;
-                  }
-                }
-              }
-            });
-            if (changed) renderWalletLedger();
-          }
+          if (state) applyUserStateSnapshot(state, force, reasonEvent);
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => {
+          isSyncingAdminState = false;
+        });
+    }
+
+    function connectUserEventStream() {
+      if (window.location.protocol === 'file:' || typeof EventSource === 'undefined') return;
+      if (userEventSource) {
+        try { userEventSource.close(); } catch(e) {}
+      }
+      try {
+        userEventSource = new EventSource('/api/events');
+        userEventSource.addEventListener('connected', () => {
+          syncAdminStateRealtime(true, { eventType: 'connected' });
+        });
+        userEventSource.addEventListener('state_update', (msg) => {
+          try {
+            const ev = JSON.parse(msg.data || '{}');
+            const detail = ev.detail || {};
+            const targetUid = detail.userId || ev.userId;
+            const reasonText = detail.reason || ev.reason;
+            const evType = ev.eventType || '';
+            syncAdminStateRealtime(true, ev);
+            if (evType === 'result_declared' || evType === 'round_settled' || evType === 'draw_override') {
+              syncAuthoritativeMarkets();
+              fetchMarketHistory(currentMarketId);
+            }
+            if (evType === 'bank_config_updated') {
+              showToast('🏛️ Payment gateway details updated by Admin.');
+            }
+            if (evType === 'deposit_rejected' && targetUid === currentUserId) {
+              showToast('❌ Deposit rejected by Admin: ' + (reasonText || 'Verification failed'));
+            }
+            if (evType === 'withdrawal_approved' && targetUid === currentUserId) {
+              showToast('✅ Withdrawal approved by Admin!');
+            }
+            if (evType === 'withdrawal_rejected' && targetUid === currentUserId) {
+              showToast('❌ Withdrawal rejected & refunded: ' + (reasonText || 'Check bank details'));
+            }
+          } catch (err) {
+            syncAdminStateRealtime(true);
+          }
+        });
+        userEventSource.onerror = () => {
+          // Browser automatically retries EventSource; fallback interval keeps state synced
+        };
+      } catch(e) {}
     }
 
     function syncServerResults() {
-      syncAdminStateRealtime();
+      syncAdminStateRealtime(true);
     }
 
     // Populate Initial Past Records for each Market (Deterministic & Fixed Forever)
@@ -4849,7 +4968,34 @@
       showToast('Logged out. Please log in or register.');
       openAuthModal();
     }
-    function openAuthModal() { document.getElementById('authModal').classList.add('active'); }
+    function refreshAuthUserOptions() {
+      if (window.location.protocol === 'file:') return;
+      const sel = document.getElementById('authSelectUser');
+      if (!sel) return;
+      fetch('/api/state?t=' + Date.now(), { cache: 'no-store' })
+        .then(r => r.ok ? r.json() : null)
+        .then(state => {
+          if (!state || !state.users) return;
+          const prevVal = sel.value;
+          const usersArr = Object.values(state.users);
+          if (usersArr.length === 0) return;
+          sel.innerHTML = usersArr.map(u => {
+            const balStr = Number(u.balance || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+            const blockedTag = u.status === 'BLOCKED' ? ' [BLOCKED]' : '';
+            return `<option value="${u.id}">${u.name} (${u.id} • Balance ₹${balStr})${blockedTag}</option>`;
+          }).join('');
+          if (currentUserId && state.users[currentUserId]) {
+            sel.value = currentUserId;
+          } else if (prevVal && state.users[prevVal]) {
+            sel.value = prevVal;
+          }
+        }).catch(() => {});
+    }
+
+    function openAuthModal() {
+      refreshAuthUserOptions();
+      document.getElementById('authModal').classList.add('active');
+    }
     function setAuthTab(tab) {
       document.getElementById('authTabLogin').classList.toggle('active', tab === 0);
       document.getElementById('authTabReg').classList.toggle('active', tab === 1);
@@ -4858,10 +5004,11 @@
     }
     function switchActiveUser() {
       const sel = document.getElementById('authSelectUser').value;
+      const selOpt = document.getElementById('authSelectUser').selectedOptions[0];
       currentUserId = sel;
       const names = { 'USR-1001': 'Rahul_Player', 'USR-1002': 'Aman_Trader', 'USR-1003': 'Priya_VIP', 'USR-1004': 'Vikram_99' };
-      currentUserName = names[sel] || sel;
-      userBalance = 50200.00;
+      currentUserName = names[sel] || (selOpt ? selOpt.text.split(' (')[0] : sel);
+      lastKnownAccountStatus = 'ACTIVE';
       latestStatementData = null;
       userBetSlipsHistory = [];
       walletLedger = [];
@@ -4873,25 +5020,55 @@
       updateBalanceUI();
       loadUserBetsFromBackend();
       syncUserTransactions();
+      syncAdminStateRealtime(true);
       showToast(`Switched account to ${currentUserName}!`);
     }
-    function submitRegisterUser() {
+    async function submitRegisterUser() {
       const name = document.getElementById('regNameInput').value.trim() || 'New_Player';
-      currentUserId = 'USR-' + Math.floor(2000 + Math.random() * 8000);
+      const refCodeInput = (document.getElementById('regRefInput')?.value || '').trim();
+      const newUid = 'USR-' + Math.floor(2000 + Math.random() * 8000);
+      currentUserId = newUid;
       currentUserName = name;
       userBalance = 50000.00;
+      lastKnownAccountStatus = 'ACTIVE';
       latestStatementData = null;
       userBetSlipsHistory = [];
       walletLedger = [];
       lastKnownBetStatuses = {};
+
+      if (window.location.protocol !== 'file:') {
+        try {
+          const res = await fetch('/api/users/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: newUid,
+              name: name,
+              balance: 50000.00,
+              referredBy: refCodeInput
+            })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.user) {
+              currentUserId = data.user.id || newUid;
+              currentUserName = data.user.name || name;
+              if (typeof data.user.balance === 'number') userBalance = data.user.balance;
+            }
+          }
+        } catch (e) {
+          console.warn('User registration sync error:', e);
+        }
+      }
+
       localStorage.setItem('colour_king_user_session', JSON.stringify({ id: currentUserId, name: currentUserName, balance: userBalance }));
       updateBalanceUI();
-      syncBalanceWithBackend();
       document.getElementById('headerUserSubtitle').innerText = `${currentUserName} • VIP 1`;
       closeModal('authModal');
       loadUserBetsFromBackend();
       syncUserTransactions();
-      showToast(`Welcome ${currentUserName}! ₹50,000 sign-up bonus credited!`);
+      syncAdminStateRealtime(true);
+      showToast(`Welcome ${currentUserName}! ₹${userBalance.toLocaleString('en-IN')} sign-up bonus credited!`);
       playSound('win');
     }
 
@@ -4899,6 +5076,7 @@
     window.addEventListener('DOMContentLoaded', () => {
       initPastRecords();
       syncServerResults();
+      connectUserEventStream();
       updateMarketUI();
       renderTrendChart();
       renderHistoryTable();
@@ -4921,13 +5099,15 @@
         }, 400);
       }
 
-      setInterval(syncAdminStateRealtime, 1500);
-      setInterval(syncUserTransactions, 3000);
+      setInterval(() => syncAdminStateRealtime(false), 3000);
+      setInterval(syncUserTransactions, 4000);
       startEngineLoop();
 
       // Check URL for referral parameter
       const params = new URLSearchParams(window.location.search);
       if (params.get('ref')) {
+        const refInput = document.getElementById('regRefInput');
+        if (refInput) refInput.value = params.get('ref');
         showToast(`Referral binding detected: ${params.get('ref')}`);
       }
     });

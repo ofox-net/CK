@@ -11,20 +11,29 @@ import random
 import math
 import csv
 import io
+import queue
 from datetime import datetime, timezone, timedelta
 
 PORT = 3000
 DIRECTORY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
-STATE_FILE = os.path.join(DIRECTORY, "server_state.json")
 DB_FILE = os.path.join(DIRECTORY, "colour_king.db")
 RETENTION_DAYS = 90
 
 db_lock = threading.Lock()
+sse_lock = threading.Lock()
+sse_subscribers = []
 
 # Supported Markets
 MARKET_KEYS = ["MIAMI", "VEGAS", "PARIS", "DUBAI"]
 ROUND_DURATION_SEC = 180  # 3 minutes
 LOCK_CUTOFF_SEC = 30      # Last 30 seconds locked
+
+DEFAULT_PLATFORM_SETTINGS = {
+    "maintenanceMode": False,
+    "announcementBanner": "",
+    "minBet": 10.0,
+    "maxBet": 100000.0
+}
 
 DEFAULT_BANK_CONFIG = {
     "bankName": "State Bank of India (SBI)",
@@ -52,6 +61,42 @@ def get_db():
     conn = sqlite3.connect(DB_FILE, check_same_thread=False, timeout=10.0)
     conn.row_factory = sqlite3.Row
     return conn
+
+def get_state_version(conn):
+    try:
+        row = conn.execute("SELECT value FROM app_state WHERE key = 'state_version'").fetchone()
+        return int(row[0]) if row and row[0] is not None else 1
+    except Exception:
+        return 1
+
+def notify_sse_clients(payload):
+    msg = dict(payload)
+    with sse_lock:
+        dead = []
+        for q in sse_subscribers:
+            try:
+                q.put_nowait(msg)
+            except Exception:
+                dead.append(q)
+        for q in dead:
+            if q in sse_subscribers:
+                sse_subscribers.remove(q)
+
+def bump_state_version(conn, event_type="state_update", detail=None):
+    c = conn.cursor()
+    curr = get_state_version(conn)
+    new_ver = curr + 1
+    c.execute(
+        "INSERT OR REPLACE INTO app_state (key, value, updated_at) VALUES ('state_version', ?, CURRENT_TIMESTAMP)",
+        (str(new_ver),)
+    )
+    event_payload = {
+        "version": new_ver,
+        "eventType": event_type,
+        "detail": detail or {},
+        "serverTimeMs": int(time.time() * 1000)
+    }
+    return new_ver, event_payload
 
 def init_database():
     os.makedirs(DIRECTORY, exist_ok=True)
@@ -265,14 +310,28 @@ def init_database():
         # Seed default deposits/withdrawals if empty
         c.execute("SELECT COUNT(*) FROM deposits")
         if c.fetchone()[0] == 0:
+            now_seed_ms = int(time.time() * 1000)
             c.execute("""
-                INSERT INTO deposits (id, user_id, user_name, amount, method, utr, time_str, status)
-                VALUES ('DEP-88401', 'USR-1001', 'Rahul_Player', 5000.00, 'UPI (GooglePay)', '429188402911', 'Today, 11:24 AM', 'IN PROCESS')
-            """)
+                INSERT INTO deposits (id, user_id, user_name, amount, method, utr, time_str, status, created_at_ms)
+                VALUES ('DEP-88401', 'USR-1001', 'Rahul_Player', 5000.00, 'UPI (GooglePay)', '429188402911', 'Today, 11:24 AM', 'IN PROCESS', ?)
+            """, (now_seed_ms,))
             c.execute("""
-                INSERT INTO deposits (id, user_id, user_name, amount, method, utr, time_str, status)
-                VALUES ('DEP-88402', 'USR-1002', 'Aman_Trader', 10000.00, 'IMPS SBI NetBanking', '902184716294', 'Today, 11:18 AM', 'IN PROCESS')
-            """)
+                INSERT INTO deposits (id, user_id, user_name, amount, method, utr, time_str, status, created_at_ms)
+                VALUES ('DEP-88402', 'USR-1002', 'Aman_Trader', 10000.00, 'IMPS SBI NetBanking', '902184716294', 'Today, 11:18 AM', 'IN PROCESS', ?)
+            """, (now_seed_ms,))
+
+        # Ensure app_state defaults exist in SQLite
+        c.execute("SELECT value FROM app_state WHERE key = 'bank_config'")
+        if not c.fetchone():
+            c.execute("INSERT OR REPLACE INTO app_state (key, value) VALUES ('bank_config', ?)", (json.dumps(DEFAULT_BANK_CONFIG),))
+
+        c.execute("SELECT value FROM app_state WHERE key = 'platform_settings'")
+        if not c.fetchone():
+            c.execute("INSERT OR REPLACE INTO app_state (key, value) VALUES ('platform_settings', ?)", (json.dumps(DEFAULT_PLATFORM_SETTINGS),))
+
+        c.execute("SELECT value FROM app_state WHERE key = 'state_version'")
+        if not c.fetchone():
+            c.execute("INSERT OR REPLACE INTO app_state (key, value) VALUES ('state_version', '1')")
 
         conn.commit()
         conn.close()
@@ -487,6 +546,7 @@ def settle_round_in_db(conn, market_code, round_id, period, winning_number, draw
 
 def sync_round_lifecycle_once():
     now_ms = int(time.time() * 1000)
+    sse_events = []
     with db_lock:
         conn = get_db()
         c = conn.cursor()
@@ -547,6 +607,8 @@ def sync_round_lifecycle_once():
             for past in unsettled_past:
                 outcome = generate_provably_fair_outcome(m_code, past["period"])
                 settle_round_in_db(conn, m_code, past["round_id"], past["period"], outcome["number"], "AUTO_RECOVERY", "SYSTEM")
+                _, ev = bump_state_version(conn, "round_settled", {"market": m_code, "period": past["period"], "number": outcome["number"]})
+                sse_events.append(ev)
 
             # 2. Check if active round changed (period transition!)
             last_recorded_period = m_row["current_period"] if m_row else None
@@ -566,6 +628,8 @@ def sync_round_lifecycle_once():
                     draw_mode = "AUTO_RANDOM"
 
                 settle_round_in_db(conn, m_code, f"RND_{m_code}_{last_recorded_period}", last_recorded_period, winning_num, draw_mode, "SYSTEM_DAEMON")
+                _, ev = bump_state_version(conn, "round_settled", {"market": m_code, "period": last_recorded_period, "number": winning_num})
+                sse_events.append(ev)
 
             # 3. Update active round state for current period
             c.execute("""
@@ -576,11 +640,14 @@ def sync_round_lifecycle_once():
 
             # 4. If round is locked (last 30s), transition all 'PENDING' bets of this period to 'LOCKED'
             if auth_round["is_betting_locked"]:
-                c.execute("""
+                cur_lock = c.execute("""
                     UPDATE bets
                     SET status = 'LOCKED'
                     WHERE market = ? AND period = ? AND status = 'PENDING'
                 """, (m_code, period))
+                if cur_lock.rowcount and cur_lock.rowcount > 0:
+                    _, ev = bump_state_version(conn, "bets_locked", {"market": m_code, "period": period})
+                    sse_events.append(ev)
 
             # 5. Ensure current round exists in rounds table
             c.execute("SELECT round_id FROM rounds WHERE round_id = ?", (round_id,))
@@ -592,6 +659,9 @@ def sync_round_lifecycle_once():
 
         conn.commit()
         conn.close()
+
+    for ev in sse_events:
+        notify_sse_clients(ev)
 
 def background_round_lifecycle_daemon():
     """Background engine ensuring continuous 180s countdowns, 30s locks, and atomic settlements across all 4 markets."""
@@ -1012,6 +1082,48 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             return
 
+        # 0. Real-Time Server-Sent Events (SSE) Push Stream
+        if path == "/api/events":
+            q = queue.Queue(maxsize=100)
+            with db_lock:
+                conn = get_db()
+                init_ver = get_state_version(conn)
+                conn.close()
+            with sse_lock:
+                sse_subscribers.append(q)
+            try:
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+                self.send_header("Connection", "keep-alive")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+
+                init_msg = json.dumps({
+                    "version": init_ver,
+                    "eventType": "connected",
+                    "serverTimeMs": int(time.time() * 1000)
+                })
+                self.wfile.write(f"event: connected\ndata: {init_msg}\n\n".encode("utf-8"))
+                self.wfile.flush()
+
+                while True:
+                    try:
+                        ev = q.get(timeout=15.0)
+                        line = f"event: state_update\ndata: {json.dumps(ev)}\n\n".encode("utf-8")
+                        self.wfile.write(line)
+                        self.wfile.flush()
+                    except queue.Empty:
+                        self.wfile.write(b": keepalive\n\n")
+                        self.wfile.flush()
+            except Exception:
+                pass
+            finally:
+                with sse_lock:
+                    if q in sse_subscribers:
+                        sse_subscribers.remove(q)
+            return
+
         # 1. Authoritative Server Clock
         if path == "/api/clock":
             now_ms = int(time.time() * 1000)
@@ -1350,31 +1462,51 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             })
             return
 
-        # 7. Backward compatible state endpoint
+        # 7. Complete SQLite Real-Time State Snapshot (Admin & User Sync)
+        if path == "/api/state/version":
+            with db_lock:
+                conn = get_db()
+                ver = get_state_version(conn)
+                conn.close()
+            self._send_json({ "state_version": ver, "server_time_ms": int(time.time() * 1000) })
+            return
+
         if path == "/api/state":
+            now_ms = int(time.time() * 1000)
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
-                c.execute("SELECT * FROM users")
-                users_list = {r["id"]: {
-                    "id": r["id"], "name": r["name"], "balance": r["balance"],
-                    "totalDeposit": r["total_deposit"], "totalWithdraw": r["total_withdraw"],
-                    "betsCount": r["bets_count"], "status": r["status"]
-                } for r in c.fetchall()}
+                state_ver = get_state_version(conn)
 
-                c.execute("SELECT * FROM deposits ORDER BY created_at DESC LIMIT 50")
+                c.execute("SELECT * FROM users")
+                all_user_rows = c.fetchall()
+                users_list = {r["id"]: {
+                    "id": r["id"],
+                    "name": r["name"],
+                    "phone": r["phone"] or "",
+                    "email": r["email"] or "",
+                    "balance": round(float(r["balance"] or 0.0), 2),
+                    "totalDeposit": round(float(r["total_deposit"] or 0.0), 2),
+                    "totalWithdraw": round(float(r["total_withdraw"] or 0.0), 2),
+                    "betsCount": int(r["bets_count"] or 0),
+                    "status": r["status"] or "ACTIVE",
+                    "referralCode": (r["referral_code"] if "referral_code" in r.keys() and r["referral_code"] else r["id"][-6:].upper()),
+                    "referredBy": (r["referred_by"] if "referred_by" in r.keys() else None)
+                } for r in all_user_rows}
+
+                c.execute("SELECT * FROM deposits ORDER BY created_at_ms DESC, created_at DESC LIMIT 100")
                 deposits_list = [{
                     "id": r["id"], "userId": r["user_id"], "userName": r["user_name"],
-                    "amount": r["amount"], "method": r["method"], "utr": r["utr"],
-                    "time": r["time_str"], "status": r["status"], "reason": r["reason"]
+                    "amount": round(float(r["amount"] or 0.0), 2), "method": r["method"], "utr": r["utr"],
+                    "time": r["time_str"] or r["created_at"] or "", "status": r["status"], "reason": r["reason"]
                 } for r in c.fetchall()]
 
-                c.execute("SELECT * FROM withdrawals ORDER BY created_at DESC LIMIT 50")
+                c.execute("SELECT * FROM withdrawals ORDER BY created_at_ms DESC, created_at DESC LIMIT 100")
                 withdrawals_list = [{
                     "id": r["id"], "userId": r["user_id"], "userName": r["user_name"],
-                    "amount": r["amount"], "upiId": r["upi_id"], "bankName": r["bank_name"],
+                    "amount": round(float(r["amount"] or 0.0), 2), "upiId": r["upi_id"], "bankName": r["bank_name"],
                     "accNo": r["acc_no"], "ifsc": r["ifsc"], "bankingName": r["banking_name"],
-                    "destination": r["destination"], "time": r["time_str"], "status": r["status"],
+                    "destination": r["destination"], "time": r["time_str"] or r["created_at"] or "", "status": r["status"],
                     "reason": r["reason"]
                 } for r in c.fetchall()]
 
@@ -1382,13 +1514,143 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 bcfg_row = c.fetchone()
                 bank_cfg = json.loads(bcfg_row[0]) if bcfg_row else DEFAULT_BANK_CONFIG
 
+                c.execute("SELECT value FROM app_state WHERE key = 'platform_settings'")
+                pcfg_row = c.fetchone()
+                platform_cfg = json.loads(pcfg_row[0]) if pcfg_row else DEFAULT_PLATFORM_SETTINGS
+
+                c.execute("SELECT code, manual_override_num, manual_override_period FROM markets WHERE manual_override_num IS NOT NULL")
+                draw_overrides = {}
+                for ov in c.fetchall():
+                    ov_num = int(ov["manual_override_num"])
+                    ov_col = "VIOLET+RED" if ov_num == 0 else ("VIOLET+GREEN" if ov_num == 5 else ("GREEN" if ov_num in [1,3,7,9] else "RED"))
+                    draw_overrides[ov["code"]] = {
+                        "market": ov["code"],
+                        "number": ov_num,
+                        "color": ov_col,
+                        "period": ov["manual_override_period"],
+                        "mode": "MANUAL"
+                    }
+
+                c.execute("""
+                    SELECT round_id, market, period, result_number, result_color, result_col_class, is_big, draw_mode, declared_at
+                    FROM rounds
+                    WHERE status = 'SETTLED' AND result_number IS NOT NULL
+                    ORDER BY CAST(period AS INTEGER) DESC, declared_at DESC
+                    LIMIT 240
+                """)
+                declared_results = { m: {} for m in MARKET_KEYS }
+                declared_results_list = []
+                for rr in c.fetchall():
+                    m_k = rr["market"]
+                    p_str = str(rr["period"])
+                    num_i = int(rr["result_number"])
+                    col_raw = rr["result_color"] or ("violet" if num_i in [0, 5] else ("green" if num_i in [1,3,7,9] else "red"))
+                    col_cls = rr["result_col_class"] or ("red-violet" if num_i == 0 else ("green-violet" if num_i == 5 else col_raw))
+                    col_badge = "VIOLET+RED" if num_i == 0 else ("VIOLET+GREEN" if num_i == 5 else col_raw.upper())
+                    if m_k in declared_results and len(declared_results[m_k]) < 60:
+                        declared_results[m_k][p_str] = {
+                            "period": p_str,
+                            "number": num_i,
+                            "color": col_raw,
+                            "colClass": col_cls,
+                            "isBig": bool(rr["is_big"]),
+                            "mode": rr["draw_mode"] or "AUTO_RANDOM",
+                            "time": rr["declared_at"] or ""
+                        }
+                    if len(declared_results_list) < 50:
+                        c.execute("SELECT COALESCE(SUM(win_amount), 0.0) FROM bets WHERE market = ? AND period = ? AND status = 'WON'", (m_k, p_str))
+                        payout_sum = float(c.fetchone()[0] or 0.0)
+                        declared_results_list.append({
+                            "market": m_k,
+                            "period": p_str,
+                            "number": num_i,
+                            "color": col_badge,
+                            "isBig": bool(rr["is_big"]),
+                            "mode": rr["draw_mode"] or "AUTO_RANDOM",
+                            "payout": round(payout_sum, 2),
+                            "time": rr["declared_at"] or ""
+                        })
+
+                c.execute("SELECT * FROM bets ORDER BY created_at_ms DESC LIMIT 200")
+                bets_list = [{
+                    "id": r["bet_id"],
+                    "market": r["market"],
+                    "period": r["period"],
+                    "userId": r["user_id"],
+                    "userName": r["user_name"],
+                    "target": r["prediction_target"],
+                    "type": r["prediction_type"],
+                    "amount": round(float(r["amount"] or 0.0), 2),
+                    "multiplier": float(r["multiplier"] or 0.0),
+                    "status": r["status"],
+                    "payout": round(float(r["win_amount"] or 0.0), 2),
+                    "time": r["created_at"] or "",
+                    "createdAtMs": int(r["created_at_ms"] or 0)
+                } for r in c.fetchall()]
+
+                c.execute("SELECT * FROM admin_audit_logs ORDER BY id DESC LIMIT 100")
+                audit_logs = [{
+                    "id": r["id"],
+                    "actor": r["actor"],
+                    "action": r["action"],
+                    "entity": r["entity"],
+                    "desc": r["desc"],
+                    "time": r["created_at"] or ""
+                } for r in c.fetchall()]
+
+                # Build affiliate overview dynamically from SQLite users & referral_commissions
+                affiliates_list = []
+                for u in all_user_rows:
+                    uid_cur = u["id"]
+                    c.execute("SELECT id, name, total_deposit, status, created_at FROM users WHERE referred_by = ?", (uid_cur,))
+                    directs = c.fetchall()
+                    c.execute("SELECT COALESCE(SUM(commission_amount), 0.0) FROM referral_commissions WHERE beneficiary_user_id = ? AND status != 'REVERSED'", (uid_cur,))
+                    tot_comm = float(c.fetchone()[0] or 0.0)
+                    day_ago_ms = now_ms - 86400000
+                    c.execute("SELECT COALESCE(SUM(commission_amount), 0.0) FROM referral_commissions WHERE beneficiary_user_id = ? AND created_at_ms >= ? AND status != 'REVERSED'", (uid_cur, day_ago_ms))
+                    recent_comm = float(c.fetchone()[0] or 0.0)
+                    members_arr = []
+                    for dm in directs:
+                        c.execute("SELECT COALESCE(SUM(commission_amount), 0.0) FROM referral_commissions WHERE beneficiary_user_id = ? AND source_user_id = ?", (uid_cur, dm["id"]))
+                        dm_comm = float(c.fetchone()[0] or 0.0)
+                        members_arr.append({
+                            "id": dm["id"],
+                            "name": dm["name"],
+                            "tier": "Tier 1 (Direct)",
+                            "joinDate": str(dm["created_at"] or "")[:10],
+                            "totalDeposit": round(float(dm["total_deposit"] or 0.0), 2),
+                            "commission": round(dm_comm, 2),
+                            "status": dm["status"] or "ACTIVE"
+                        })
+                    affiliates_list.append({
+                        "userId": uid_cur,
+                        "userName": u["name"],
+                        "phone": u["phone"] or "",
+                        "refCode": (u["referral_code"] if "referral_code" in u.keys() and u["referral_code"] else uid_cur[-6:].upper()),
+                        "referredBy": (u["referred_by"] if "referred_by" in u.keys() and u["referred_by"] else "OFFICIAL_PROMO"),
+                        "directMembersCount": len(directs),
+                        "teamMembersCount": len(directs),
+                        "totalEarnedCommission": round(tot_comm, 2),
+                        "yesterdayCommission": round(recent_comm, 2),
+                        "members": members_arr
+                    })
+
                 conn.close()
 
             self._send_json({
+                "state_version": state_ver,
+                "server_time_ms": now_ms,
                 "bank_config": bank_cfg,
+                "platform_settings": platform_cfg,
                 "users": users_list,
                 "deposits": deposits_list,
-                "withdrawals": withdrawals_list
+                "withdrawals": withdrawals_list,
+                "draw_overrides": draw_overrides,
+                "declared_results": declared_results,
+                "declared_results_list": declared_results_list,
+                "bets": bets_list,
+                "audit_logs": audit_logs,
+                "affiliates": affiliates_list
             })
             return
 
@@ -1584,8 +1846,10 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                                 VALUES (?, ?, 'REFERRAL_COMMISSION', ?, ?, ?, ?, ?, 'COMPLETED', ?)
                             """, (rtx_id, sp["id"], "Tier 1 Refer & Earn Reward", f"From {user['name']} ({m_code} Bet ₹{amount:.2f})", comm_amt, sp_bal, sp_new, now_ms))
 
+                _, sse_ev = bump_state_version(conn, "bet_placed", {"userId": uid, "market": m_code, "period": period, "betId": bet_id})
                 conn.commit()
                 conn.close()
+            notify_sse_clients(sse_ev)
 
             created_bet = {
                 "id": bet_id,
@@ -1663,8 +1927,10 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     VALUES (?, ?, 'REFUND', ?, ?, ?, ?, ?, 'COMPLETED', ?)
                 """, (tx_id, uid, f"Refund {bet['market']} #{bet['period']}", f"Target {bet['prediction_target']} Cancelled", refund_amt, curr_bal, new_bal, now_ms))
 
+                _, sse_ev = bump_state_version(conn, "bet_cancelled", {"userId": uid, "betId": bet_id})
                 conn.commit()
                 conn.close()
+            notify_sse_clients(sse_ev)
 
             self._send_json({
                 "success": True,
@@ -1700,8 +1966,10 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                         VALUES ('ColourPrince', 'SET_MANUAL_DRAW', ?, ?)
                     """, (f"{m_code} #{period}", f"Scheduled winning number {num} for next declaration"))
 
+                _, sse_ev = bump_state_version(conn, "draw_override", {"market": m_code, "mode": mode})
                 conn.commit()
                 conn.close()
+            notify_sse_clients(sse_ev)
 
             self._send_json({ "success": True, "message": f"Override updated for {m_code}" })
             return
@@ -1725,19 +1993,74 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     INSERT INTO admin_audit_logs (actor, action, entity, desc)
                     VALUES ('ColourPrince', 'FORCE_DECLARE_RESULT', ?, ?)
                 """, (f"{m_code} #{period}", f"Officially finalized outcome: Number {num}"))
+                _, sse_ev = bump_state_version(conn, "result_declared", {"market": m_code, "period": period, "number": num})
                 conn.commit()
                 conn.close()
+            notify_sse_clients(sse_ev)
 
             self._send_json({ "success": True, "message": f"Result {num} declared and settled for {m_code} #{period}" })
             return
 
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        # 4. USER BALANCE ADJUSTMENT & STATUS
+        # 4. USER REGISTRATION, BALANCE ADJUSTMENT & STATUS
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        if path == "/api/users/register":
+            uid = str(payload.get("id") or payload.get("userId") or f"USR-{random.randint(2000, 9999)}").strip()
+            name = str(payload.get("name") or uid).strip()
+            phone = str(payload.get("phone") or "").strip()
+            email = str(payload.get("email") or "").strip()
+            bal = float(payload.get("balance", 50000.00))
+            ref_code = str(payload.get("referralCode") or f"CK-{uid[-4:]}").strip().upper()
+            ref_by_code = str(payload.get("referredBy") or "").strip().upper()
+
+            with db_lock:
+                conn = get_db()
+                c = conn.cursor()
+                referred_by_uid = None
+                if ref_by_code:
+                    c.execute("SELECT id FROM users WHERE UPPER(referral_code) = ? OR UPPER(id) = ?", (ref_by_code, ref_by_code))
+                    sp = c.fetchone()
+                    if sp:
+                        referred_by_uid = sp["id"]
+
+                c.execute("SELECT * FROM users WHERE id = ?", (uid,))
+                existing = c.fetchone()
+                if not existing:
+                    c.execute("""
+                        INSERT INTO users (id, name, phone, email, balance, total_deposit, total_withdraw, bets_count, status, referral_code, referred_by)
+                        VALUES (?, ?, ?, ?, ?, 0.0, 0.0, 0, 'ACTIVE', ?, ?)
+                    """, (uid, name, phone, email, bal, ref_code, referred_by_uid))
+                    c.execute("""
+                        INSERT INTO admin_audit_logs (actor, action, entity, desc)
+                        VALUES ('System', 'USER_REGISTERED', ?, ?)
+                    """, (uid, f"Registered user {name} (Bal ₹{bal:.2f})"))
+                else:
+                    c.execute("""
+                        UPDATE users SET name = ?, phone = COALESCE(NULLIF(?, ''), phone), email = COALESCE(NULLIF(?, ''), email)
+                        WHERE id = ?
+                    """, (name, phone, email, uid))
+                _, sse_ev = bump_state_version(conn, "user_registered", {"userId": uid, "name": name})
+                c.execute("SELECT * FROM users WHERE id = ?", (uid,))
+                u = c.fetchone()
+                conn.commit()
+                conn.close()
+            notify_sse_clients(sse_ev)
+
+            self._send_json({
+                "success": True,
+                "user": {
+                    "id": u["id"], "name": u["name"], "phone": u["phone"], "email": u["email"],
+                    "balance": u["balance"], "status": u["status"],
+                    "referralCode": u["referral_code"] if "referral_code" in u.keys() else ref_code
+                }
+            })
+            return
+
         if path == "/api/user/adjust":
             uid = payload.get("userId")
             adj_type = payload.get("type", "CREDIT")
             amount = float(payload.get("amount", 0.0))
+            reason = str(payload.get("reason", f"Admin {adj_type}")).strip()
 
             with db_lock:
                 conn = get_db()
@@ -1760,22 +2083,24 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 c.execute("""
                     INSERT INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status, created_at_ms)
                     VALUES (?, ?, 'ADJUSTMENT', 'Admin Wallet Adjustment', ?, ?, ?, ?, 'COMPLETED', ?)
-                """, (tx_id, uid, f"Admin {adj_type}", amount if adj_type == "CREDIT" else -amount, curr_bal, new_bal, now_ms))
+                """, (tx_id, uid, reason or f"Admin {adj_type}", amount if adj_type == "CREDIT" else -amount, curr_bal, new_bal, now_ms))
 
                 c.execute("""
                     INSERT INTO admin_audit_logs (actor, action, entity, desc)
                     VALUES ('ColourPrince', 'USER_BALANCE_ADJUST', ?, ?)
-                """, (uid, f"{adj_type} ₹{amount:.2f} -> New balance ₹{new_bal:.2f}"))
+                """, (uid, f"{adj_type} ₹{amount:.2f} -> New balance ₹{new_bal:.2f} ({reason})"))
 
+                _, sse_ev = bump_state_version(conn, "balance_adjusted", {"userId": uid, "balance": new_bal, "type": adj_type, "amount": amount})
                 conn.commit()
                 conn.close()
+            notify_sse_clients(sse_ev)
 
             self._send_json({ "success": True, "userId": uid, "balance": new_bal })
             return
 
         if path == "/api/user/status":
             uid = payload.get("userId")
-            new_status = payload.get("status", "ACTIVE")
+            new_status = str(payload.get("status", "ACTIVE")).upper().strip()
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
@@ -1784,8 +2109,10 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     INSERT INTO admin_audit_logs (actor, action, entity, desc)
                     VALUES ('ColourPrince', 'USER_STATUS_CHANGE', ?, ?)
                 """, (uid, f"Status updated to {new_status}"))
+                _, sse_ev = bump_state_version(conn, "user_status_changed", {"userId": uid, "status": new_status})
                 conn.commit()
                 conn.close()
+            notify_sse_clients(sse_ev)
             self._send_json({ "success": True, "userId": uid, "status": new_status })
             return
 
@@ -1799,22 +2126,32 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             uid = payload.get("userId", "USR-1001")
             uname = payload.get("userName", "Rahul_Player")
 
-            dep_id = f"DEP-{datetime.now().strftime('%H%M%S')}"
+            dep_id = f"DEP-{datetime.now().strftime('%H%M%S')}-{random.randint(10, 99)}"
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
+                c.execute("SELECT status FROM users WHERE id = ?", (uid,))
+                ucheck = c.fetchone()
+                if ucheck and ucheck["status"] == "BLOCKED":
+                    conn.close()
+                    self._send_json({ "success": False, "error": "Account is blocked by Admin" }, status=403)
+                    return
+
                 c.execute("""
                     INSERT INTO deposits (id, user_id, user_name, amount, method, utr, time_str, status, created_at_ms)
                     VALUES (?, ?, ?, ?, ?, ?, 'Just now', 'IN PROCESS', ?)
                 """, (dep_id, uid, uname, amount, method, utr, now_ms))
+                _, sse_ev = bump_state_version(conn, "deposit_requested", {"userId": uid, "depositId": dep_id, "amount": amount})
                 conn.commit()
                 conn.close()
+            notify_sse_clients(sse_ev)
 
             self._send_json({ "success": True, "deposit": { "id": dep_id, "amount": amount, "utr": utr, "status": "IN PROCESS" } })
             return
 
         if path == "/api/deposits/approve":
             dep_id = payload.get("depositId")
+            affected_uid = None
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
@@ -1823,6 +2160,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 if d and d["status"] != "SUCCESS":
                     c.execute("UPDATE deposits SET status = 'SUCCESS' WHERE id = ?", (dep_id,))
                     uid = d["user_id"]
+                    affected_uid = uid
                     amt = float(d["amount"])
                     c.execute("UPDATE users SET balance = balance + ?, total_deposit = total_deposit + ? WHERE id = ?", (amt, amt, uid))
                     c.execute("SELECT balance FROM users WHERE id = ?", (uid,))
@@ -1836,8 +2174,10 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                         INSERT INTO admin_audit_logs (actor, action, entity, desc)
                         VALUES ('ColourPrince', 'DEPOSIT_APPROVE', ?, ?)
                     """, (dep_id, f"Approved ₹{amt:.2f} for {uid}"))
+                _, sse_ev = bump_state_version(conn, "deposit_approved", {"depositId": dep_id, "userId": affected_uid})
                 conn.commit()
                 conn.close()
+            notify_sse_clients(sse_ev)
             self._send_json({ "success": True })
             return
 
@@ -1847,13 +2187,18 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
+                c.execute("SELECT user_id FROM deposits WHERE id = ?", (dep_id,))
+                d = c.fetchone()
+                affected_uid = d["user_id"] if d else None
                 c.execute("UPDATE deposits SET status = 'FAIL', reason = ? WHERE id = ?", (reason, dep_id))
                 c.execute("""
                     INSERT INTO admin_audit_logs (actor, action, entity, desc)
                     VALUES ('ColourPrince', 'DEPOSIT_REJECT', ?, ?)
                 """, (dep_id, f"Rejected: {reason}"))
+                _, sse_ev = bump_state_version(conn, "deposit_rejected", {"depositId": dep_id, "userId": affected_uid, "reason": reason})
                 conn.commit()
                 conn.close()
+            notify_sse_clients(sse_ev)
             self._send_json({ "success": True })
             return
 
@@ -1870,8 +2215,12 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
-                c.execute("SELECT balance FROM users WHERE id = ?", (uid,))
+                c.execute("SELECT balance, status FROM users WHERE id = ?", (uid,))
                 urow = c.fetchone()
+                if urow and urow["status"] == "BLOCKED":
+                    conn.close()
+                    self._send_json({ "success": False, "error": "Account is blocked by Admin" }, status=403)
+                    return
                 if not urow or urow["balance"] < amount:
                     conn.close()
                     self._send_json({ "success": False, "error": "Insufficient balance for withdrawal" }, status=400)
@@ -1880,7 +2229,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 new_bal = round(urow["balance"] - amount, 2)
                 c.execute("UPDATE users SET balance = ? WHERE id = ?", (new_bal, uid))
 
-                wd_id = f"WD-{datetime.now().strftime('%H%M%S')}"
+                wd_id = f"WD-{datetime.now().strftime('%H%M%S')}-{random.randint(10, 99)}"
                 destination = f"{banking_name} • {bank_name} (A/C: {acc_no}, IFSC: {ifsc}) • UPI: {upi_id}"
                 c.execute("""
                     INSERT INTO withdrawals (id, user_id, user_name, amount, upi_id, bank_name, acc_no, ifsc, banking_name, destination, time_str, status, created_at_ms)
@@ -1893,40 +2242,48 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     VALUES (?, ?, 'WITHDRAWAL', 'Withdrawal Request', ?, ?, ?, ?, 'PENDING', ?)
                 """, (tx_id, uid, destination, -amount, urow["balance"], new_bal, now_ms))
 
+                _, sse_ev = bump_state_version(conn, "withdrawal_requested", {"userId": uid, "withdrawalId": wd_id, "amount": amount})
                 conn.commit()
                 conn.close()
+            notify_sse_clients(sse_ev)
 
             self._send_json({ "success": True, "withdrawalId": wd_id, "newBalance": new_bal })
             return
 
         if path == "/api/withdrawals/approve":
             wd_id = payload.get("withdrawalId")
+            affected_uid = None
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
                 c.execute("SELECT * FROM withdrawals WHERE id = ?", (wd_id,))
                 w = c.fetchone()
                 if w and w["status"] != "SUCCESS":
+                    affected_uid = w["user_id"]
                     c.execute("UPDATE withdrawals SET status = 'SUCCESS' WHERE id = ?", (wd_id,))
                     c.execute("UPDATE users SET total_withdraw = total_withdraw + ? WHERE id = ?", (w["amount"], w["user_id"]))
                     c.execute("""
                         INSERT INTO admin_audit_logs (actor, action, entity, desc)
                         VALUES ('ColourPrince', 'WITHDRAWAL_APPROVE', ?, ?)
                     """, (wd_id, f"Approved ₹{w['amount']:.2f} for {w['user_id']}"))
+                _, sse_ev = bump_state_version(conn, "withdrawal_approved", {"withdrawalId": wd_id, "userId": affected_uid})
                 conn.commit()
                 conn.close()
+            notify_sse_clients(sse_ev)
             self._send_json({ "success": True })
             return
 
         if path == "/api/withdrawals/reject":
             wd_id = payload.get("withdrawalId")
             reason = payload.get("reason", "Bank details mismatch")
+            affected_uid = None
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
                 c.execute("SELECT * FROM withdrawals WHERE id = ?", (wd_id,))
                 w = c.fetchone()
                 if w and w["status"] != "FAIL":
+                    affected_uid = w["user_id"]
                     c.execute("UPDATE withdrawals SET status = 'FAIL', reason = ? WHERE id = ?", (reason, wd_id))
                     # Refund balance back to user
                     c.execute("SELECT balance FROM users WHERE id = ?", (w["user_id"],))
@@ -1943,8 +2300,10 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                         INSERT INTO admin_audit_logs (actor, action, entity, desc)
                         VALUES ('ColourPrince', 'WITHDRAWAL_REJECT', ?, ?)
                     """, (wd_id, f"Rejected: {reason} (Refunded ₹{w['amount']:.2f})"))
+                _, sse_ev = bump_state_version(conn, "withdrawal_rejected", {"withdrawalId": wd_id, "userId": affected_uid, "reason": reason})
                 conn.commit()
                 conn.close()
+            notify_sse_clients(sse_ev)
             self._send_json({ "success": True })
             return
 
@@ -1952,10 +2311,80 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
-                c.execute("INSERT OR REPLACE INTO app_state (key, value) VALUES ('bank_config', ?)", (json.dumps(payload),))
+                c.execute("INSERT OR REPLACE INTO app_state (key, value, updated_at) VALUES ('bank_config', ?, CURRENT_TIMESTAMP)", (json.dumps(payload),))
+                c.execute("""
+                    INSERT INTO admin_audit_logs (actor, action, entity, desc)
+                    VALUES ('ColourPrince', 'BANK_CONFIG_UPDATE', 'PAYMENT_GATEWAYS', ?)
+                """, (f"Updated Bank {payload.get('bankName', '')} / UPI {payload.get('upiId', '')}",))
+                _, sse_ev = bump_state_version(conn, "bank_config_updated", {"upiId": payload.get("upiId")})
                 conn.commit()
                 conn.close()
+            notify_sse_clients(sse_ev)
             self._send_json({ "success": True, "bank_config": payload })
+            return
+
+        if path == "/api/admin/sync-state":
+            with db_lock:
+                conn = get_db()
+                c = conn.cursor()
+                if isinstance(payload.get("bank_config"), dict):
+                    c.execute("INSERT OR REPLACE INTO app_state (key, value, updated_at) VALUES ('bank_config', ?, CURRENT_TIMESTAMP)", (json.dumps(payload["bank_config"]),))
+                if isinstance(payload.get("platform_settings"), dict):
+                    c.execute("INSERT OR REPLACE INTO app_state (key, value, updated_at) VALUES ('platform_settings', ?, CURRENT_TIMESTAMP)", (json.dumps(payload["platform_settings"]),))
+                if isinstance(payload.get("users"), list):
+                    for u in payload["users"]:
+                        uid_u = str(u.get("id") or "").strip()
+                        if not uid_u:
+                            continue
+                        c.execute("SELECT id FROM users WHERE id = ?", (uid_u,))
+                        if not c.fetchone():
+                            c.execute("""
+                                INSERT INTO users (id, name, phone, email, balance, total_deposit, total_withdraw, bets_count, status)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                uid_u, str(u.get("name") or uid_u), u.get("phone"), u.get("email"),
+                                float(u.get("balance", 0.0)), float(u.get("totalDeposit", 0.0)),
+                                float(u.get("totalWithdraw", 0.0)), int(u.get("betsCount", 0)),
+                                str(u.get("status") or "ACTIVE")
+                            ))
+                if isinstance(payload.get("deposits"), list):
+                    for d in payload["deposits"]:
+                        did = str(d.get("id") or "").strip()
+                        if not did:
+                            continue
+                        c.execute("SELECT id FROM deposits WHERE id = ?", (did,))
+                        if not c.fetchone():
+                            c.execute("""
+                                INSERT INTO deposits (id, user_id, user_name, amount, method, utr, time_str, status, reason, created_at_ms)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                did, str(d.get("userId") or "USR-1001"), str(d.get("userName") or "Player"),
+                                float(d.get("amount", 0.0)), str(d.get("method") or "UPI"),
+                                str(d.get("utr") or ""), str(d.get("time") or "Just now"),
+                                str(d.get("status") or "IN PROCESS"), d.get("reason"), now_ms
+                            ))
+                if isinstance(payload.get("withdrawals"), list):
+                    for w in payload["withdrawals"]:
+                        wid = str(w.get("id") or "").strip()
+                        if not wid:
+                            continue
+                        c.execute("SELECT id FROM withdrawals WHERE id = ?", (wid,))
+                        if not c.fetchone():
+                            c.execute("""
+                                INSERT INTO withdrawals (id, user_id, user_name, amount, upi_id, bank_name, acc_no, ifsc, banking_name, destination, time_str, status, reason, created_at_ms)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                wid, str(w.get("userId") or "USR-1001"), str(w.get("userName") or "Player"),
+                                float(w.get("amount", 0.0)), w.get("upiId"), w.get("bankName"),
+                                w.get("accNo"), w.get("ifsc"), w.get("bankingName"),
+                                str(w.get("destination") or ""), str(w.get("time") or "Just now"),
+                                str(w.get("status") or "IN PROCESS"), w.get("reason"), now_ms
+                            ))
+                new_ver, sse_ev = bump_state_version(conn, "admin_sync")
+                conn.commit()
+                conn.close()
+            notify_sse_clients(sse_ev)
+            self._send_json({ "success": True, "state_version": new_ver })
             return
 
         self._send_json({ "error": "Endpoint not found" }, status=404)

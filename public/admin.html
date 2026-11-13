@@ -2027,19 +2027,28 @@
     let pendingRejectAction = null; // { type: 'DEPOSIT'|'WITHDRAWAL', id: '...' }
     let activeAdjustUserId = null;
 
-    // Sync Helper
-    function persistAllState() {
-      localStorage.setItem(KEY_BANK, JSON.stringify(bankConfig));
-      localStorage.setItem(KEY_USERS, JSON.stringify(usersList));
-      localStorage.setItem(KEY_AFFILIATES, JSON.stringify(affiliateList));
-      localStorage.setItem(KEY_DEPOSITS, JSON.stringify(depositRequests));
-      localStorage.setItem(KEY_WITHDRAWALS, JSON.stringify(withdrawalRequests));
-      localStorage.setItem(KEY_BETS, JSON.stringify(allBets));
-      localStorage.setItem(KEY_DECLARED, JSON.stringify(declaredResults));
-      localStorage.setItem(KEY_AUDIT, JSON.stringify(auditLogs));
-      recalculateMasterKPIs();
+    let lastAdminStateVersion = 0;
 
-      // Automatically sync all actions to database & storage backend
+    function saveAdminLocalCacheOnly() {
+      try {
+        localStorage.setItem(KEY_BANK, JSON.stringify(bankConfig));
+        localStorage.setItem(KEY_USERS, JSON.stringify(usersList));
+        localStorage.setItem(KEY_AFFILIATES, JSON.stringify(affiliateList));
+        localStorage.setItem(KEY_DEPOSITS, JSON.stringify(depositRequests));
+        localStorage.setItem(KEY_WITHDRAWALS, JSON.stringify(withdrawalRequests));
+        localStorage.setItem(KEY_BETS, JSON.stringify(allBets));
+        localStorage.setItem(KEY_DECLARED, JSON.stringify(declaredResults));
+        localStorage.setItem(KEY_AUDIT, JSON.stringify(auditLogs));
+      } catch (e) {}
+      recalculateMasterKPIs();
+    }
+
+    // Sync Helper
+    function persistAllState(skipBackendSync = false) {
+      saveAdminLocalCacheOnly();
+      if (skipBackendSync || window.location.protocol === 'file:') return;
+
+      // Automatically sync actions to SQLite backend
       fetch('/api/admin/sync-state', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2189,9 +2198,9 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ depositId })
-      }).catch(() => {});
+      }).then(() => pullAdminStateFromServer()).catch(() => {});
 
-      // Credit to user's wallet
+      // Optimistic local UI update until server pull returns
       const user = usersList.find(u => u.id === dep.userId);
       if (user) {
         user.balance += dep.amount;
@@ -2200,13 +2209,13 @@
 
       auditLogs.unshift({
         time: new Date().toLocaleTimeString(),
-        actor: "SuperAdmin",
+        actor: "ColourPrince",
         action: "DEPOSIT_APPROVE",
         entity: depositId,
         desc: `Approved deposit of ₹${dep.amount.toFixed(2)} for ${dep.userName} (${dep.userId}) - Status: SUCCESS`
       });
 
-      persistAllState();
+      persistAllState(true);
       renderDepositsTable();
       renderUsersTable();
       renderAuditTable();
@@ -2244,22 +2253,26 @@
 
     function simulateNewDepositRequest() {
       const randomAmount = [500, 1000, 2000, 5000, 10000][Math.floor(Math.random() * 5)];
-      const randUser = usersList[Math.floor(Math.random() * usersList.length)];
+      const randUser = usersList[Math.floor(Math.random() * usersList.length)] || { id: 'USR-1001', name: 'Rahul_Player' };
       const randUtr = '4' + Math.floor(10000000000 + Math.random() * 90000000000);
-      const newDep = {
-        id: "DEP-" + Math.floor(10000 + Math.random() * 90000),
-        userId: randUser.id,
-        userName: randUser.name,
-        amount: randomAmount,
-        method: "UPI (PhonePe QR)",
-        utr: randUtr,
-        time: "Just now",
-        status: "PENDING"
-      };
-      depositRequests.unshift(newDep);
-      persistAllState();
-      renderDepositsTable();
-      showToast(`📥 New Deposit Request from ${randUser.name}: ₹${randomAmount}!`);
+      fetch('/api/deposits', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: randUser.id, userName: randUser.name, amount: randomAmount, utr: randUtr, method: 'UPI (PhonePe QR)' })
+      }).then(r => r.json()).then(() => {
+        pullAdminStateFromServer();
+        showToast(`📥 New Deposit Request saved for ${randUser.name}: ₹${randomAmount}!`);
+      }).catch(() => {
+        const newDep = {
+          id: "DEP-" + Math.floor(10000 + Math.random() * 90000),
+          userId: randUser.id, userName: randUser.name, amount: randomAmount,
+          method: "UPI (PhonePe QR)", utr: randUtr, time: "Just now", status: "IN PROCESS"
+        };
+        depositRequests.unshift(newDep);
+        persistAllState();
+        renderDepositsTable();
+        showToast(`📥 New Deposit Request from ${randUser.name}: ₹${randomAmount}!`);
+      });
     }
 
     function renderQuickDepositList() {
@@ -2376,7 +2389,7 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ withdrawalId })
-      }).catch(() => {});
+      }).then(() => pullAdminStateFromServer()).catch(() => {});
 
       const user = usersList.find(u => u.id === wd.userId);
       if (user) {
@@ -2385,13 +2398,13 @@
 
       auditLogs.unshift({
         time: new Date().toLocaleTimeString(),
-        actor: "SuperAdmin",
+        actor: "ColourPrince",
         action: "WITHDRAWAL_PAYOUT",
         entity: withdrawalId,
         desc: `Executed payout of ₹${wd.amount.toFixed(2)} to ${wd.destination} for ${wd.userName} - Status: SUCCESS`
       });
 
-      persistAllState();
+      persistAllState(true);
       renderWithdrawalsTable();
       renderUsersTable();
       renderAuditTable();
@@ -2428,19 +2441,29 @@
     function simulateNewWithdrawalRequest() {
       const randUser = usersList.find(u => u.status === 'ACTIVE' && u.balance >= 1000) || usersList[0];
       const amount = Math.min(2000, randUser.balance);
-      const newWd = {
-        id: "WD-" + Math.floor(10000 + Math.random() * 90000),
-        userId: randUser.id,
-        userName: randUser.name,
-        amount: amount,
-        destination: `UPI: ${randUser.name.toLowerCase()}@okhdfcbank`,
-        time: "Just now",
-        status: "IN PROCESS"
-      };
-      withdrawalRequests.unshift(newWd);
-      persistAllState();
-      renderWithdrawalsTable();
-      showToast(`📤 New Withdrawal Request from ${randUser.name}: ₹${amount}! Status: IN PROCESS`);
+      fetch('/api/withdrawals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: randUser.id, userName: randUser.name, amount,
+          upiId: `${randUser.name.toLowerCase()}@okhdfcbank`, bankName: 'HDFC Bank',
+          accNo: '50100991122', ifsc: 'HDFC0000123', bankingName: randUser.name
+        })
+      }).then(r => r.json()).then(() => {
+        pullAdminStateFromServer();
+        showToast(`📤 New Withdrawal Request saved for ${randUser.name}: ₹${amount}!`);
+      }).catch(() => {
+        const newWd = {
+          id: "WD-" + Math.floor(10000 + Math.random() * 90000),
+          userId: randUser.id, userName: randUser.name, amount,
+          destination: `UPI: ${randUser.name.toLowerCase()}@okhdfcbank`,
+          time: "Just now", status: "IN PROCESS"
+        };
+        withdrawalRequests.unshift(newWd);
+        persistAllState();
+        renderWithdrawalsTable();
+        showToast(`📤 New Withdrawal Request from ${randUser.name}: ₹${amount}! Status: IN PROCESS`);
+      });
     }
 
     // Confirm Rejection Modal Logic
@@ -2466,11 +2489,11 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ depositId: dep.id, reason })
-          }).catch(() => {});
+          }).then(() => pullAdminStateFromServer()).catch(() => {});
 
           auditLogs.unshift({
             time: new Date().toLocaleTimeString(),
-            actor: "SuperAdmin",
+            actor: "ColourPrince",
             action: "DEPOSIT_REJECT",
             entity: dep.id,
             desc: `Rejected deposit of ₹${dep.amount}: FAIL (${reason})`
@@ -2486,16 +2509,15 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ withdrawalId: wd.id, reason })
-          }).catch(() => {});
+          }).then(() => pullAdminStateFromServer()).catch(() => {});
 
-          // Refund back to user's wallet balance
           const user = usersList.find(u => u.id === wd.userId);
           if (user) {
             user.balance += wd.amount;
           }
           auditLogs.unshift({
             time: new Date().toLocaleTimeString(),
-            actor: "SuperAdmin",
+            actor: "ColourPrince",
             action: "WITHDRAWAL_REJECT",
             entity: wd.id,
             desc: `Rejected withdrawal of ₹${wd.amount} and refunded balance: FAIL (${reason})`
@@ -2503,13 +2525,13 @@
         }
       }
 
-      persistAllState();
+      persistAllState(true);
       closeModal('rejectReasonModal');
       renderDepositsTable();
       renderWithdrawalsTable();
       renderUsersTable();
       renderAuditTable();
-      showToast(`❌ Request rejected and audited!`);
+      showToast(`❌ Request rejected and saved to database!`);
     }
 
     // ----------------------------------------------------
@@ -2580,6 +2602,7 @@
           force: true
         })
       }).then(() => {
+        pullAdminStateFromServer();
         showToast(`🎯 Result ${selectedWinningNumber} officially declared & settled for ${selectedDeciderMarket} #${currentPeriodNum}!`);
       }).catch(() => {});
 
@@ -2592,7 +2615,7 @@
         desc: `Force published outcome: ${selectedWinningNumber} ${color} ${isBig ? 'BIG' : 'SMALL'}`
       });
 
-      persistAllState();
+      persistAllState(true);
       renderDeclaredResultsTable();
       renderAuditTable();
     }
@@ -2752,17 +2775,17 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, status: user.status })
-      }).catch(() => {});
+      }).then(() => pullAdminStateFromServer()).catch(() => {});
 
       auditLogs.unshift({
         time: new Date().toLocaleTimeString(),
-        actor: "SuperAdmin",
+        actor: "ColourPrince",
         action: isNowBlocked ? "USER_BLOCK" : "USER_UNBLOCK",
         entity: `${user.id} (${user.name})`,
         desc: `Account status toggled to ${user.status}`
       });
 
-      persistAllState();
+      persistAllState(true);
       renderUsersTable();
       renderAuditTable();
       showToast(`User ${user.name} is now ${user.status}!`);
@@ -2796,17 +2819,17 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: activeAdjustUserId, type, amount, reason })
-      }).catch(() => {});
+      }).then(() => pullAdminStateFromServer()).catch(() => {});
 
       auditLogs.unshift({
         time: new Date().toLocaleTimeString(),
-        actor: "SuperAdmin",
+        actor: "ColourPrince",
         action: `BALANCE_${type}`,
         entity: `${user.id} (${user.name})`,
         desc: `${type} ₹${amount.toFixed(2)}: ${reason}`
       });
 
-      persistAllState();
+      persistAllState(true);
       closeModal('balanceAdjustModal');
       renderUsersTable();
       renderAuditTable();
@@ -2822,15 +2845,24 @@
         phone: "+91 9" + Math.floor(100000000 + Math.random() * 900000000),
         email: rName.toLowerCase() + "@gmail.com",
         balance: 10000.00,
-        totalDeposit: 15000.00,
-        totalWithdraw: 5000.00,
-        betsCount: 12,
+        totalDeposit: 0.00,
+        totalWithdraw: 0.00,
+        betsCount: 0,
         status: "ACTIVE"
       };
-      usersList.push(newU);
-      persistAllState();
-      renderUsersTable();
-      showToast(`User ${newU.name} registered!`);
+      fetch('/api/users/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newU)
+      }).then(() => {
+        pullAdminStateFromServer();
+        showToast(`User ${newU.name} saved to SQLite database!`);
+      }).catch(() => {
+        usersList.push(newU);
+        persistAllState();
+        renderUsersTable();
+        showToast(`User ${newU.name} registered!`);
+      });
     }
 
     // ----------------------------------------------------
@@ -2880,20 +2912,20 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(bankConfig)
-      }).catch(() => {});
+      }).then(() => pullAdminStateFromServer()).catch(() => {});
 
       auditLogs.unshift({
         time: new Date().toLocaleTimeString(),
-        actor: "SuperAdmin",
+        actor: "ColourPrince",
         action: "BANK_CONFIG_UPDATE",
         entity: "PAYMENT_GATEWAYS",
         desc: `Updated bank to ${bankConfig.bankName} (${bankConfig.accNo}) and UPI to ${bankConfig.upiId}`
       });
 
-      persistAllState();
+      persistAllState(true);
       updateBankPreviewCard();
       renderAuditTable();
-      showToast('💾 Bank and UPI deposit settings saved to database & reflected on user app!');
+      showToast('💾 Bank and UPI deposit settings saved to SQLite & reflected live on user app!');
     }
 
     // ----------------------------------------------------
@@ -3331,32 +3363,98 @@
       });
     }
 
+    function isEditingBankForm() {
+      const bankSec = document.getElementById('sec-bank');
+      const active = document.activeElement;
+      return !!(bankSec && active && bankSec.contains(active) && ['INPUT', 'TEXTAREA'].includes(active.tagName));
+    }
+
+    function applyServerStateToAdmin(data) {
+      if (!data) return;
+      if (data.state_version) lastAdminStateVersion = Number(data.state_version) || lastAdminStateVersion;
+
+      if (data.bank_config) {
+        bankConfig = data.bank_config;
+        if (!isEditingBankForm()) {
+          loadBankDetailsForm();
+        } else {
+          updateBankPreviewCard();
+        }
+      }
+      if (Array.isArray(data.deposits)) depositRequests = data.deposits;
+      if (Array.isArray(data.withdrawals)) withdrawalRequests = data.withdrawals;
+      if (data.users && typeof data.users === 'object') {
+        const uList = Object.values(data.users);
+        if (uList.length) usersList = uList;
+      }
+      if (Array.isArray(data.bets)) allBets = data.bets;
+      if (Array.isArray(data.declared_results_list) && data.declared_results_list.length) {
+        declaredResults = data.declared_results_list;
+      }
+      if (Array.isArray(data.audit_logs)) {
+        auditLogs = data.audit_logs;
+      }
+      if (Array.isArray(data.affiliates) && data.affiliates.length) {
+        affiliateList = data.affiliates;
+      }
+      if (data.draw_overrides) {
+        const badge = document.getElementById('adminOverrideBadge');
+        const ov = data.draw_overrides[selectedDeciderMarket];
+        if (badge) {
+          if (ov && ov.mode === 'MANUAL') {
+            badge.className = 'badge badge-alert';
+            badge.innerText = `MANUAL DRAW: [${ov.number} - ${ov.color.toUpperCase()}]`;
+          } else {
+            badge.className = 'badge badge-approved';
+            badge.innerText = 'MODE: AUTO RANDOM';
+          }
+        }
+      }
+
+      saveAdminLocalCacheOnly();
+      renderDepositsTable();
+      renderWithdrawalsTable();
+      renderUsersTable();
+      renderAffiliateTable();
+      renderDeclaredResultsTable();
+      renderBetsTable();
+      renderAuditTable();
+      renderLiveBetVolumes(selectedDeciderMarket);
+    }
+
+    function pullAdminStateFromServer() {
+      if (window.location.protocol === 'file:') return Promise.resolve();
+      return fetch('/api/state')
+        .then(r => r.ok ? r.json() : null)
+        .then(data => { if (data) applyServerStateToAdmin(data); })
+        .catch(() => {});
+    }
+
+    function connectAdminEventStream() {
+      if (window.location.protocol === 'file:' || typeof EventSource === 'undefined') return;
+      try {
+        const es = new EventSource('/api/events');
+        es.addEventListener('state_update', (ev) => {
+          try {
+            const payload = JSON.parse(ev.data || '{}');
+            if (!payload.version || payload.version > lastAdminStateVersion) {
+              pullAdminStateFromServer();
+            }
+          } catch (e) {
+            pullAdminStateFromServer();
+          }
+        });
+        es.onerror = () => {
+          es.close();
+          setTimeout(connectAdminEventStream, 3000);
+        };
+      } catch (e) {}
+    }
+
     // Initialize Admin Portal
     window.addEventListener('DOMContentLoaded', () => {
       checkAdminAuth();
       document.getElementById('portalLinkDisplay').innerText = window.location.pathname || '/admin.html';
-
-      // Pull latest live state from Backend Server API
-      fetch('/api/state')
-        .then(r => r.json())
-        .then(data => {
-          if (data) {
-            if (data.bank_config) bankConfig = data.bank_config;
-            if (data.deposits && data.deposits.length) depositRequests = data.deposits;
-            if (data.withdrawals && data.withdrawals.length) withdrawalRequests = data.withdrawals;
-            if (data.users) {
-              const uList = Object.values(data.users);
-              if (uList.length) usersList = uList;
-            }
-            persistAllState();
-            recalculateMasterKPIs();
-            renderDepositsTable();
-            renderWithdrawalsTable();
-            renderUsersTable();
-            loadBankDetailsForm();
-          }
-        })
-        .catch(() => {});
 
       recalculateMasterKPIs();
       renderDepositsTable();
@@ -3371,32 +3469,10 @@
       pickWinningNumber(7);
       startAdminTicker();
 
-      // Real-time polling: automatically refresh user actions & requests every 2.5s
-      setInterval(() => {
-        fetch('/api/state')
-          .then(r => r.json())
-          .then(data => {
-            if (data) {
-              if (data.deposits && data.deposits.length) {
-                depositRequests = data.deposits;
-                renderDepositsTable();
-              }
-              if (data.withdrawals && data.withdrawals.length) {
-                withdrawalRequests = data.withdrawals;
-                renderWithdrawalsTable();
-              }
-              if (data.users) {
-                const uList = Object.values(data.users);
-                if (uList.length) {
-                  usersList = uList;
-                  renderUsersTable();
-                }
-              }
-              recalculateMasterKPIs();
-            }
-          })
-          .catch(() => {});
-      }, 2500);
+      // Hydrate live state from SQLite & attach real-time SSE stream + fallback polling
+      pullAdminStateFromServer();
+      connectAdminEventStream();
+      setInterval(pullAdminStateFromServer, 2500);
     });
   </script>
 </body>
