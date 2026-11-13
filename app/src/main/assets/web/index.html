@@ -2252,6 +2252,83 @@
       }
     } catch (e) {}
 
+    // Native Android Bridge & Server Base URL resolution (works on both HTTP web and file:// Android WebView)
+    let bridgeBackendBaseUrl = '';
+    try {
+      if (window.AndroidBridge) {
+        if (typeof window.AndroidBridge.getBackendBaseUrl === 'function') {
+          bridgeBackendBaseUrl = String(window.AndroidBridge.getBackendBaseUrl() || '').trim().replace(/\/+$/, '');
+        }
+        if ((!currentUserId || currentUserId === 'Guest' || String(currentUserId).startsWith('user_player_')) && typeof window.AndroidBridge.getServerUserId === 'function') {
+          const bridgeUid = String(window.AndroidBridge.getServerUserId() || '').trim();
+          const bridgeName = typeof window.AndroidBridge.getUserName === 'function' ? String(window.AndroidBridge.getUserName() || 'Rahul_Player').trim() : 'Rahul_Player';
+          if (bridgeUid) {
+            currentUserId = bridgeUid;
+            currentUserName = bridgeName || 'Rahul_Player';
+            if (typeof window.AndroidBridge.getWalletBalance === 'function') {
+              const b = Number(window.AndroidBridge.getWalletBalance());
+              if (!isNaN(b) && b >= 0) userBalance = b;
+            }
+          }
+        }
+      }
+    } catch (e) {}
+
+    function getBackendOrigin() {
+      if (window.location.protocol !== 'file:') {
+        return '';
+      }
+      return bridgeBackendBaseUrl || '';
+    }
+
+    function hasBackendConnection() {
+      return window.location.protocol !== 'file:' || Boolean(bridgeBackendBaseUrl);
+    }
+
+    function apiUrl(path) {
+      const origin = getBackendOrigin();
+      return origin ? (origin + path) : path;
+    }
+
+    window.updateBridgeBalance = function(newBalance) {
+      const parsed = Number(newBalance);
+      if (!isNaN(parsed) && parsed >= 0 && Math.abs(parsed - userBalance) > 0.01) {
+        userBalance = parsed;
+        if (typeof updateBalanceUI === 'function') updateBalanceUI();
+      }
+    };
+
+    window.updateBridgeBackendUrl = function(url, serverUid, userName) {
+      const clean = String(url || '').trim().replace(/\/+$/, '');
+      const urlChanged = clean && clean !== bridgeBackendBaseUrl;
+      if (clean) bridgeBackendBaseUrl = clean;
+      if (serverUid && (!currentUserId || currentUserId === 'Guest' || String(currentUserId).startsWith('user_player_'))) {
+        currentUserId = String(serverUid);
+        if (userName) currentUserName = String(userName);
+        const sub = document.getElementById('headerUserSubtitle');
+        if (sub) sub.innerText = `${currentUserName} • VIP 1`;
+      }
+      if (urlChanged && typeof connectUserEventStream === 'function') {
+        syncServerClock();
+        connectUserEventStream();
+        syncAuthoritativeMarkets();
+        syncAdminStateRealtime(true);
+        loadUserBetsFromBackend();
+        syncUserTransactions();
+      }
+    };
+
+    window.onAndroidServerPush = function(eventType) {
+      const ev = { eventType: eventType || 'admin_sync' };
+      if (typeof syncAdminStateRealtime === 'function') {
+        syncAdminStateRealtime(true, ev);
+      }
+      if (['result_declared', 'round_settled', 'draw_override'].includes(ev.eventType)) {
+        if (typeof syncAuthoritativeMarkets === 'function') syncAuthoritativeMarkets();
+        if (typeof fetchMarketHistory === 'function') fetchMarketHistory(currentMarketId);
+      }
+    };
+
     // 4 MARKETS CONFIGURATION
     const MARKETS = {
       MIAMI: { id: 'MIAMI', code: 'MIA', name: 'MIAMI', emoji: '🌴', tagline: 'South Beach Neon • 3 Min', accent: '#FF007F' },
@@ -2267,9 +2344,10 @@
     let authoritativeMarketsData = null;
 
     async function syncServerClock() {
+      if (!hasBackendConnection()) return;
       try {
         const t0 = Date.now();
-        const res = await fetch('/api/clock');
+        const res = await fetch(apiUrl('/api/clock'));
         if (res.ok) {
           const data = await res.json();
           const t1 = Date.now();
@@ -2445,8 +2523,8 @@
       return kept;
     }
 
-    // Transaction Ledger History (Synced live from /api/statement; local fallback in file:// preview)
-    let walletLedger = window.location.protocol === 'file:' ? [
+    // Transaction Ledger History (Synced live from /api/statement; local fallback in offline preview)
+    let walletLedger = !hasBackendConnection() ? [
       { id: 'TX-1092', type: 'DEPOSIT', category: 'DEPOSIT', title: 'Deposit via UPI (Instant)', ref: 'UTR #429188402911', amount: 5000.00, time: 'Today, 11:24 AM', status: 'SUCCESS' },
       { id: 'TX-1088', type: 'WIN', category: 'PROFIT_LOSS', title: 'Win MIAMI Round #220', ref: 'Target RED 2.0X', amount: 2000.00, time: 'Today, 11:25 AM', status: 'COMPLETED' },
       { id: 'TX-1085', type: 'BET', category: 'PROFIT_LOSS', title: 'Bet Placed on MIAMI', ref: 'Target RED 2.0X', amount: -1000.00, time: 'Today, 11:22 AM', status: 'COMPLETED' },
@@ -2804,7 +2882,7 @@
           try {
             localStorage.setItem('colour_king_user_session', JSON.stringify({ id: currentUserId, name: sUser.name || currentUserName, balance: userBalance }));
           } catch(e) {}
-          if (window.AndroidBridge && window.AndroidBridge.syncWalletBalance) {
+          if (!hasBackendConnection() && window.AndroidBridge && window.AndroidBridge.syncWalletBalance) {
             window.AndroidBridge.syncWalletBalance(userBalance, 'Real-time Admin/Server sync');
           }
           if (reasonEvent && (reasonEvent.eventType === 'balance_adjusted' || reasonEvent.eventType === 'deposit_approved')) {
@@ -2857,9 +2935,9 @@
     }
 
     function syncAdminStateRealtime(force = false, reasonEvent = null) {
-      if (window.location.protocol === 'file:' || isSyncingAdminState) return;
+      if (!hasBackendConnection() || isSyncingAdminState) return;
       isSyncingAdminState = true;
-      fetch('/api/state?t=' + Date.now(), { cache: 'no-store' })
+      fetch(apiUrl('/api/state?t=' + Date.now()), { cache: 'no-store' })
         .then(r => r.ok ? r.json() : null)
         .then(state => {
           if (state) applyUserStateSnapshot(state, force, reasonEvent);
@@ -2871,12 +2949,12 @@
     }
 
     function connectUserEventStream() {
-      if (window.location.protocol === 'file:' || typeof EventSource === 'undefined') return;
+      if (!hasBackendConnection() || typeof EventSource === 'undefined') return;
       if (userEventSource) {
         try { userEventSource.close(); } catch(e) {}
       }
       try {
-        userEventSource = new EventSource('/api/events');
+        userEventSource = new EventSource(apiUrl('/api/events'));
         userEventSource.addEventListener('connected', () => {
           syncAdminStateRealtime(true, { eventType: 'connected' });
         });
@@ -3407,7 +3485,7 @@
       if (!b) return;
 
       try {
-        const res = await fetch('/api/bets/cancel', {
+        const res = await fetch(apiUrl('/api/bets/cancel'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -3452,7 +3530,9 @@
         renderWalletLedger();
         showToast(`✓ Bet ${b.id} refunded (+₹${Number(b.amount).toFixed(2)})`);
         playSound('betClick');
-        if (window.AndroidBridge && window.AndroidBridge.syncWalletBalance) {
+        if (window.AndroidBridge && window.AndroidBridge.triggerSync) {
+          window.AndroidBridge.triggerSync();
+        } else if (window.AndroidBridge && window.AndroidBridge.syncWalletBalance) {
           window.AndroidBridge.syncWalletBalance(userBalance, `Refund for bet ${b.id}`);
         }
       } catch (e) {
@@ -3678,7 +3758,7 @@
       }
 
       try {
-        const res = await fetch('/api/bets/place', {
+        const res = await fetch(apiUrl('/api/bets/place'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -3731,7 +3811,9 @@
         showToast(`✓ Bet placed: ₹${total.toFixed(2)} on ${pendingBet.target}! (ID: ${confirmedBet.id})`);
         playSound('betClick');
 
-        if (window.AndroidBridge && window.AndroidBridge.syncWalletBalance) {
+        if (window.AndroidBridge && window.AndroidBridge.triggerSync) {
+          window.AndroidBridge.triggerSync();
+        } else if (window.AndroidBridge && window.AndroidBridge.syncWalletBalance) {
           window.AndroidBridge.syncWalletBalance(userBalance, `Bet placed on ${currentMarketId}`);
         }
       } catch (err) {
@@ -3802,7 +3884,7 @@
       }
 
       if (settledAny) {
-        if (wonTotal > 0 && window.location.protocol === 'file:') {
+        if (wonTotal > 0 && !hasBackendConnection()) {
           userBalance += wonTotal;
           updateBalanceUI();
           playSound('winFanfare');
@@ -3818,11 +3900,11 @@
 
     // Load User Bets Directly From Backend (90-Day Database Single Source of Truth)
     async function loadUserBetsFromBackend() {
-      if (window.location.protocol === 'file:' || isLoadingUserBets) return;
+      if (!hasBackendConnection() || isLoadingUserBets) return;
       isLoadingUserBets = true;
       const uid = currentUserId || 'USR-1001';
       try {
-        const res = await fetch(`/api/bets?userId=${encodeURIComponent(uid)}&days=${encodeURIComponent(statementDaysFilter)}`);
+        const res = await fetch(apiUrl(`/api/bets?userId=${encodeURIComponent(uid)}&days=${encodeURIComponent(statementDaysFilter)}`));
         if (res.ok) {
           const data = await res.json();
           let newlySettledWin = 0;
@@ -3877,9 +3959,9 @@
 
     // Sync Admin Draw Overrides Safely
     async function syncAdminDrawOverrides() {
-      if (window.location.protocol === 'file:') return;
+      if (!hasBackendConnection()) return;
       try {
-        const res = await fetch('/api/admin/draw-override');
+        const res = await fetch(apiUrl('/api/admin/draw-override'));
         if (res.ok) {
           const overrides = await res.json();
           if (overrides && typeof overrides === 'object') {
@@ -3892,9 +3974,9 @@
     // Sync 4 Independent Markets from Backend
     let lastRolloverSyncMs = 0;
     async function syncAuthoritativeMarkets() {
-      if (window.location.protocol === 'file:') return;
+      if (!hasBackendConnection()) return;
       try {
-        const res = await fetch('/api/markets');
+        const res = await fetch(apiUrl('/api/markets'));
         if (res.ok) {
           const data = await res.json();
           if (data.server_time_ms) {
@@ -3988,8 +4070,9 @@
     }
 
     async function fetchMarketHistory(mKey) {
+      if (!hasBackendConnection()) return;
       try {
-        const res = await fetch(`/api/markets/history?market=${mKey}&limit=50`);
+        const res = await fetch(apiUrl(`/api/markets/history?market=${mKey}&limit=50`));
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data.records) && data.records.length > 0) {
@@ -4662,8 +4745,8 @@
       const fname = `ColourKing_${statementDaysFilter}Day_Statement_${uid}_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.csv`;
       try {
         let csvText = '';
-        if (window.location.protocol !== 'file:') {
-          const url = `/api/statement/export?userId=${encodeURIComponent(uid)}&days=${encodeURIComponent(statementDaysFilter)}&category=${encodeURIComponent(cat)}`;
+        if (hasBackendConnection()) {
+          const url = apiUrl(`/api/statement/export?userId=${encodeURIComponent(uid)}&days=${encodeURIComponent(statementDaysFilter)}&category=${encodeURIComponent(cat)}`);
           const res = await fetch(url);
           if (res.ok) {
             csvText = await res.text();
@@ -4692,8 +4775,8 @@
     }
 
     function syncUserTransactions() {
-      if (!currentUserId || currentUserId === 'Guest' || window.location.protocol === 'file:') return;
-      fetch(`/api/statement?userId=${encodeURIComponent(currentUserId)}&days=${encodeURIComponent(statementDaysFilter)}`)
+      if (!currentUserId || currentUserId === 'Guest' || !hasBackendConnection()) return;
+      fetch(apiUrl(`/api/statement?userId=${encodeURIComponent(currentUserId)}&days=${encodeURIComponent(statementDaysFilter)}`))
         .then(r => r.ok ? r.json() : null)
         .then(stmt => {
           if (!stmt || !stmt.summary) return;
@@ -4736,16 +4819,18 @@
 
     // DEPOSIT & WITHDRAWAL SUBMISSION
     function openDepositModal() {
-      fetch('/api/bank-config').then(r => r.json()).then(data => {
-        if (data && data.bankName) {
-          if (data.upiId) document.getElementById('userModalUpiDisplay').innerText = data.upiId;
-          if (data.upiName) document.getElementById('userModalUpiName').innerText = data.upiName;
-          if (data.bankName) document.getElementById('userModalBankName').innerText = data.bankName;
-          if (data.accNo) document.getElementById('userModalAccNo').innerText = data.accNo;
-          if (data.ifsc) document.getElementById('userModalIfsc').innerText = data.ifsc;
-          if (data.holder) document.getElementById('userModalHolder').innerText = data.holder;
-        }
-      }).catch(()=>{});
+      if (hasBackendConnection()) {
+        fetch(apiUrl('/api/bank-config')).then(r => r.json()).then(data => {
+          if (data && data.bankName) {
+            if (data.upiId) document.getElementById('userModalUpiDisplay').innerText = data.upiId;
+            if (data.upiName) document.getElementById('userModalUpiName').innerText = data.upiName;
+            if (data.bankName) document.getElementById('userModalBankName').innerText = data.bankName;
+            if (data.accNo) document.getElementById('userModalAccNo').innerText = data.accNo;
+            if (data.ifsc) document.getElementById('userModalIfsc').innerText = data.ifsc;
+            if (data.holder) document.getElementById('userModalHolder').innerText = data.holder;
+          }
+        }).catch(()=>{});
+      }
       document.getElementById('depositModal').classList.add('active');
       playSound('betClick');
     }
@@ -4769,7 +4854,7 @@
       if (amount <= 0) { showToast('⚠️ Enter a valid amount'); return; }
       if (!utr || utr.length < 6) { showToast('⚠️ Enter 12-digit UTR from your bank app'); return; }
 
-      fetch('/api/deposits', {
+      fetch(apiUrl('/api/deposits'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: currentUserId, userName: currentUserName, amount, utr, method: 'UPI Instant' })
@@ -4850,7 +4935,7 @@
       if (amount < 100) { showToast('⚠️ Minimum withdrawal is ₹100'); return; }
       if (amount > userBalance) { showToast('⚠️ Insufficient balance'); return; }
 
-      fetch('/api/withdrawals', {
+      fetch(apiUrl('/api/withdrawals'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: currentUserId, userName: currentUserName, amount, upiId, bankName, accNo, ifsc, bankingName })
@@ -4923,14 +5008,14 @@
     }
 
     function fetchInitialBackendWallet() {
-      if (window.location.protocol === 'file:') return;
+      if (!hasBackendConnection()) return;
       const uid = currentUserId || 'USR-1001';
-      fetch(`/api/wallet?userId=${encodeURIComponent(uid)}`).then(r => r.json()).then(data => {
+      fetch(apiUrl(`/api/wallet?userId=${encodeURIComponent(uid)}`)).then(r => r.json()).then(data => {
         if (data && typeof data.balance === 'number') {
           userBalance = data.balance;
           if (data.name) currentUserName = data.name;
           updateBalanceUI();
-          if (window.AndroidBridge && window.AndroidBridge.syncWalletBalance) {
+          if (!hasBackendConnection() && window.AndroidBridge && window.AndroidBridge.syncWalletBalance) {
             window.AndroidBridge.syncWalletBalance(userBalance, 'Server settlement sync');
           }
         }
@@ -4969,10 +5054,10 @@
       openAuthModal();
     }
     function refreshAuthUserOptions() {
-      if (window.location.protocol === 'file:') return;
+      if (!hasBackendConnection()) return;
       const sel = document.getElementById('authSelectUser');
       if (!sel) return;
-      fetch('/api/state?t=' + Date.now(), { cache: 'no-store' })
+      fetch(apiUrl('/api/state?t=' + Date.now()), { cache: 'no-store' })
         .then(r => r.ok ? r.json() : null)
         .then(state => {
           if (!state || !state.users) return;
@@ -5036,9 +5121,9 @@
       walletLedger = [];
       lastKnownBetStatuses = {};
 
-      if (window.location.protocol !== 'file:') {
+      if (hasBackendConnection()) {
         try {
-          const res = await fetch('/api/users/register', {
+          const res = await fetch(apiUrl('/api/users/register'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

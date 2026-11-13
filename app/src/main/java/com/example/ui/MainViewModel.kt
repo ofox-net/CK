@@ -22,6 +22,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val walletService = WalletService(database)
     val referralCommissionService = ReferralCommissionService(database)
     val gameEngineService = GameEngineService(database, walletService, referralCommissionService)
+    val backendSyncService = BackendSyncService(application)
 
     // Adapters
     val evolutionAdapter = EvolutionGamingAdapter()
@@ -61,6 +62,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _isLoggedIn = MutableStateFlow(false)
     val isLoggedIn = _isLoggedIn.asStateFlow()
+
+    val backendUrl: StateFlow<String> = backendSyncService.activeBackendUrl
+    val backendConnectionStatus: StateFlow<String> = backendSyncService.connectionStatus
+    val latestServerPushEvent: SharedFlow<ServerPushEvent> = backendSyncService.pushEvents
+
+    val bankConfig: StateFlow<BankConfigState> = backendSyncService.snapshot
+        .map { it.bankConfig }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, BankConfigState())
+
+    private val _serverAccountStatus = MutableStateFlow("ACTIVE")
+    val serverAccountStatus = _serverAccountStatus.asStateFlow()
+
+    @Volatile
+    private var lastLocalMutationAtMs: Long = 0L
+    private val knownDepositStatuses = mutableMapOf<String, String>()
+    private val knownWithdrawalStatuses = mutableMapOf<String, String>()
+
+    fun getServerUserId(): String {
+        return BackendSyncService.mapNativeToServerUserId(_activeUserId.value, _activeUser.value?.username)
+    }
+
+    fun setBackendServerUrl(url: String) {
+        backendSyncService.setCustomBackendUrl(url)
+        postNotification("Backend server updated to ${BackendSyncService.normalizeUrl(url).ifBlank { "Auto" }}", true)
+    }
+
+    fun triggerManualSync() {
+        viewModelScope.launch {
+            val snap = backendSyncService.forceSyncNow()
+            if (snap != null) {
+                postNotification("✓ Synced live with server (v${snap.stateVersion})", true)
+            } else {
+                postNotification("⚠️ Unable to reach backend server (${backendUrl.value})", false)
+            }
+        }
+    }
 
     private val _isSoundEnabled = MutableStateFlow(true)
     val isSoundEnabled = _isSoundEnabled.asStateFlow()
@@ -293,6 +330,55 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // Start Real-Time Game Engine loop for all 4 Markets
         gameEngineService.startEngine(_activeTenantId.value)
 
+        // Start Real-Time SSE + Polling Server Sync
+        backendSyncService.start()
+
+        // Apply every SQLite state snapshot (Admin declared results, overrides, bank config, wallet, status, bets)
+        viewModelScope.launch {
+            backendSyncService.snapshot.collect { snap ->
+                if (snap.stateVersion <= 0L && snap.usersById.isEmpty() && snap.declaredResults.isEmpty()) {
+                    return@collect
+                }
+                applyServerSnapshotToAndroid(snap)
+            }
+        }
+
+        // Immediate user notifications when Admin pushes real-time SSE actions
+        viewModelScope.launch {
+            backendSyncService.pushEvents.collect { ev ->
+                val targetUid = getServerUserId()
+                when (ev.eventType) {
+                    "bank_config_updated" -> {
+                        postNotification("🏛️ Admin updated Bank / UPI payment gateway details!", true)
+                    }
+                    "result_declared", "draw_override" -> {
+                        val mkt = ev.marketCode ?: "Market"
+                        postNotification("🎲 Admin updated official result for $mkt!", true)
+                    }
+                    "balance_adjusted" -> if (ev.targetUserId == targetUid) {
+                        playSoundEffect(soundFileName = "win-fanfare.mp3")
+                        postNotification("💰 Wallet balance updated by Admin!", true)
+                    }
+                    "deposit_approved" -> if (ev.targetUserId == targetUid) {
+                        playSoundEffect(soundFileName = "win-fanfare.mp3")
+                        postNotification("✅ Deposit approved by Admin & credited to wallet!", true)
+                    }
+                    "deposit_rejected" -> if (ev.targetUserId == targetUid) {
+                        postNotification("❌ Deposit rejected by Admin: ${ev.reason ?: "Verification failed"}", false)
+                    }
+                    "withdrawal_approved" -> if (ev.targetUserId == targetUid) {
+                        postNotification("✅ Withdrawal request approved by Admin!", true)
+                    }
+                    "withdrawal_rejected" -> if (ev.targetUserId == targetUid) {
+                        postNotification("❌ Withdrawal rejected & refunded: ${ev.reason ?: "Check bank details"}", false)
+                    }
+                    "user_status_changed" -> if (ev.targetUserId == targetUid) {
+                        backendSyncService.forceSyncNow()
+                    }
+                }
+            }
+        }
+
         // Collect real-time settlement events so placed bet results notify & play sound immediately
         viewModelScope.launch {
             gameEngineService.socketEvents.collect { event ->
@@ -318,6 +404,191 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    override fun onCleared() {
+        super.onCleared()
+        backendSyncService.stop()
+    }
+
+    private suspend fun applyServerSnapshotToAndroid(snap: ServerSyncSnapshot) {
+        val tenantId = _activeTenantId.value
+        val localUserId = _activeUserId.value
+        val serverUserId = getServerUserId()
+
+        // 1. Sync Official Admin Declared Results & Overrides into GameEngineService
+        try {
+            gameEngineService.applyServerSync(tenantId, snap.drawOverrides, snap.declaredResults)
+        } catch (_: Exception) {}
+
+        // 2. Match current user in server SQLite users map
+        val serverUser = snap.usersById[serverUserId]
+            ?: snap.usersById[localUserId]
+            ?: _activeUser.value?.username?.let { uname ->
+                snap.usersById.values.firstOrNull { it.name.equals(uname, ignoreCase = true) }
+            }
+
+        if (serverUser != null) {
+            val prevStatus = _serverAccountStatus.value
+            val nextStatus = serverUser.status.uppercase()
+            if (prevStatus != nextStatus) {
+                _serverAccountStatus.value = nextStatus
+                if (nextStatus == "BLOCKED") {
+                    postNotification("⛔ Your account has been temporarily restricted by Admin.", false)
+                } else if (prevStatus == "BLOCKED") {
+                    postNotification("✅ Your account restriction has been lifted by Admin.", true)
+                }
+            }
+
+            // Sync wallet balance from SQLite server (if no recent local optimistic mutation in flight)
+            val recentlyMutated = (System.currentTimeMillis() - lastLocalMutationAtMs) < 1500L
+            val localWallet = database.walletDao().getWallet(tenantId, localUserId)
+            val serverBalCents = backendSyncService.rupeesToCents(serverUser.balanceRupees)
+            val serverDepCents = backendSyncService.rupeesToCents(serverUser.totalDepositRupees)
+            val serverWdCents = backendSyncService.rupeesToCents(serverUser.totalWithdrawRupees)
+            if (localWallet != null && !recentlyMutated) {
+                if (kotlin.math.abs(localWallet.availableBalance - serverBalCents) >= 1L ||
+                    kotlin.math.abs(localWallet.lifetimeDeposit - serverDepCents) >= 1L ||
+                    kotlin.math.abs(localWallet.lifetimeWithdrawal - serverWdCents) >= 1L
+                ) {
+                    database.walletDao().updateWallet(
+                        localWallet.copy(
+                            availableBalance = serverBalCents,
+                            lifetimeDeposit = maxOf(localWallet.lifetimeDeposit, serverDepCents),
+                            lifetimeWithdrawal = maxOf(localWallet.lifetimeWithdrawal, serverWdCents),
+                            status = nextStatus,
+                            version = localWallet.version + 1,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    )
+                }
+            }
+        }
+
+        // 3. Sync Server Deposits & Withdrawals into local ledger + status alerts
+        val localWallet = database.walletDao().getWallet(tenantId, localUserId)
+        val walletId = localWallet?.id ?: "wallet_$localUserId"
+        val balanceNow = localWallet?.availableBalance ?: 0L
+
+        snap.deposits.filter { it.userId == serverUserId || it.userId == localUserId }.forEach { dep ->
+            val prev = knownDepositStatuses[dep.id]
+            knownDepositStatuses[dep.id] = dep.status
+            val amtCents = backendSyncService.rupeesToCents(dep.amountRupees)
+            val key = "srv_dep_${dep.id}_${dep.status}"
+            if (dep.status == "SUCCESS" && database.ledgerDao().getLedgerByIdempotencyKey(key) == null) {
+                try {
+                    database.ledgerDao().insertLedger(
+                        WalletLedgerEntity(
+                            id = UUID.randomUUID().toString(),
+                            tenantId = tenantId,
+                            walletId = walletId,
+                            userId = localUserId,
+                            transactionId = "srv_${dep.id}",
+                            entryType = LedgerEntryType.DEPOSIT.name,
+                            direction = LedgerDirection.CREDIT.name,
+                            amount = amtCents,
+                            balanceBefore = maxOf(0L, balanceNow - amtCents),
+                            balanceAfter = balanceNow,
+                            referenceType = "SERVER_DEPOSIT",
+                            referenceId = "${dep.method} UTR:${dep.utr}",
+                            idempotencyKey = key
+                        )
+                    )
+                } catch (_: Exception) {}
+            }
+            if (prev != null && prev != dep.status) {
+                if (dep.status == "SUCCESS") {
+                    postNotification("✅ Deposit ${dep.id} approved (+₹${"%.2f".format(dep.amountRupees)})", true)
+                } else if (dep.status == "FAIL") {
+                    postNotification("❌ Deposit ${dep.id} rejected: ${dep.reason ?: "Failed"}", false)
+                }
+            }
+        }
+
+        snap.withdrawals.filter { it.userId == serverUserId || it.userId == localUserId }.forEach { wd ->
+            val prev = knownWithdrawalStatuses[wd.id]
+            knownWithdrawalStatuses[wd.id] = wd.status
+            if (prev != null && prev != wd.status) {
+                if (wd.status == "SUCCESS") {
+                    postNotification("✅ Withdrawal ${wd.id} approved!", true)
+                } else if (wd.status == "FAIL") {
+                    postNotification("❌ Withdrawal ${wd.id} rejected & refunded: ${wd.reason ?: "Declined"}", false)
+                }
+            }
+        }
+
+        // 4. Sync 90-Day Bet Slips from SQLite (so Web & Admin settlements update Android bets immediately)
+        val srvBets = backendSyncService.fetchUserBets(serverUserId, StatementExporter.RETENTION_DAYS)
+        if (!srvBets.isNullOrEmpty()) {
+            val betDao = database.betDao()
+            srvBets.forEach { sb ->
+                val key = "srv_bet_${sb.id}"
+                val gameId = BackendSyncService.marketCodeToNativeGameId(sb.marketId)
+                val nativeRoundId = "rnd_${tenantId}_${sb.marketId.uppercase()}_${sb.period}"
+                val mappedStatus = when (sb.status) {
+                    "WON" -> BetStatus.WON.name
+                    "LOST" -> BetStatus.LOST.name
+                    "CANCELLED", "REFUNDED" -> BetStatus.REFUNDED.name
+                    "LOCKED", "PENDING" -> BetStatus.ACCEPTED.name
+                    else -> BetStatus.ACCEPTED.name
+                }
+                val existingByKey = betDao.getBetByIdempotencyKey(key)
+                if (existingByKey != null) {
+                    val payoutCents = backendSyncService.rupeesToCents(sb.winAmountRupees)
+                    if (existingByKey.status != mappedStatus || existingByKey.actualPayout != payoutCents) {
+                        betDao.updateBet(
+                            existingByKey.copy(
+                                status = mappedStatus,
+                                actualPayout = payoutCents,
+                                settledAt = if (mappedStatus in listOf("WON", "LOST", "REFUNDED")) System.currentTimeMillis() else null
+                            )
+                        )
+                    }
+                } else {
+                    val localMatch = betDao.getActiveBetForSelection(nativeRoundId, localUserId, sb.target)
+                    if (localMatch != null) {
+                        val payoutCents = backendSyncService.rupeesToCents(sb.winAmountRupees)
+                        if (localMatch.status != mappedStatus || localMatch.actualPayout != payoutCents) {
+                            betDao.updateBet(
+                                localMatch.copy(
+                                    status = mappedStatus,
+                                    actualPayout = payoutCents,
+                                    settledAt = if (mappedStatus in listOf("WON", "LOST", "REFUNDED")) System.currentTimeMillis() else null
+                                )
+                            )
+                        }
+                    } else {
+                        val amtCents = backendSyncService.rupeesToCents(sb.amountRupees)
+                        try {
+                            betDao.insertBet(
+                                BetEntity(
+                                    id = "bet_${sb.id}",
+                                    tenantId = tenantId,
+                                    userId = localUserId,
+                                    gameId = gameId,
+                                    roundId = nativeRoundId,
+                                    betType = when (sb.type.uppercase()) {
+                                        "NUMBER" -> BetType.NUMBER.name
+                                        "BIG_SMALL", "SIZE" -> BetType.BIG_SMALL.name
+                                        else -> BetType.COLOR.name
+                                    },
+                                    selection = sb.target,
+                                    amount = amtCents,
+                                    multiplier = sb.mult,
+                                    potentialPayout = backendSyncService.rupeesToCents(sb.potentialPayoutRupees),
+                                    actualPayout = backendSyncService.rupeesToCents(sb.winAmountRupees),
+                                    status = mappedStatus,
+                                    transactionId = "tx_${sb.id}",
+                                    idempotencyKey = key,
+                                    createdAt = sb.createdAtMs,
+                                    settledAt = if (mappedStatus in listOf("WON", "LOST", "REFUNDED")) System.currentTimeMillis() else null
+                                )
+                            )
+                        } catch (_: Exception) {}
+                    }
+                }
+            }
+        }
+    }
+
     fun dismissNotification() {
         _notification.value = null
     }
@@ -330,6 +601,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _activeUserId.value = userId
         val user = _allUsers.value.firstOrNull { it.id == userId }
         _activeUser.value = user
+        viewModelScope.launch { backendSyncService.forceSyncNow() }
         postNotification("Switched active user to ${user?.username}")
     }
 
@@ -419,6 +691,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         _activeTenantId.value = user.tenantId
                         _activeUser.value = user
                         _isLoggedIn.value = true
+                        viewModelScope.launch { backendSyncService.forceSyncNow() }
                         postNotification("Welcome back, ${user.username}!", true)
                         onResult(true, null)
                     } else {
@@ -553,10 +826,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
 
-                // 7. Auto login newly registered player
+                // 7. Auto login newly registered player & sync to SQLite backend
                 _activeUserId.value = newUserId
                 _activeUser.value = newUser
                 _isLoggedIn.value = true
+                lastLocalMutationAtMs = System.currentTimeMillis()
+                viewModelScope.launch {
+                    backendSyncService.registerUserOnServer(
+                        userId = newUserId,
+                        username = cleanUser,
+                        phone = cleanPhone,
+                        email = newUser.email,
+                        balanceRupees = starterBonusCents / 100.0,
+                        referredBy = referralCode
+                    )
+                    backendSyncService.forceSyncNow()
+                }
 
                 postNotification("🎉 Welcome $cleanUser! ₹500 welcome bonus credited to your wallet!", true)
                 onResult(true, null)
@@ -570,6 +855,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleBet(betType: BetType, selection: String, amountCents: Long) {
         viewModelScope.launch {
+            if (_serverAccountStatus.value == "BLOCKED") {
+                postNotification("⛔ Account temporarily restricted by Admin.", false)
+                return@launch
+            }
             val round = currentRound.value
             if (round == null || !isBettingOpen.value) {
                 postNotification("Betting is currently closed for this round!", false)
@@ -578,15 +867,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             val userId = _activeUserId.value
             val tenantId = _activeTenantId.value
+            val serverUserId = getServerUserId()
+            val currentMarket = _selectedMarket.value
 
             // 1. Check if user already has an active bet on this button/selection in this round
             val existingBet = currentRoundActiveBets.value[selection]
             if (existingBet != null) {
                 // TOGGLE OFF: Cancel and instantly refund to wallet!
+                lastLocalMutationAtMs = System.currentTimeMillis()
                 when (val cancelRes = walletService.cancelAndRefundBet(tenantId, userId, existingBet.amount, round.roundId, existingBet.id)) {
                     is WalletResult.Error -> postNotification("Cancel failed: ${cancelRes.message}", false)
                     is WalletResult.Success -> {
                         database.betDao().updateBet(existingBet.copy(status = BetStatus.REFUNDED.name, actualPayout = 0L))
+                        viewModelScope.launch {
+                            backendSyncService.cancelBetOnServer(
+                                serverUserId = serverUserId,
+                                betId = existingBet.id,
+                                marketCode = currentMarket.name.uppercase(),
+                                period = round.roundNumber.toString()
+                            )
+                        }
                         postNotification("❌ Bet on $selection refunded. Result is Refunded!", true)
                     }
                 }
@@ -637,6 +937,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         idempotencyKey = idempotencyKey
                     )
                     database.betDao().insertBet(bet)
+                    lastLocalMutationAtMs = System.currentTimeMillis()
+                    viewModelScope.launch {
+                        backendSyncService.placeBetOnServer(
+                            serverUserId = serverUserId,
+                            marketCode = currentMarket.name.uppercase(),
+                            amountRupees = amountCents / 100.0,
+                            betType = betType.name,
+                            target = selection
+                        )
+                    }
                     playSoundEffect(soundFileName = "bet-click.mp3")
                     postNotification("✓ Bet placed on ${currentMarket.emoji} ${currentMarket.name}: ${MoneyUtils.formatCents(amountCents)} on $selection!")
                 }
@@ -646,6 +956,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun placeBet(betType: BetType, selection: String, amountCents: Long) {
         viewModelScope.launch {
+            if (_serverAccountStatus.value == "BLOCKED") {
+                postNotification("⛔ Account temporarily restricted by Admin.", false)
+                return@launch
+            }
             val round = currentRound.value
             if (round == null || !isBettingOpen.value) {
                 postNotification("Betting is currently closed for this round!", false)
@@ -699,6 +1013,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         idempotencyKey = idempotencyKey
                     )
                     database.betDao().insertBet(bet)
+                    lastLocalMutationAtMs = System.currentTimeMillis()
+                    val serverUserId = getServerUserId()
+                    viewModelScope.launch {
+                        backendSyncService.placeBetOnServer(
+                            serverUserId = serverUserId,
+                            marketCode = currentMarket.name.uppercase(),
+                            amountRupees = amountCents / 100.0,
+                            betType = betType.name,
+                            target = selection
+                        )
+                    }
                     playSoundEffect(soundFileName = "bet-click.mp3")
                     postNotification("Bet placed on ${currentMarket.emoji} ${currentMarket.name}: ${MoneyUtils.formatCents(amountCents)} on $selection!")
                 }
@@ -711,6 +1036,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val userId = _activeUserId.value
             val tenantId = _activeTenantId.value
             val idempotencyKey = "dep_${userId}_${System.currentTimeMillis()}"
+            lastLocalMutationAtMs = System.currentTimeMillis()
 
             when (val res = walletService.creditDeposit(tenantId, userId, amountCents, provider, idempotencyKey)) {
                 is WalletResult.Error -> postNotification("Deposit failed: ${res.message}", false)
@@ -720,9 +1046,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun submitDepositRequest(amountRupees: Double, utr: String, method: String) {
+        if (_serverAccountStatus.value == "BLOCKED") {
+            postNotification("⛔ Account temporarily restricted by Admin.", false)
+            return
+        }
         val amountCents = (amountRupees * 100).toLong()
-        depositFunds(amountCents, "$method (UTR: $utr)")
-        postNotification("Deposit request of ₹${"%.2f".format(amountRupees)} with UTR #$utr submitted to Admin!", true)
+        if (method.startsWith("Demo", ignoreCase = true) || backendSyncService.connectionStatus.value == "OFFLINE") {
+            depositFunds(amountCents, "$method (UTR: $utr)")
+            return
+        }
+        viewModelScope.launch {
+            val (ok, info) = backendSyncService.submitDepositOnServer(
+                serverUserId = getServerUserId(),
+                userName = _activeUser.value?.username ?: "Rahul_Player",
+                amountRupees = amountRupees,
+                utr = utr,
+                method = method
+            )
+            if (ok) {
+                postNotification("✓ Deposit request of ₹${"%.2f".format(amountRupees)} (UTR #$utr) submitted! Status: IN PROCESS.", true)
+                backendSyncService.forceSyncNow()
+            } else {
+                postNotification("⚠️ ${info ?: "Deposit request failed"}", false)
+            }
+        }
     }
 
     fun submitWithdrawalRequest(
@@ -733,9 +1080,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         ifsc: String,
         bankingName: String
     ) {
+        if (_serverAccountStatus.value == "BLOCKED") {
+            postNotification("⛔ Account temporarily restricted by Admin.", false)
+            return
+        }
         val amountCents = (amountRupees * 100).toLong()
         val destination = "$bankingName • $bankName (A/C: $accNo, IFSC: $ifsc) • UPI: $upiId"
         requestWithdrawal(amountCents, destination)
+        viewModelScope.launch {
+            backendSyncService.submitWithdrawalOnServer(
+                serverUserId = getServerUserId(),
+                userName = _activeUser.value?.username ?: "Rahul_Player",
+                amountRupees = amountRupees,
+                upiId = upiId,
+                bankName = bankName,
+                accNo = accNo,
+                ifsc = ifsc,
+                bankingName = bankingName
+            )
+            backendSyncService.forceSyncNow()
+        }
     }
 
     fun syncExternalWalletBalance(newBalRupees: Double, reason: String) {

@@ -51,6 +51,7 @@ fun WalletScreen(
     val ledger by viewModel.userLedger.collectAsState()
     val statementSummary by viewModel.statementSummary.collectAsState()
     val statementDays by viewModel.statementDays.collectAsState()
+    val bankConfig by viewModel.bankConfig.collectAsState()
 
     var showDepositDialog by remember { mutableStateOf(false) }
     var showWithdrawDialog by remember { mutableStateOf(false) }
@@ -88,6 +89,7 @@ fun WalletScreen(
 
     if (showDepositDialog) {
         DepositDialog(
+            bankConfig = bankConfig,
             onDismiss = { showDepositDialog = false },
             onDeposit = { amountCents, provider, utr ->
                 viewModel.submitDepositRequest(
@@ -687,6 +689,7 @@ fun LedgerItemCard(entry: WalletLedgerEntity) {
 
 @Composable
 fun DepositDialog(
+    bankConfig: com.example.domain.BankConfigState = com.example.domain.BankConfigState(),
     onDismiss: () -> Unit,
     onDeposit: (amountCents: Long, provider: String, utr: String) -> Unit
 ) {
@@ -773,14 +776,14 @@ fun DepositDialog(
                                     fontSize = 10.sp
                                 )
                                 Text(
-                                    text = "colourking@icici",
+                                    text = bankConfig.upiId,
                                     color = GoldAccent,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     fontFamily = FontFamily.Monospace
                                 )
                                 Text(
-                                    text = "Colour King Official Pay",
+                                    text = bankConfig.upiName,
                                     color = ElectricCyan,
                                     fontSize = 10.sp
                                 )
@@ -788,7 +791,7 @@ fun DepositDialog(
                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Button(
                                         onClick = {
-                                            clipboardManager.setText(AnnotatedString("colourking@icici"))
+                                            clipboardManager.setText(AnnotatedString(bankConfig.upiId))
                                             copiedLabel = "UPI ID Copied!"
                                         },
                                         colors = ButtonDefaults.buttonColors(containerColor = CardBorder),
@@ -809,7 +812,7 @@ fun DepositDialog(
                         // Bank Details
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Bank Name:", color = TextMuted, fontSize = 11.sp)
-                            Text("State Bank of India (SBI)", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            Text(bankConfig.bankName, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Row(
@@ -819,7 +822,7 @@ fun DepositDialog(
                         ) {
                             Text("A/C No:", color = TextMuted, fontSize = 11.sp)
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("40928172901", color = GoldAccent, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Text(bankConfig.accNo, color = GoldAccent, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = "Copy",
@@ -827,7 +830,7 @@ fun DepositDialog(
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.clickable {
-                                        clipboardManager.setText(AnnotatedString("40928172901"))
+                                        clipboardManager.setText(AnnotatedString(bankConfig.accNo))
                                         copiedLabel = "A/C Copied!"
                                     }
                                 )
@@ -841,7 +844,7 @@ fun DepositDialog(
                         ) {
                             Text("IFSC Code:", color = TextMuted, fontSize = 11.sp)
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("SBIN0001824", color = ElectricCyan, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Text(bankConfig.ifsc, color = ElectricCyan, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = "Copy",
@@ -849,7 +852,7 @@ fun DepositDialog(
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.clickable {
-                                        clipboardManager.setText(AnnotatedString("SBIN0001824"))
+                                        clipboardManager.setText(AnnotatedString(bankConfig.ifsc))
                                         copiedLabel = "IFSC Copied!"
                                     }
                                 )
@@ -858,7 +861,12 @@ fun DepositDialog(
                         Spacer(modifier = Modifier.height(4.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Holder Name:", color = TextMuted, fontSize = 11.sp)
-                            Text("Colour King Gaming Enterprise Ltd", color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            Text(bankConfig.holder, color = TextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Limits:", color = TextMuted, fontSize = 11.sp)
+                            Text("₹${bankConfig.minDep} – ₹${bankConfig.maxDep}", color = NeonGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
 
                         if (copiedLabel != null) {

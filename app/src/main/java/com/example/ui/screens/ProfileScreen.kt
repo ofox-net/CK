@@ -46,10 +46,74 @@ fun ProfileScreen(
     val activeTenantId by viewModel.activeTenantId.collectAsState()
     val wallet by viewModel.wallet.collectAsState()
     val isSoundEnabled by viewModel.isSoundEnabled.collectAsState()
+    val backendUrl by viewModel.backendUrl.collectAsState()
+    val backendStatus by viewModel.backendConnectionStatus.collectAsState()
     val context = LocalContext.current
 
     var twoFactorEnabled by remember { mutableStateOf(true) }
     var showLogoutDialog by remember { mutableStateOf(false) }
+    var showServerDialog by remember { mutableStateOf(false) }
+    var serverUrlInput by remember(backendUrl) { mutableStateOf(backendUrl) }
+
+    if (showServerDialog) {
+        AlertDialog(
+            onDismissRequest = { showServerDialog = false },
+            title = {
+                Text(
+                    text = "Backend Sync Server URL",
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "Enter the URL of your Admin/SQLite backend server for real-time SSE synchronization (leave blank to auto-detect).",
+                        color = TextSecondary,
+                        fontSize = 12.sp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = serverUrlInput,
+                        onValueChange = { serverUrlInput = it },
+                        label = { Text("Server Base URL") },
+                        placeholder = { Text("https://... or http://10.0.2.2:3000") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("backend_url_input"),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = ElectricCyan,
+                            unfocusedBorderColor = CardBorder
+                        )
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.setBackendServerUrl(serverUrlInput)
+                        showServerDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = ElectricCyan),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("Save & Sync", color = ObsidianBg, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { showServerDialog = false },
+                    border = borderStroke(1.dp, CardBorder),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("Cancel", color = TextSecondary)
+                }
+            },
+            containerColor = SurfaceDark,
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
 
     if (showLogoutDialog) {
         AlertDialog(
@@ -493,8 +557,18 @@ fun ProfileScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(text = "Network Telemetry Ping", color = TextSecondary, fontSize = 11.sp)
-                        Text(text = "● 18ms (Optimal)", color = NeonGreen, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        Text(text = "Real-Time Sync Stream", color = TextSecondary, fontSize = 11.sp)
+                        Text(
+                            text = "● $backendStatus",
+                            color = when (backendStatus) {
+                                "SSE LIVE" -> NeonGreen
+                                "POLLING" -> ElectricCyan
+                                "CONNECTING" -> GoldAccent
+                                else -> NeonRed
+                            },
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -510,6 +584,52 @@ fun ProfileScreen(
                     ) {
                         Text(text = "Game Engine Status", color = TextSecondary, fontSize = 11.sp)
                         Text(text = "100% Operational", color = GoldAccent, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(CardHighlight)
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Text(text = "Active Backend Server:", color = TextMuted, fontSize = 10.sp)
+                        Text(
+                            text = backendUrl,
+                            color = ElectricCyan,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { viewModel.triggerManualSync() },
+                                border = borderStroke(1.dp, NeonGreen.copy(alpha = 0.6f)),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.weight(1f).height(34.dp).testTag("sync_now_btn")
+                            ) {
+                                Text("🔄 Sync Now", fontSize = 11.sp, color = NeonGreen, fontWeight = FontWeight.Bold)
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    serverUrlInput = backendUrl
+                                    showServerDialog = true
+                                },
+                                border = borderStroke(1.dp, ElectricCyan.copy(alpha = 0.6f)),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.weight(1f).height(34.dp).testTag("edit_server_url_btn")
+                            ) {
+                                Text("⚙️ Server URL", fontSize = 11.sp, color = ElectricCyan, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
             }

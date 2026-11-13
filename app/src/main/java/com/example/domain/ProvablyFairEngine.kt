@@ -30,7 +30,14 @@ object ProvablyFairEngine {
     }
 
     fun avalancheSeed(marketCode: String, period: String): String {
-        val cleanMarket = marketCode.removePrefix("market_").uppercase()
+        val raw = marketCode.removePrefix("market_").uppercase()
+        val cleanMarket = when (raw) {
+            "MIA" -> "MIAMI"
+            "VEG" -> "VEGAS"
+            "PAR" -> "PARIS"
+            "DUB" -> "DUBAI"
+            else -> raw
+        }
         return "COLOUR_KING_AVALANCHE_2026_${cleanMarket}_${period}_PROVABLY_FAIR"
     }
 
@@ -56,7 +63,7 @@ object ProvablyFairEngine {
         return buildRoundResult(number, hashSha256(seed))
     }
 
-    private fun buildRoundResult(number: Int, proofHex: String): RoundResult {
+    fun buildRoundResult(number: Int, proofHex: String = "ADMIN_OVERRIDE"): RoundResult {
         val color = when (number) {
             0 -> GameColor.RED_VIOLET
             5 -> GameColor.GREEN_VIOLET

@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 sealed class GameSocketEvent {
     data class RoundCreated(val round: GameRoundEntity) : GameSocketEvent()
@@ -33,6 +34,9 @@ object GlobalRoundClock {
     const val ROUND_DURATION_SEC = 180
     const val BETTING_CUTOFF_SEC = 30 // Last 30s bets are closed
 
+    @Volatile
+    var serverOffsetMs: Long = 0L
+
     data class ClockState(
         val dateStr: String,
         val roundIndex: Long,
@@ -42,7 +46,7 @@ object GlobalRoundClock {
         val isBettingOpen: Boolean
     )
 
-    fun getSyncedState(nowMs: Long = System.currentTimeMillis()): ClockState {
+    fun getSyncedState(nowMs: Long = System.currentTimeMillis() + serverOffsetMs): ClockState {
         val istTz = java.util.TimeZone.getTimeZone("Asia/Kolkata")
         val nowCal = java.util.Calendar.getInstance(istTz).apply { timeInMillis = nowMs }
         val ref11Cal = java.util.Calendar.getInstance(istTz).apply {
@@ -130,6 +134,103 @@ class GameEngineService(
     val socketEvents = _socketEvents.asSharedFlow()
 
     private var engineJobs = mutableMapOf<String, Job>()
+    private val serverOverrides = ConcurrentHashMap<String, ServerRoundOverride>()
+    private val serverDeclaredResults = ConcurrentHashMap<String, ConcurrentHashMap<String, ServerDeclaredResult>>()
+
+    fun resolveOfficialResult(marketCode: String, periodStr: String): RoundResult {
+        val mKey = marketCode.uppercase()
+        val declared = serverDeclaredResults[mKey]?.get(periodStr)
+        if (declared != null) {
+            return ProvablyFairEngine.buildRoundResult(
+                declared.number,
+                "SERVER_${declared.mode}_${periodStr}"
+            )
+        }
+        val ov = serverOverrides[mKey]
+        if (ov != null && (ov.period == null || ov.period == periodStr)) {
+            return ProvablyFairEngine.buildRoundResult(ov.number, "ADMIN_OVERRIDE_$periodStr")
+        }
+        return ProvablyFairEngine.calculateAvalancheResult(mKey, periodStr)
+    }
+
+    suspend fun applyServerSync(
+        tenantId: String,
+        overrides: Map<String, ServerRoundOverride>,
+        declaredResults: Map<String, Map<String, ServerDeclaredResult>>
+    ) {
+        serverOverrides.clear()
+        serverOverrides.putAll(overrides)
+
+        declaredResults.forEach { (mCode, periodsMap) ->
+            val inner = serverDeclaredResults.getOrPut(mCode.uppercase()) { ConcurrentHashMap() }
+            periodsMap.forEach { (pStr, rec) -> inner[pStr] = rec }
+        }
+
+        val roundDao = database.gameRoundDao()
+        val configDao = database.gameConfigDao()
+        val nowMs = System.currentTimeMillis() + GlobalRoundClock.serverOffsetMs
+        val currentPeriod = GlobalRoundClock.getSyncedState(nowMs).periodNumber
+
+        GameMarkets.ALL.forEach { market ->
+            val mKey = market.name.uppercase()
+            val periodsMap = declaredResults[mKey] ?: declaredResults[market.code.uppercase()].orEmpty()
+            val state = getMarketState(market.id)
+
+            periodsMap.forEach { (pStr, rec) ->
+                val periodNum = pStr.toLongOrNull() ?: return@forEach
+                val rid = "rnd_${tenantId}_${mKey}_$pStr"
+                val official = ProvablyFairEngine.buildRoundResult(rec.number, "SERVER_${rec.mode}_$pStr")
+                val existing = roundDao.getRoundById(rid)
+                if (existing == null) {
+                    roundDao.insertRound(
+                        GameRoundEntity(
+                            roundId = rid,
+                            gameId = market.id,
+                            tenantId = tenantId,
+                            roundNumber = periodNum,
+                            startTime = nowMs - 180_000L,
+                            bettingCloseTime = nowMs - 30_000L,
+                            resultTime = nowMs,
+                            status = RoundStatus.COMPLETED.name,
+                            resultNumber = official.number,
+                            resultColor = official.color.name,
+                            multiplier = 1.0,
+                            serverSeedHash = ProvablyFairEngine.hashSha256(ProvablyFairEngine.avalancheSeed(mKey, pStr)),
+                            serverSeed = rec.mode,
+                            nonce = periodNum,
+                            clientSeed = "SERVER_SQLITE_SYNC",
+                            createdAt = nowMs - 180_000L,
+                            settledAt = nowMs
+                        )
+                    )
+                } else if (existing.resultNumber != official.number || existing.status != RoundStatus.COMPLETED.name) {
+                    val updated = existing.copy(
+                        status = RoundStatus.RESULT_GENERATED.name,
+                        resultNumber = official.number,
+                        resultColor = official.color.name,
+                        serverSeed = rec.mode
+                    )
+                    roundDao.updateRound(updated)
+                    val cfg = configDao.getConfig(tenantId, market.id)
+                        ?: GameConfigEntity(id = "cfg_${tenantId}_${market.id}", tenantId = tenantId, gameId = market.id)
+                    settleRound(updated, official, cfg, state)
+                }
+            }
+
+            // Update latestResult display with the newest completed period strictly before currentPeriod
+            val latestCompleted = periodsMap.values
+                .mapNotNull { rec -> rec.period.toLongOrNull()?.let { it to rec } }
+                .filter { (p, _) -> p < currentPeriod }
+                .maxByOrNull { (p, _) -> p }
+                ?.second
+            if (latestCompleted != null) {
+                state.latestResult.value = ProvablyFairEngine.buildRoundResult(
+                    latestCompleted.number,
+                    "SERVER_${latestCompleted.mode}_${latestCompleted.period}"
+                )
+            }
+        }
+    }
 
     fun getMarketState(marketId: String): MarketEngineState {
         return _marketStates[marketId] ?: _marketStates["market_miami"]!!
@@ -196,7 +297,7 @@ class GameEngineService(
     private suspend fun recoverStaleRounds(tenantId: String, gameId: String, state: MarketEngineState) {
         val roundDao = database.gameRoundDao()
         val marketCode = GameMarkets.getById(gameId).code
-        val nowMs = System.currentTimeMillis()
+        val nowMs = System.currentTimeMillis() + GlobalRoundClock.serverOffsetMs
         val currentClock = GlobalRoundClock.getSyncedState(nowMs)
 
         // Clean up any stale dummy rounds with numbers ahead of the current live clock or legacy prefixes
@@ -216,7 +317,7 @@ class GameEngineService(
             if (pastPeriod >= currentClock.periodNumber) continue
 
             val rid = "rnd_${tenantId}_${marketCode}_$pastPeriod"
-            val result = ProvablyFairEngine.calculateAvalancheResult(marketCode, pastPeriod.toString())
+            val result = resolveOfficialResult(marketCode, pastPeriod.toString())
             val seed = ProvablyFairEngine.avalancheSeed(marketCode, pastPeriod.toString())
             val hash = ProvablyFairEngine.hashSha256(seed)
             val existing = roundDao.getRoundById(rid)
@@ -265,9 +366,9 @@ class GameEngineService(
             settleRound(updated, result, config, state)
         }
 
-        // Always lock latestResult to immediate previous period matching Web
+        // Always lock latestResult to immediate previous period matching Web & server declared results
         val prevPeriod = GlobalRoundClock.getSyncedState(nowMs - 180_000L).periodNumber
-        state.latestResult.value = ProvablyFairEngine.calculateAvalancheResult(marketCode, prevPeriod.toString())
+        state.latestResult.value = resolveOfficialResult(marketCode, prevPeriod.toString())
     }
 
     private suspend fun runMarketRoundCycle(
@@ -292,7 +393,8 @@ class GameEngineService(
         // 1. Unified Global Round Clock State (Daily 11:00 AM period #221 start, identical across all 4 markets)
         val initialClock = GlobalRoundClock.getSyncedState()
         val roundNumber = initialClock.periodNumber
-        val roundId = "rnd_${tenantId}_${market.code}_$roundNumber"
+        val marketKey = market.name.uppercase()
+        val roundId = "rnd_${tenantId}_${marketKey}_$roundNumber"
 
         var currentRound = roundDao.getRoundById(roundId)
 
@@ -310,7 +412,7 @@ class GameEngineService(
         }
 
         // Provably Fair Seeds (Unified with Web server.py & index.html so Web and App always match)
-        val serverSeed = ProvablyFairEngine.avalancheSeed(market.code, roundNumber.toString())
+        val serverSeed = ProvablyFairEngine.avalancheSeed(marketKey, roundNumber.toString())
         val serverSeedHash = currentRound?.serverSeedHash ?: ProvablyFairEngine.hashSha256(serverSeed)
         val nonce = roundNumber
         val clientSeed = "PROVABLY_FAIR_AVALANCHE"
@@ -383,8 +485,8 @@ class GameEngineService(
         state.secondsRemaining.value = 0
         state.isBettingOpen.value = false
 
-        // 3. Result Generation: Exact same deterministic Avalanche hash as Web
-        val roundResult = ProvablyFairEngine.calculateAvalancheResult(market.code, roundNumber.toString())
+        // 3. Result Generation: Official server declared / Admin override result if present, else deterministic Avalanche hash
+        val roundResult = resolveOfficialResult(marketKey, roundNumber.toString())
         state.latestResult.value = roundResult
 
         val revealedRound = currentRoundState.copy(

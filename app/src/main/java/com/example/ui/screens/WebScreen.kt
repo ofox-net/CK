@@ -63,6 +63,8 @@ fun WebScreen(
     }
 
     val wallet by viewModel.wallet.collectAsState()
+    val backendUrl by viewModel.backendUrl.collectAsState()
+    val backendStatus by viewModel.backendConnectionStatus.collectAsState()
 
     LaunchedEffect(wallet?.availableBalance) {
         val bal = ((wallet?.availableBalance ?: 5020000L) / 100.0)
@@ -70,6 +72,26 @@ fun WebScreen(
             "if (window.updateBridgeBalance) { window.updateBridgeBalance($bal); }",
             null
         )
+    }
+
+    LaunchedEffect(backendUrl) {
+        val escapedUrl = backendUrl.replace("\\", "\\\\").replace("'", "\\'")
+        val escapedUid = viewModel.getServerUserId().replace("\\", "\\\\").replace("'", "\\'")
+        val escapedName = (viewModel.activeUser.value?.username ?: "Rahul_Player").replace("\\", "\\\\").replace("'", "\\'")
+        webViewInstance?.evaluateJavascript(
+            "if (window.updateBridgeBackendUrl) { window.updateBridgeBackendUrl('$escapedUrl', '$escapedUid', '$escapedName'); }",
+            null
+        )
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.latestServerPushEvent.collect { ev ->
+            val escapedType = ev.eventType.replace("\\", "\\\\").replace("'", "\\'")
+            webViewInstance?.evaluateJavascript(
+                "if (window.onAndroidServerPush) { window.onAndroidServerPush('$escapedType'); }",
+                null
+            )
+        }
     }
 
     Column(
@@ -106,8 +128,8 @@ fun WebScreen(
                             fontSize = 13.sp
                         )
                         Text(
-                            text = "Synced: ₹${"%.2f".format((wallet?.availableBalance ?: 5020000L) / 100.0)} • Real-Time Native Bridge",
-                            color = ElectricCyan,
+                            text = "Synced: ₹${"%.2f".format((wallet?.availableBalance ?: 5020000L) / 100.0)} • $backendStatus",
+                            color = if (backendStatus == "SSE LIVE") NeonGreen else ElectricCyan,
                             fontSize = 10.sp
                         )
                     }
@@ -189,6 +211,11 @@ fun WebScreen(
                     settings.displayZoomControls = false
                     settings.mediaPlaybackRequiresUserGesture = false
                     settings.allowFileAccess = true
+                    @Suppress("DEPRECATION")
+                    settings.allowFileAccessFromFileURLs = true
+                    @Suppress("DEPRECATION")
+                    settings.allowUniversalAccessFromFileURLs = true
+                    settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
 
                     // Two-way native Android wallet & statement bridge
                     addJavascriptInterface(
@@ -214,8 +241,11 @@ fun WebScreen(
                         override fun onPageFinished(view: WebView?, url: String?) {
                             pageProgress = 100
                             val bal = ((viewModel.wallet.value?.availableBalance ?: 5020000L) / 100.0)
+                            val escapedUrl = viewModel.backendUrl.value.replace("\\", "\\\\").replace("'", "\\'")
+                            val escapedUid = viewModel.getServerUserId().replace("\\", "\\\\").replace("'", "\\'")
+                            val escapedName = (viewModel.activeUser.value?.username ?: "Rahul_Player").replace("\\", "\\\\").replace("'", "\\'")
                             evaluateJavascript(
-                                "if (window.updateBridgeBalance) { window.updateBridgeBalance($bal); }",
+                                "if (window.updateBridgeBackendUrl) { window.updateBridgeBackendUrl('$escapedUrl', '$escapedUid', '$escapedName'); } if (window.updateBridgeBalance) { window.updateBridgeBalance($bal); }",
                                 null
                             )
                         }
@@ -288,6 +318,31 @@ class AndroidWalletBridge(
         bankingName: String
     ) {
         viewModel.submitWithdrawalRequest(amountRupees, upiId, bankName, accNo, ifsc, bankingName)
+    }
+
+    @android.webkit.JavascriptInterface
+    fun getServerUserId(): String {
+        return viewModel.getServerUserId()
+    }
+
+    @android.webkit.JavascriptInterface
+    fun getBackendBaseUrl(): String {
+        return viewModel.backendUrl.value
+    }
+
+    @android.webkit.JavascriptInterface
+    fun setBackendBaseUrl(url: String) {
+        viewModel.setBackendServerUrl(url)
+    }
+
+    @android.webkit.JavascriptInterface
+    fun getConnectionStatus(): String {
+        return viewModel.backendConnectionStatus.value
+    }
+
+    @android.webkit.JavascriptInterface
+    fun triggerSync() {
+        viewModel.triggerManualSync()
     }
 
     @android.webkit.JavascriptInterface

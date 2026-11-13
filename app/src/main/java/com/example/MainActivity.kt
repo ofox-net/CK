@@ -77,6 +77,7 @@ fun MainAppScaffold(viewModel: MainViewModel) {
     val currentRound by viewModel.currentRound.collectAsState()
     val notification by viewModel.notification.collectAsState()
     val isSoundEnabled by viewModel.isSoundEnabled.collectAsState()
+    val serverAccountStatus by viewModel.serverAccountStatus.collectAsState()
 
     val currentTenantName = allTenants.firstOrNull { it.id == activeTenantId }?.name ?: "Colour King"
 
@@ -148,6 +149,25 @@ fun MainAppScaffold(viewModel: MainViewModel) {
                     onVerifyClick = { showProvablyFairDialog = true },
                     onLogoutClick = { showLogoutDialog = true }
                 )
+
+                if (serverAccountStatus == "BLOCKED") {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = NeonRed.copy(alpha = 0.22f),
+                        border = borderStroke(1.dp, NeonRed),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "⛔ Account temporarily restricted by Admin. Betting & wallet actions paused.",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
+                    }
+                }
 
                 // Notification Toast
                 AnimatedVisibility(
