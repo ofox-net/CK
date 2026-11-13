@@ -10,6 +10,8 @@ import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -37,6 +39,24 @@ fun WebScreen(
     val context = LocalContext.current
     var webViewInstance by remember { mutableStateOf<WebView?>(null) }
     var pageProgress by remember { mutableStateOf(100) }
+    var pendingCsvContent by remember { mutableStateOf<String?>(null) }
+
+    val csvSaveLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        val content = pendingCsvContent
+        pendingCsvContent = null
+        if (uri != null && content != null) {
+            try {
+                context.contentResolver.openOutputStream(uri)?.use { out ->
+                    out.write(content.toByteArray(Charsets.UTF_8))
+                }
+                viewModel.postNotification("Statement CSV saved to device!", true)
+            } catch (e: Exception) {
+                viewModel.postNotification("Failed to save statement: ${e.message}", false)
+            }
+        }
+    }
 
     BackHandler(enabled = webViewInstance?.canGoBack() == true) {
         webViewInstance?.goBack()
@@ -170,8 +190,19 @@ fun WebScreen(
                     settings.mediaPlaybackRequiresUserGesture = false
                     settings.allowFileAccess = true
 
-                    // Two-way native Android wallet bridge
-                    addJavascriptInterface(AndroidWalletBridge(viewModel), "AndroidBridge")
+                    // Two-way native Android wallet & statement bridge
+                    addJavascriptInterface(
+                        AndroidWalletBridge(
+                            viewModel = viewModel,
+                            onDownloadCsv = { filename, csvContent ->
+                                post {
+                                    pendingCsvContent = csvContent
+                                    csvSaveLauncher.launch(filename)
+                                }
+                            }
+                        ),
+                        "AndroidBridge"
+                    )
 
                     webChromeClient = object : WebChromeClient() {
                         override fun onProgressChanged(view: WebView?, newProgress: Int) {
@@ -218,7 +249,8 @@ fun WebScreen(
 }
 
 class AndroidWalletBridge(
-    private val viewModel: MainViewModel
+    private val viewModel: MainViewModel,
+    private val onDownloadCsv: (filename: String, csvContent: String) -> Unit = { _, _ -> }
 ) {
     @android.webkit.JavascriptInterface
     fun getWalletBalance(): Double {
@@ -256,5 +288,10 @@ class AndroidWalletBridge(
         bankingName: String
     ) {
         viewModel.submitWithdrawalRequest(amountRupees, upiId, bankName, accNo, ifsc, bankingName)
+    }
+
+    @android.webkit.JavascriptInterface
+    fun downloadStatementCsv(filename: String, csvContent: String) {
+        onDownloadCsv(filename, csvContent)
     }
 }

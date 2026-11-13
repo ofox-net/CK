@@ -26,35 +26,64 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 import com.example.data.model.MoneyUtils
 import com.example.data.model.WalletEntity
 import com.example.data.model.WalletLedgerEntity
+import com.example.domain.AccountStatementSummary
+import com.example.domain.StatementExporter
 import com.example.ui.MainViewModel
 import com.example.ui.components.borderStroke
 import com.example.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.abs
 
 @Composable
 fun WalletScreen(
     viewModel: MainViewModel,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val wallet by viewModel.wallet.collectAsState()
     val ledger by viewModel.userLedger.collectAsState()
+    val statementSummary by viewModel.statementSummary.collectAsState()
+    val statementDays by viewModel.statementDays.collectAsState()
 
     var showDepositDialog by remember { mutableStateOf(false) }
     var showWithdrawDialog by remember { mutableStateOf(false) }
+    var showStatementModal by remember { mutableStateOf(false) }
     var selectedFilter by remember { mutableStateOf("ALL") }
 
-    val filteredLedger = when (selectedFilter) {
-        "ALL" -> ledger
-        "DEPOSIT" -> ledger.filter { it.entryType == "DEPOSIT" }
-        "WITHDRAWAL" -> ledger.filter { it.entryType == "WITHDRAWAL" }
-        "BET" -> ledger.filter { it.entryType == "BET" }
-        "WIN" -> ledger.filter { it.entryType == "WIN" }
-        "COMMISSION" -> ledger.filter { it.entryType == "REFERRAL_COMMISSION" }
-        else -> ledger
+    val csvLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val csvData = viewModel.generateStatementCsv(days = statementDays, filter = selectedFilter)
+                context.contentResolver.openOutputStream(uri)?.use { out ->
+                    out.write(csvData.toByteArray(Charsets.UTF_8))
+                }
+                viewModel.postNotification("Account Statement CSV saved successfully!", true)
+            } catch (e: Exception) {
+                viewModel.postNotification("Failed to save statement: ${e.message}", false)
+            }
+        }
+    }
+
+    val launchCsvExport: () -> Unit = {
+        val df = SimpleDateFormat("yyyyMMdd", Locale.ENGLISH).format(Date())
+        csvLauncher.launch("ColourKing_${statementDays}Day_Statement_$df.csv")
+    }
+
+    val filteredLedger = remember(ledger, selectedFilter, statementDays) {
+        StatementExporter.filterLedgerEntries(
+            ledger = ledger,
+            filter = selectedFilter,
+            days = statementDays
+        )
     }
 
     if (showDepositDialog) {
@@ -89,6 +118,17 @@ fun WalletScreen(
         )
     }
 
+    if (showStatementModal) {
+        StatementBreakdownDialog(
+            summary = statementSummary,
+            onDismiss = { showStatementModal = false },
+            onDownloadCsv = {
+                showStatementModal = false
+                launchCsvExport()
+            }
+        )
+    }
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -98,13 +138,13 @@ fun WalletScreen(
         item {
             Spacer(modifier = Modifier.height(10.dp))
             Text(
-                text = "Double-Entry Wallet & Ledger",
+                text = "Double-Entry Wallet & 90-Day Statement",
                 color = TextPrimary,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = "Real-time accounting with immutable ledger transactions & balance snapshots",
+                text = "Real-time accounting with Bet P&L, Refer & Earn, Deposit & Withdrawal statements",
                 color = TextSecondary,
                 fontSize = 12.sp
             )
@@ -116,10 +156,16 @@ fun WalletScreen(
                 onDepositClick = { showDepositDialog = true },
                 onWithdrawClick = { showWithdrawDialog = true }
             )
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // Lifetime Stats
-            LifetimeStatsRow(wallet = wallet)
+            // 90-Day Financial Statement Summary & CSV Export
+            StatementSummaryCard(
+                summary = statementSummary,
+                selectedDays = statementDays,
+                onSelectDays = { viewModel.setStatementDays(it) },
+                onDownloadCsvClick = launchCsvExport,
+                onViewBreakdownClick = { showStatementModal = true }
+            )
             Spacer(modifier = Modifier.height(16.dp))
 
             // Ledger Section Header
@@ -129,15 +175,15 @@ fun WalletScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Immutable Transaction Ledger",
+                    text = "Immutable Transaction Statement",
                     color = TextPrimary,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp
                 )
                 Text(
-                    text = "${filteredLedger.size} entries",
+                    text = "${filteredLedger.size} entries ($statementDays Days)",
                     color = TextMuted,
-                    fontSize = 12.sp
+                    fontSize = 11.sp
                 )
             }
             Spacer(modifier = Modifier.height(8.dp))
@@ -151,9 +197,10 @@ fun WalletScreen(
             ) {
                 listOf(
                     "ALL" to "All",
+                    "PROFIT_LOSS" to "Bet P&L",
                     "BET" to "Bets",
                     "WIN" to "Wins",
-                    "COMMISSION" to "Referral",
+                    "COMMISSION" to "Refer & Earn",
                     "DEPOSIT" to "Deposits",
                     "WITHDRAWAL" to "Withdrawals"
                 ).forEach { (key, label) ->
@@ -184,7 +231,7 @@ fun WalletScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Box(modifier = Modifier.padding(24.dp), contentAlignment = Alignment.Center) {
-                        Text(text = "No ledger entries in this filter", color = TextMuted, fontSize = 12.sp)
+                        Text(text = "No ledger entries in this filter ($statementDays days)", color = TextMuted, fontSize = 12.sp)
                     }
                 }
             }
@@ -287,23 +334,250 @@ fun WalletBalancesCard(
 }
 
 @Composable
-fun LifetimeStatsRow(wallet: WalletEntity?) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+fun StatementSummaryCard(
+    summary: AccountStatementSummary,
+    selectedDays: Int,
+    onSelectDays: (Int) -> Unit,
+    onDownloadCsvClick: () -> Unit,
+    onViewBreakdownClick: () -> Unit
+) {
+    val pl = summary.netBetProfitLossCents
+    val plColor = if (pl >= 0L) NeonGreen else NeonRed
+    val plPrefix = if (pl >= 0L) "+" else "-"
+
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = SurfaceDark,
+        border = borderStroke(1.dp, ElectricCyan.copy(alpha = 0.4f)),
+        modifier = Modifier.fillMaxWidth()
     ) {
-        StatPill(
-            title = "Total Wagered",
-            value = MoneyUtils.formatCents(wallet?.lifetimeWager ?: 0L),
-            color = ElectricCyan,
-            modifier = Modifier.weight(1f)
-        )
-        StatPill(
-            title = "Total Won",
-            value = MoneyUtils.formatCents(wallet?.lifetimeWin ?: 0L),
-            color = NeonGreen,
-            modifier = Modifier.weight(1f)
-        )
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "$selectedDays-Day Statement Summary",
+                        color = TextPrimary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                    Text(
+                        text = "90-Day Bet Records & Wallet Audit",
+                        color = ElectricCyan,
+                        fontSize = 10.sp
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    listOf(90, 30, 7).forEach { daysOpt ->
+                        val active = selectedDays == daysOpt
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (active) GoldAccent else CardHighlight)
+                                .clickable { onSelectDays(daysOpt) }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "${daysOpt}D",
+                                color = if (active) ObsidianBg else TextSecondary,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StatPill(
+                    title = "Bet Profit / Loss",
+                    value = "$plPrefix${MoneyUtils.formatCents(abs(pl))}",
+                    subtitle = "Won ${MoneyUtils.formatCents(summary.totalBetWonCents)} / Wager ${MoneyUtils.formatCents(summary.totalBetWageredCents)}",
+                    color = plColor,
+                    modifier = Modifier.weight(1f)
+                )
+                StatPill(
+                    title = "Refer & Earn",
+                    value = "+${MoneyUtils.formatCents(summary.totalReferEarnCents)}",
+                    subtitle = "${summary.totalBetsCount} bets (${summary.wonBetsCount}W / ${summary.lostBetsCount}L)",
+                    color = GoldAccent,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StatPill(
+                    title = "Deposits",
+                    value = "+${MoneyUtils.formatCents(summary.totalDepositCents)}",
+                    color = NeonGreen,
+                    modifier = Modifier.weight(1f)
+                )
+                StatPill(
+                    title = "Withdrawals",
+                    value = "-${MoneyUtils.formatCents(summary.totalWithdrawalCents)}",
+                    color = ElectricCyan,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = onDownloadCsvClick,
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = GoldAccent),
+                    modifier = Modifier
+                        .weight(1.3f)
+                        .height(42.dp)
+                        .testTag("download_statement_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Download,
+                        contentDescription = "Download Statement CSV",
+                        tint = ObsidianBg,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Download CSV",
+                        color = ObsidianBg,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = onViewBreakdownClick,
+                    shape = RoundedCornerShape(10.dp),
+                    border = borderStroke(1.dp, ElectricCyan),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = ElectricCyan),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(42.dp)
+                        .testTag("view_statement_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Assessment,
+                        contentDescription = "View Statement Report",
+                        tint = ElectricCyan,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Report",
+                        color = ElectricCyan,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun StatementBreakdownDialog(
+    summary: AccountStatementSummary,
+    onDismiss: () -> Unit,
+    onDownloadCsv: () -> Unit
+) {
+    val pl = summary.netBetProfitLossCents
+    val plColor = if (pl >= 0L) NeonGreen else NeonRed
+    val plPrefix = if (pl >= 0L) "+" else "-"
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(18.dp),
+            color = SurfaceDark,
+            border = borderStroke(1.dp, GoldAccent.copy(alpha = 0.6f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(18.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "${summary.days}-Day Account Statement",
+                    color = GoldAccent,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Text(
+                    text = "90-Day Bet History, Wallet, Refer & Earn, Deposit & Withdrawal Audit",
+                    color = TextSecondary,
+                    fontSize = 11.sp
+                )
+                HorizontalDivider(color = CardBorder)
+
+                StatementRow("Available Wallet Balance", MoneyUtils.formatCents(summary.availableBalanceCents), GoldAccent)
+                StatementRow("Locked Escrow Balance", MoneyUtils.formatCents(summary.lockedBalanceCents), AmberGlow)
+                StatementRow("Total Bets Played", "${summary.totalBetsCount} (Won: ${summary.wonBetsCount}, Lost: ${summary.lostBetsCount})", TextPrimary)
+                StatementRow("Total Bet Wagered", MoneyUtils.formatCents(summary.totalBetWageredCents), TextPrimary)
+                StatementRow("Total Bet Won Payout", MoneyUtils.formatCents(summary.totalBetWonCents), NeonGreen)
+                StatementRow("Net Bet Profit / Loss", "$plPrefix${MoneyUtils.formatCents(abs(pl))}", plColor)
+                StatementRow("Refer & Earn Income", "+${MoneyUtils.formatCents(summary.totalReferEarnCents)}", GoldAccent)
+                StatementRow("Total Deposits", "+${MoneyUtils.formatCents(summary.totalDepositCents)}", NeonGreen)
+                StatementRow("Total Withdrawals", "-${MoneyUtils.formatCents(summary.totalWithdrawalCents)}", ElectricCyan)
+
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        shape = RoundedCornerShape(10.dp),
+                        border = borderStroke(1.dp, CardBorder),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Close", color = TextSecondary)
+                    }
+                    Button(
+                        onClick = onDownloadCsv,
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = GoldAccent),
+                        modifier = Modifier.weight(1.4f)
+                    ) {
+                        Text("Download CSV", color = ObsidianBg, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatementRow(label: String, value: String, valueColor: Color) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(CardHighlight)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text = label, color = TextSecondary, fontSize = 12.sp)
+        Text(text = value, color = valueColor, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
     }
 }
 
@@ -312,18 +586,23 @@ fun StatPill(
     title: String,
     value: String,
     color: Color,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    subtitle: String? = null
 ) {
     Surface(
         shape = RoundedCornerShape(12.dp),
-        color = SurfaceDark,
+        color = CardHighlight,
         border = borderStroke(1.dp, CardBorder),
         modifier = modifier
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(modifier = Modifier.padding(10.dp)) {
             Text(text = title, color = TextMuted, fontSize = 10.sp)
             Spacer(modifier = Modifier.height(2.dp))
             Text(text = value, color = color, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            if (subtitle != null) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(text = subtitle, color = TextMuted, fontSize = 9.sp)
+            }
         }
     }
 }

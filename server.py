@@ -9,12 +9,15 @@ import urllib.parse
 import hashlib
 import random
 import math
+import csv
+import io
 from datetime import datetime, timezone, timedelta
 
 PORT = 3000
 DIRECTORY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 STATE_FILE = os.path.join(DIRECTORY, "server_state.json")
 DB_FILE = os.path.join(DIRECTORY, "colour_king.db")
+RETENTION_DAYS = 90
 
 db_lock = threading.Lock()
 
@@ -143,6 +146,7 @@ def init_database():
             )
         """)
         c.execute("CREATE INDEX IF NOT EXISTS idx_bets_user_id ON bets (user_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_bets_user_created ON bets (user_id, created_at_ms DESC)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_bets_market_period ON bets (market, period)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_bets_status ON bets (status)")
 
@@ -157,7 +161,8 @@ def init_database():
                 balance_before REAL NOT NULL,
                 balance_after REAL NOT NULL,
                 status TEXT DEFAULT 'COMPLETED',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at_ms INTEGER DEFAULT 0
             )
         """)
         c.execute("CREATE INDEX IF NOT EXISTS idx_tx_user ON transactions (user_id)")
@@ -173,7 +178,8 @@ def init_database():
                 time_str TEXT,
                 status TEXT NOT NULL DEFAULT 'IN PROCESS',
                 reason TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at_ms INTEGER DEFAULT 0
             )
         """)
 
@@ -192,9 +198,49 @@ def init_database():
                 time_str TEXT,
                 status TEXT NOT NULL DEFAULT 'IN PROCESS',
                 reason TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at_ms INTEGER DEFAULT 0
             )
         """)
+
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS referral_commissions (
+                id TEXT PRIMARY KEY,
+                beneficiary_user_id TEXT NOT NULL,
+                source_user_id TEXT NOT NULL,
+                source_user_name TEXT,
+                source_bet_id TEXT,
+                level INTEGER NOT NULL DEFAULT 1,
+                rate REAL NOT NULL DEFAULT 0.01,
+                eligible_amount REAL NOT NULL,
+                commission_amount REAL NOT NULL,
+                status TEXT NOT NULL DEFAULT 'SETTLED',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at_ms INTEGER NOT NULL
+            )
+        """)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_ref_comm_user ON referral_commissions (beneficiary_user_id, created_at_ms DESC)")
+
+        # Backward-compatible schema migrations for existing SQLite files
+        for alter_sql in [
+            "ALTER TABLE users ADD COLUMN referral_code TEXT",
+            "ALTER TABLE users ADD COLUMN referred_by TEXT",
+            "ALTER TABLE transactions ADD COLUMN created_at_ms INTEGER DEFAULT 0",
+            "ALTER TABLE deposits ADD COLUMN created_at_ms INTEGER DEFAULT 0",
+            "ALTER TABLE withdrawals ADD COLUMN created_at_ms INTEGER DEFAULT 0",
+        ]:
+            try:
+                c.execute(alter_sql)
+            except Exception:
+                pass
+        try:
+            c.execute("UPDATE transactions SET created_at_ms = CAST(strftime('%s', created_at) AS INTEGER) * 1000 WHERE created_at_ms IS NULL OR created_at_ms = 0")
+            c.execute("UPDATE deposits SET created_at_ms = CAST(strftime('%s', created_at) AS INTEGER) * 1000 WHERE created_at_ms IS NULL OR created_at_ms = 0")
+            c.execute("UPDATE withdrawals SET created_at_ms = CAST(strftime('%s', created_at) AS INTEGER) * 1000 WHERE created_at_ms IS NULL OR created_at_ms = 0")
+            c.execute("UPDATE users SET referral_code = 'RAHUL777' WHERE id = 'USR-1001' AND (referral_code IS NULL OR referral_code = '')")
+        except Exception:
+            pass
+        c.execute("CREATE INDEX IF NOT EXISTS idx_tx_user_ms ON transactions (user_id, created_at_ms DESC)")
 
         c.execute("""
             CREATE TABLE IF NOT EXISTS admin_audit_logs (
@@ -415,11 +461,12 @@ def settle_round_in_db(conn, market_code, round_id, period, winning_number, draw
             c.execute("UPDATE users SET balance = ? WHERE id = ?", (new_bal, uid))
 
             # Record win transaction
-            tx_id = f"TX-WIN-{int(time.time() * 1000)}-{random.randint(100, 999)}"
+            win_ms = int(time.time() * 1000)
+            tx_id = f"TX-WIN-{win_ms}-{random.randint(100, 999)}"
             c.execute("""
-                INSERT INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status)
-                VALUES (?, ?, 'WIN', ?, ?, ?, ?, ?, 'COMPLETED')
-            """, (tx_id, uid, f"Win {market_code} #{period}", f"Target {target} ({actual_mult}X) Result {winning_number}", win_amount, curr_bal, new_bal))
+                INSERT INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status, created_at_ms)
+                VALUES (?, ?, 'WIN', ?, ?, ?, ?, ?, 'COMPLETED', ?)
+            """, (tx_id, uid, f"Win {market_code} #{period}", f"Target {target} ({actual_mult}X) Result {winning_number}", win_amount, curr_bal, new_bal, win_ms))
         else:
             loss_amount = amt
             res_text = f"Lost (Outcome {winning_number} {color.upper()})"
@@ -556,9 +603,381 @@ def background_round_lifecycle_daemon():
 
         time.sleep(0.25)
 
+def _parse_ts_ms(ts_str, fallback_ms=0):
+    if fallback_ms and int(fallback_ms) > 0:
+        return int(fallback_ms)
+    if not ts_str:
+        return int(time.time() * 1000)
+    try:
+        dt = datetime.strptime(str(ts_str)[:19], "%Y-%m-%d %H:%M:%S")
+        return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
+    except Exception:
+        return int(time.time() * 1000)
+
+def build_user_statement(conn, uid, days=90, category="ALL", market_filter="ALL"):
+    now_ms = int(time.time() * 1000)
+    days_clamped = max(1, min(90, int(days)))
+    cutoff_ms = now_ms - (days_clamped * 86400 * 1000)
+    cat_upper = (category or "ALL").upper().strip()
+    mkt_upper = (market_filter or "ALL").upper().strip()
+
+    c = conn.cursor()
+    c.execute("SELECT * FROM users WHERE id = ?", (uid,))
+    u = c.fetchone()
+    user_name = u["name"] if u else uid
+    wallet_balance = float(u["balance"]) if u else 0.0
+    referral_code = (u["referral_code"] if u and "referral_code" in u.keys() and u["referral_code"] else (uid[-6:] if len(uid) >= 6 else uid).upper())
+
+    # 1. All bet records within window (up to 90 days stored & shown)
+    if mkt_upper != "ALL" and mkt_upper in MARKET_KEYS:
+        c.execute("""
+            SELECT * FROM bets
+            WHERE user_id = ? AND created_at_ms >= ? AND market = ?
+            ORDER BY created_at_ms DESC
+        """, (uid, cutoff_ms, mkt_upper))
+    else:
+        c.execute("""
+            SELECT * FROM bets
+            WHERE user_id = ? AND created_at_ms >= ?
+            ORDER BY created_at_ms DESC
+        """, (uid, cutoff_ms))
+    bet_rows = c.fetchall()
+
+    bets_list = []
+    total_wagered = 0.0
+    total_won = 0.0
+    won_count = 0
+    lost_count = 0
+    pending_count = 0
+    cancelled_count = 0
+
+    for r in bet_rows:
+        st = str(r["status"] or "PENDING").upper()
+        amt = float(r["amount"] or 0.0)
+        win_amt = float(r["win_amount"] or 0.0)
+        loss_amt = float(r["loss_amount"] or 0.0)
+        if st == "WON":
+            won_count += 1
+            total_wagered += amt
+            total_won += win_amt
+            net_pl = round(win_amt - amt, 2)
+        elif st == "LOST":
+            lost_count += 1
+            total_wagered += amt
+            net_pl = round(-amt, 2)
+        elif st in ("CANCELLED", "REFUNDED"):
+            cancelled_count += 1
+            net_pl = 0.0
+        else:
+            pending_count += 1
+            total_wagered += amt
+            net_pl = 0.0
+
+        bets_list.append({
+            "id": r["bet_id"],
+            "userId": r["user_id"],
+            "userName": r["user_name"],
+            "marketId": r["market"],
+            "marketName": f"{r['market']} MARKET",
+            "roundId": r["round_id"],
+            "period": r["period"],
+            "amount": round(amt, 2),
+            "type": r["prediction_type"],
+            "target": r["prediction_target"],
+            "mult": float(r["multiplier"] or 0.0),
+            "potentialPayout": float(r["potential_payout"] or 0.0),
+            "status": st,
+            "result": r["result_text"],
+            "winAmount": round(win_amt, 2),
+            "lossAmount": round(loss_amt, 2),
+            "netProfitLoss": net_pl,
+            "time": r["created_at"],
+            "settledAt": r["settled_at"],
+            "createdAtMs": int(r["created_at_ms"] or 0)
+        })
+
+    net_bet_pl = round(total_won - total_wagered, 2)
+
+    # 2. Transactions + Deposits + Withdrawals + Referral Commissions within window
+    c.execute("""
+        SELECT * FROM transactions
+        WHERE user_id = ? AND (created_at_ms >= ? OR created_at_ms = 0)
+        ORDER BY created_at_ms DESC, created_at DESC
+    """, (uid, cutoff_ms))
+    tx_rows = c.fetchall()
+
+    c.execute("""
+        SELECT * FROM deposits
+        WHERE user_id = ? AND (created_at_ms >= ? OR created_at_ms = 0)
+        ORDER BY created_at_ms DESC, created_at DESC
+    """, (uid, cutoff_ms))
+    dep_rows = c.fetchall()
+
+    c.execute("""
+        SELECT * FROM withdrawals
+        WHERE user_id = ? AND (created_at_ms >= ? OR created_at_ms = 0)
+        ORDER BY created_at_ms DESC, created_at DESC
+    """, (uid, cutoff_ms))
+    wd_rows = c.fetchall()
+
+    c.execute("""
+        SELECT * FROM referral_commissions
+        WHERE beneficiary_user_id = ? AND created_at_ms >= ?
+        ORDER BY created_at_ms DESC
+    """, (uid, cutoff_ms))
+    ref_rows = c.fetchall()
+
+    statement_entries = []
+    seen_dep_refs = set()
+    seen_wd_refs = set()
+
+    total_deposit_success = 0.0
+    total_deposit_pending = 0.0
+    total_withdrawal_approved = 0.0
+    total_withdrawal_pending = 0.0
+    total_refer_earn = 0.0
+
+    for d in dep_rows:
+        st_u = str(d["status"] or "IN PROCESS").upper()
+        amt = float(d["amount"] or 0.0)
+        ts_ms = _parse_ts_ms(d["created_at"], d["created_at_ms"] if "created_at_ms" in d.keys() else 0)
+        if ts_ms < cutoff_ms:
+            continue
+        if st_u == "SUCCESS":
+            total_deposit_success += amt
+        elif st_u == "IN PROCESS":
+            total_deposit_pending += amt
+        seen_dep_refs.add(f"UTR {d['utr']}")
+        statement_entries.append({
+            "id": d["id"],
+            "category": "DEPOSIT",
+            "type": "DEPOSIT",
+            "title": f"Deposit via {d['method'] or 'UPI'}",
+            "ref": f"UTR: {d['utr']}" + (f" ({d['reason']})" if d["reason"] else ""),
+            "amount": round(amt, 2),
+            "balanceBefore": None,
+            "balanceAfter": None,
+            "status": st_u,
+            "reason": d["reason"],
+            "time": d["created_at"] or d["time_str"] or "",
+            "timestampMs": ts_ms
+        })
+
+    for w in wd_rows:
+        st_u = str(w["status"] or "IN PROCESS").upper()
+        amt = float(w["amount"] or 0.0)
+        ts_ms = _parse_ts_ms(w["created_at"], w["created_at_ms"] if "created_at_ms" in w.keys() else 0)
+        if ts_ms < cutoff_ms:
+            continue
+        if st_u == "SUCCESS":
+            total_withdrawal_approved += amt
+        elif st_u == "IN PROCESS":
+            total_withdrawal_pending += amt
+        seen_wd_refs.add(str(w["destination"] or ""))
+        statement_entries.append({
+            "id": w["id"],
+            "category": "WITHDRAWAL",
+            "type": "WITHDRAWAL",
+            "title": f"Withdrawal to {w['bank_name'] or 'Bank / UPI'}",
+            "ref": (w["destination"] or f"A/C: {w['acc_no'] or w['upi_id'] or 'N/A'}") + (f" • {w['reason']}" if w["reason"] else ""),
+            "amount": round(-amt, 2),
+            "balanceBefore": None,
+            "balanceAfter": None,
+            "status": st_u,
+            "reason": w["reason"],
+            "time": w["created_at"] or w["time_str"] or "",
+            "timestampMs": ts_ms
+        })
+
+    for tx in tx_rows:
+        tx_type = str(tx["type"] or "").upper()
+        amt = float(tx["amount"] or 0.0)
+        ts_ms = _parse_ts_ms(tx["created_at"], tx["created_at_ms"] if "created_at_ms" in tx.keys() else 0)
+        if ts_ms < cutoff_ms:
+            continue
+
+        # Avoid duplicate deposit/withdrawal rows when already tracked via deposits/withdrawals table
+        if tx_type == "DEPOSIT" and str(tx["ref"] or "") in seen_dep_refs:
+            continue
+        if tx_type == "WITHDRAWAL" and str(tx["ref"] or "") in seen_wd_refs:
+            continue
+
+        if tx_type in ("COMMISSION", "REFERRAL_COMMISSION"):
+            total_refer_earn += amt
+            cat = "REFERRAL"
+        elif tx_type in ("BET", "WIN"):
+            cat = "PROFIT_LOSS"
+        elif tx_type == "DEPOSIT":
+            if amt > 0:
+                total_deposit_success += amt
+            cat = "DEPOSIT"
+        elif tx_type in ("WITHDRAWAL", "WITHDRAWAL_REFUND"):
+            cat = "WITHDRAWAL"
+        else:
+            cat = tx_type
+
+        statement_entries.append({
+            "id": tx["tx_id"],
+            "category": cat,
+            "type": tx_type,
+            "title": tx["title"] or tx_type,
+            "ref": tx["ref"] or "",
+            "amount": round(amt, 2),
+            "balanceBefore": round(float(tx["balance_before"]), 2),
+            "balanceAfter": round(float(tx["balance_after"]), 2),
+            "status": str(tx["status"] or "COMPLETED").upper(),
+            "reason": None,
+            "time": tx["created_at"] or "",
+            "timestampMs": ts_ms
+        })
+
+    for rc in ref_rows:
+        comm_amt = float(rc["commission_amount"] or 0.0)
+        ts_ms = int(rc["created_at_ms"] or 0)
+        # Check if already present via transactions table
+        already_in_tx = any(e["id"] == rc["id"] or (e["type"] == "REFERRAL_COMMISSION" and abs(e["timestampMs"] - ts_ms) < 500 and abs(e["amount"] - comm_amt) < 0.01) for e in statement_entries)
+        if not already_in_tx:
+            total_refer_earn += comm_amt
+            statement_entries.append({
+                "id": rc["id"],
+                "category": "REFERRAL",
+                "type": "REFERRAL_COMMISSION",
+                "title": f"Tier {rc['level']} Refer & Earn ({float(rc['rate'])*100:.2f}%)",
+                "ref": f"From {rc['source_user_name'] or rc['source_user_id']} (Bet {rc['source_bet_id'] or ''})",
+                "amount": round(comm_amt, 2),
+                "balanceBefore": None,
+                "balanceAfter": None,
+                "status": str(rc["status"] or "SETTLED").upper(),
+                "reason": None,
+                "time": rc["created_at"] or "",
+                "timestampMs": ts_ms
+            })
+
+    statement_entries.sort(key=lambda x: x["timestampMs"], reverse=True)
+
+    # Filter entries by requested category if specified
+    if cat_upper == "PROFIT_LOSS":
+        filtered_entries = [e for e in statement_entries if e["type"] in ("BET", "WIN", "REFUND", "PROFIT_LOSS")]
+    elif cat_upper in ("BETS", "BET"):
+        filtered_entries = [e for e in statement_entries if e["type"] == "BET"]
+    elif cat_upper == "WIN":
+        filtered_entries = [e for e in statement_entries if e["type"] == "WIN"]
+    elif cat_upper in ("REFERRAL", "COMMISSION", "REFER"):
+        filtered_entries = [e for e in statement_entries if e["category"] == "REFERRAL" or e["type"] in ("COMMISSION", "REFERRAL_COMMISSION")]
+    elif cat_upper == "DEPOSIT":
+        filtered_entries = [e for e in statement_entries if e["type"] == "DEPOSIT"]
+    elif cat_upper == "WITHDRAWAL":
+        filtered_entries = [e for e in statement_entries if e["type"] in ("WITHDRAWAL", "WITHDRAWAL_REFUND")]
+    else:
+        filtered_entries = statement_entries
+
+    summary = {
+        "walletBalance": round(wallet_balance, 2),
+        "days": days_clamped,
+        "retentionDays": RETENTION_DAYS,
+        "totalBetsCount": len(bets_list),
+        "wonBetsCount": won_count,
+        "lostBetsCount": lost_count,
+        "pendingBetsCount": pending_count,
+        "cancelledBetsCount": cancelled_count,
+        "totalWagered": round(total_wagered, 2),
+        "totalWon": round(total_won, 2),
+        "netBetProfitLoss": net_bet_pl,
+        "totalReferEarn": round(total_refer_earn, 2),
+        "totalDeposit": round(total_deposit_success, 2),
+        "pendingDepositTotal": round(total_deposit_pending, 2),
+        "totalWithdrawal": round(total_withdrawal_approved, 2),
+        "pendingWithdrawalTotal": round(total_withdrawal_pending, 2),
+        "lifetimeDeposit": round(float(u["total_deposit"]) if u else 0.0, 2),
+        "lifetimeWithdraw": round(float(u["total_withdraw"]) if u else 0.0, 2),
+    }
+
+    return {
+        "userId": uid,
+        "userName": user_name,
+        "referralCode": referral_code,
+        "days": days_clamped,
+        "retentionDays": RETENTION_DAYS,
+        "category": cat_upper,
+        "market": mkt_upper,
+        "generatedAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "summary": summary,
+        "bets": bets_list,
+        "statementEntries": filtered_entries
+    }
+
+def export_statement_csv(stmt):
+    buf = io.StringIO()
+    buf.write("\ufeff")  # UTF-8 BOM for Microsoft Excel compatibility
+    w = csv.writer(buf)
+    s = stmt["summary"]
+
+    w.writerow(["COLOUR KING - 90-DAY ACCOUNT & BETTING STATEMENT"])
+    w.writerow(["User ID", stmt["userId"], "User Name", stmt["userName"], "Statement Period", f"Last {stmt['days']} Days (Max Retention: {stmt['retentionDays']} Days)", "Generated At", stmt["generatedAt"]])
+    w.writerow([])
+    w.writerow(["FINANCIAL SUMMARY (INR)"])
+    w.writerow(["Current Wallet Balance", f"{s['walletBalance']:.2f}"])
+    w.writerow(["Total Bets Played", s["totalBetsCount"], "Won", s["wonBetsCount"], "Lost", s["lostBetsCount"], "Pending", s["pendingBetsCount"], "Cancelled", s["cancelledBetsCount"]])
+    w.writerow(["Total Bet Wagered", f"{s['totalWagered']:.2f}", "Total Bet Won", f"{s['totalWon']:.2f}", "Net Bet Profit / Loss", f"{s['netBetProfitLoss']:+.2f}"])
+    w.writerow(["Total Refer & Earn", f"{s['totalReferEarn']:.2f}", "Total Approved Deposits", f"{s['totalDeposit']:.2f}", "Total Approved Withdrawals", f"{s['totalWithdrawal']:.2f}"])
+    w.writerow(["Pending Deposits", f"{s['pendingDepositTotal']:.2f}", "Pending Withdrawals", f"{s['pendingWithdrawalTotal']:.2f}"])
+    w.writerow([])
+
+    w.writerow(["WALLET TRANSACTIONS STATEMENT (BET P&L, REFER EARN, DEPOSIT, WITHDRAWAL)"])
+    w.writerow(["Date & Time", "Entry ID", "Category", "Type", "Title", "Reference / UTR / Bank", "Amount (INR)", "Balance Before", "Balance After", "Status", "Reason"])
+    for e in stmt["statementEntries"]:
+        w.writerow([
+            e["time"],
+            e["id"],
+            e["category"],
+            e["type"],
+            e["title"],
+            e["ref"],
+            f"{e['amount']:+.2f}",
+            f"{e['balanceBefore']:.2f}" if e["balanceBefore"] is not None else "-",
+            f"{e['balanceAfter']:.2f}" if e["balanceAfter"] is not None else "-",
+            e["status"],
+            e.get("reason") or ""
+        ])
+
+    w.writerow([])
+    w.writerow(["90-DAY BETTING RECORDS HISTORY"])
+    w.writerow(["Placed At", "Bet ID", "Market", "Period Number", "Prediction Type", "Target", "Multiplier", "Stake (INR)", "Status", "Payout Won (INR)", "Net Profit/Loss (INR)", "Official Result"])
+    for b in stmt["bets"]:
+        w.writerow([
+            b["time"],
+            b["id"],
+            b["marketId"],
+            b["period"],
+            b["type"],
+            b["target"],
+            f"{b['mult']}x",
+            f"{b['amount']:.2f}",
+            b["status"],
+            f"{b['winAmount']:.2f}",
+            f"{b['netProfitLoss']:+.2f}",
+            b["result"]
+        ])
+
+    return buf.getvalue()
+
 class AppHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=DIRECTORY, **kwargs)
+
+    def _send_csv(self, csv_text, filename):
+        try:
+            body = csv_text.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv; charset=utf-8")
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except Exception as e:
+            print(f"Error sending CSV response: {e}")
 
     def _send_json(self, data, status=200):
         try:
@@ -725,10 +1144,40 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             m_code = qs.get("market", [None])[0]
             if m_code:
                 m_code = m_code.upper()
+            now_ms = int(time.time() * 1000)
 
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
+
+                # Settle any expired PENDING/LOCKED bets on-demand (zero rollover lag)
+                cur_period_map = {mk: calculate_authoritative_round(mk, now_ms)["period"] for mk in MARKET_KEYS}
+                c.execute("""
+                    SELECT DISTINCT market, round_id, period
+                    FROM bets
+                    WHERE user_id = ? AND status IN ('PENDING', 'LOCKED')
+                """, (uid,))
+                for pb in c.fetchall():
+                    pm = pb["market"]
+                    pp = pb["period"]
+                    if pm in cur_period_map and int(pp) < int(cur_period_map[pm]):
+                        c.execute("SELECT result_number, draw_mode FROM rounds WHERE round_id = ? AND status = 'SETTLED' AND result_number IS NOT NULL", (pb["round_id"],))
+                        settled_r = c.fetchone()
+                        if settled_r:
+                            win_n = int(settled_r["result_number"])
+                            d_m = settled_r["draw_mode"] or "AUTO_RANDOM"
+                        else:
+                            c.execute("SELECT manual_override_num, manual_override_period FROM markets WHERE code = ?", (pm,))
+                            ov_r = c.fetchone()
+                            ov_num = ov_r["manual_override_num"] if ov_r else None
+                            ov_per = ov_r["manual_override_period"] if ov_r else None
+                            if ov_num is not None and (ov_per == pp or not ov_per):
+                                win_n = int(ov_num)
+                                d_m = "MANUAL_ADMIN"
+                            else:
+                                win_n = generate_provably_fair_outcome(pm, pp)["number"]
+                                d_m = "AUTO_RANDOM"
+                        settle_round_in_db(conn, pm, pb["round_id"], pp, win_n, d_m, "SYSTEM_ROLLOVER")
 
                 # Active bets (PENDING or LOCKED)
                 if m_code:
@@ -745,24 +1194,34 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     """, (uid,))
                 active_rows = c.fetchall()
 
-                # All user bets history (limit 100)
+                # All user bets history within 90-day retention window (or requested days <= 90)
+                try:
+                    req_days = max(1, min(RETENTION_DAYS, int(qs.get("days", [str(RETENTION_DAYS)])[0])))
+                except Exception:
+                    req_days = RETENTION_DAYS
+                cutoff_ms = now_ms - (req_days * 86400 * 1000)
+
                 if m_code:
                     c.execute("""
                         SELECT * FROM bets
-                        WHERE user_id = ? AND market = ?
-                        ORDER BY created_at_ms DESC LIMIT 100
-                    """, (uid, m_code))
+                        WHERE user_id = ? AND market = ? AND created_at_ms >= ?
+                        ORDER BY created_at_ms DESC LIMIT 5000
+                    """, (uid, m_code, cutoff_ms))
                 else:
                     c.execute("""
                         SELECT * FROM bets
-                        WHERE user_id = ?
-                        ORDER BY created_at_ms DESC LIMIT 100
-                    """, (uid,))
+                        WHERE user_id = ? AND created_at_ms >= ?
+                        ORDER BY created_at_ms DESC LIMIT 5000
+                    """, (uid, cutoff_ms))
                 history_rows = c.fetchall()
 
                 conn.close()
 
             def row_to_dict(r):
+                amt = float(r["amount"] or 0.0)
+                win_amt = float(r["win_amount"] or 0.0)
+                st_u = str(r["status"] or "PENDING").upper()
+                net_pl = round(win_amt - amt, 2) if st_u == "WON" else (round(-amt, 2) if st_u == "LOST" else 0.0)
                 return {
                     "id": r["bet_id"],
                     "userId": r["user_id"],
@@ -771,23 +1230,64 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     "marketName": f"{r['market']} MARKET",
                     "roundId": r["round_id"],
                     "period": r["period"],
-                    "amount": r["amount"],
+                    "amount": amt,
                     "type": r["prediction_type"],
                     "target": r["prediction_target"],
                     "mult": r["multiplier"],
                     "potentialPayout": r["potential_payout"],
                     "status": r["status"],
                     "result": r["result_text"],
-                    "winAmount": r["win_amount"],
-                    "lossAmount": r["loss_amount"],
-                    "time": r["created_at"]
+                    "winAmount": win_amt,
+                    "lossAmount": float(r["loss_amount"] or 0.0),
+                    "netProfitLoss": net_pl,
+                    "time": r["created_at"],
+                    "createdAtMs": int(r["created_at_ms"] or 0)
                 }
 
             self._send_json({
                 "userId": uid,
+                "retentionDays": RETENTION_DAYS,
+                "days": req_days,
                 "activeBets": [row_to_dict(r) for r in active_rows],
                 "betHistory": [row_to_dict(r) for r in history_rows]
             })
+            return
+
+        # 4B. Full 90-Day Account Statement (Wallet, Bet P&L, Refer & Earn, Deposit, Withdrawal)
+        if path == "/api/statement":
+            uid = qs.get("userId", ["USR-1001"])[0]
+            try:
+                req_days = int(qs.get("days", [str(RETENTION_DAYS)])[0])
+            except Exception:
+                req_days = RETENTION_DAYS
+            cat = qs.get("category", ["ALL"])[0]
+            mkt = qs.get("market", ["ALL"])[0]
+
+            with db_lock:
+                conn = get_db()
+                stmt = build_user_statement(conn, uid, days=req_days, category=cat, market_filter=mkt)
+                conn.close()
+            self._send_json(stmt)
+            return
+
+        # 4C. Downloadable Statement Export (CSV)
+        if path == "/api/statement/export":
+            uid = qs.get("userId", ["USR-1001"])[0]
+            try:
+                req_days = int(qs.get("days", [str(RETENTION_DAYS)])[0])
+            except Exception:
+                req_days = RETENTION_DAYS
+            cat = qs.get("category", ["ALL"])[0]
+            mkt = qs.get("market", ["ALL"])[0]
+
+            with db_lock:
+                conn = get_db()
+                stmt = build_user_statement(conn, uid, days=req_days, category=cat, market_filter=mkt)
+                conn.close()
+            csv_text = export_statement_csv(stmt)
+            safe_uid = "".join(ch for ch in uid if ch.isalnum() or ch in ("-", "_")) or "user"
+            fname = f"ColourKing_{stmt['days']}Day_Statement_{safe_uid}_{datetime.now().strftime('%Y%m%d')}.csv"
+            self._send_csv(csv_text, fname)
             return
 
         # 5. User Profile & Balance
@@ -1057,9 +1557,32 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 # 4. Create Ledger Transaction
                 tx_id = f"TX-BET-{int(now_ms)}-{random.randint(100, 999)}"
                 c.execute("""
-                    INSERT INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status)
-                    VALUES (?, ?, 'BET', ?, ?, ?, ?, ?, 'COMPLETED')
-                """, (tx_id, uid, f"Bet on {m_code}", f"Target {target} ({mult}X)", -amount, curr_bal, new_bal))
+                    INSERT INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status, created_at_ms)
+                    VALUES (?, ?, 'BET', ?, ?, ?, ?, ?, 'COMPLETED', ?)
+                """, (tx_id, uid, f"Bet on {m_code} #{period}", f"Target {target} ({mult}X)", -amount, curr_bal, new_bal, now_ms))
+
+                # 5. Credit Level-1 Refer & Earn Commission if user has sponsor
+                sponsor_id = user["referred_by"] if "referred_by" in user.keys() else None
+                if sponsor_id:
+                    c.execute("SELECT id, name, balance FROM users WHERE id = ?", (sponsor_id,))
+                    sp = c.fetchone()
+                    if sp:
+                        comm_rate = 0.01
+                        comm_amt = round(amount * comm_rate, 2)
+                        if comm_amt > 0:
+                            sp_bal = float(sp["balance"])
+                            sp_new = round(sp_bal + comm_amt, 2)
+                            c.execute("UPDATE users SET balance = ? WHERE id = ?", (sp_new, sp["id"]))
+                            rc_id = f"REF-{int(now_ms)}-{random.randint(100, 999)}"
+                            c.execute("""
+                                INSERT INTO referral_commissions (id, beneficiary_user_id, source_user_id, source_user_name, source_bet_id, level, rate, eligible_amount, commission_amount, status, created_at_ms)
+                                VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, 'SETTLED', ?)
+                            """, (rc_id, sp["id"], uid, user["name"], bet_id, comm_rate, amount, comm_amt, now_ms))
+                            rtx_id = f"TX-REF-{int(now_ms)}-{random.randint(100, 999)}"
+                            c.execute("""
+                                INSERT INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status, created_at_ms)
+                                VALUES (?, ?, 'REFERRAL_COMMISSION', ?, ?, ?, ?, ?, 'COMPLETED', ?)
+                            """, (rtx_id, sp["id"], "Tier 1 Refer & Earn Reward", f"From {user['name']} ({m_code} Bet ₹{amount:.2f})", comm_amt, sp_bal, sp_new, now_ms))
 
                 conn.commit()
                 conn.close()
@@ -1136,9 +1659,9 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
 
                 tx_id = f"TX-REF-{int(now_ms)}-{random.randint(100, 999)}"
                 c.execute("""
-                    INSERT INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status)
-                    VALUES (?, ?, 'REFUND', ?, ?, ?, ?, ?, 'COMPLETED')
-                """, (tx_id, uid, f"Refund {bet['market']} #{bet['period']}", f"Target {bet['prediction_target']} Cancelled", refund_amt, curr_bal, new_bal))
+                    INSERT INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status, created_at_ms)
+                    VALUES (?, ?, 'REFUND', ?, ?, ?, ?, ?, 'COMPLETED', ?)
+                """, (tx_id, uid, f"Refund {bet['market']} #{bet['period']}", f"Target {bet['prediction_target']} Cancelled", refund_amt, curr_bal, new_bal, now_ms))
 
                 conn.commit()
                 conn.close()
@@ -1235,9 +1758,9 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 c.execute("UPDATE users SET balance = ? WHERE id = ?", (new_bal, uid))
                 tx_id = f"TX-ADJ-{int(now_ms)}-{random.randint(100, 999)}"
                 c.execute("""
-                    INSERT INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status)
-                    VALUES (?, ?, 'ADJUSTMENT', 'Admin Wallet Adjustment', ?, ?, ?, ?, 'COMPLETED')
-                """, (tx_id, uid, f"Admin {adj_type}", amount if adj_type == "CREDIT" else -amount, curr_bal, new_bal))
+                    INSERT INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status, created_at_ms)
+                    VALUES (?, ?, 'ADJUSTMENT', 'Admin Wallet Adjustment', ?, ?, ?, ?, 'COMPLETED', ?)
+                """, (tx_id, uid, f"Admin {adj_type}", amount if adj_type == "CREDIT" else -amount, curr_bal, new_bal, now_ms))
 
                 c.execute("""
                     INSERT INTO admin_audit_logs (actor, action, entity, desc)
@@ -1281,9 +1804,9 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 conn = get_db()
                 c = conn.cursor()
                 c.execute("""
-                    INSERT INTO deposits (id, user_id, user_name, amount, method, utr, time_str, status)
-                    VALUES (?, ?, ?, ?, ?, ?, 'Just now', 'IN PROCESS')
-                """, (dep_id, uid, uname, amount, method, utr))
+                    INSERT INTO deposits (id, user_id, user_name, amount, method, utr, time_str, status, created_at_ms)
+                    VALUES (?, ?, ?, ?, ?, ?, 'Just now', 'IN PROCESS', ?)
+                """, (dep_id, uid, uname, amount, method, utr, now_ms))
                 conn.commit()
                 conn.close()
 
@@ -1306,9 +1829,9 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     curr_bal = c.fetchone()["balance"]
                     tx_id = f"TX-DEP-{int(now_ms)}-{random.randint(100, 999)}"
                     c.execute("""
-                        INSERT INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status)
-                        VALUES (?, ?, 'DEPOSIT', 'Approved Deposit', ?, ?, ?, ?, 'COMPLETED')
-                    """, (tx_id, uid, f"UTR {d['utr']}", amt, curr_bal - amt, curr_bal))
+                        INSERT INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status, created_at_ms)
+                        VALUES (?, ?, 'DEPOSIT', 'Approved Deposit', ?, ?, ?, ?, 'COMPLETED', ?)
+                    """, (tx_id, uid, f"UTR {d['utr']}", amt, curr_bal - amt, curr_bal, now_ms))
                     c.execute("""
                         INSERT INTO admin_audit_logs (actor, action, entity, desc)
                         VALUES ('ColourPrince', 'DEPOSIT_APPROVE', ?, ?)
@@ -1360,15 +1883,15 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 wd_id = f"WD-{datetime.now().strftime('%H%M%S')}"
                 destination = f"{banking_name} • {bank_name} (A/C: {acc_no}, IFSC: {ifsc}) • UPI: {upi_id}"
                 c.execute("""
-                    INSERT INTO withdrawals (id, user_id, user_name, amount, upi_id, bank_name, acc_no, ifsc, banking_name, destination, time_str, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Just now', 'IN PROCESS')
-                """, (wd_id, uid, uname, amount, upi_id, bank_name, acc_no, ifsc, banking_name, destination))
+                    INSERT INTO withdrawals (id, user_id, user_name, amount, upi_id, bank_name, acc_no, ifsc, banking_name, destination, time_str, status, created_at_ms)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Just now', 'IN PROCESS', ?)
+                """, (wd_id, uid, uname, amount, upi_id, bank_name, acc_no, ifsc, banking_name, destination, now_ms))
 
                 tx_id = f"TX-WD-{int(now_ms)}-{random.randint(100, 999)}"
                 c.execute("""
-                    INSERT INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status)
-                    VALUES (?, ?, 'WITHDRAWAL', 'Withdrawal Request', ?, ?, ?, ?, 'PENDING')
-                """, (tx_id, uid, destination, -amount, urow["balance"], new_bal))
+                    INSERT INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status, created_at_ms)
+                    VALUES (?, ?, 'WITHDRAWAL', 'Withdrawal Request', ?, ?, ?, ?, 'PENDING', ?)
+                """, (tx_id, uid, destination, -amount, urow["balance"], new_bal, now_ms))
 
                 conn.commit()
                 conn.close()
@@ -1406,7 +1929,16 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 if w and w["status"] != "FAIL":
                     c.execute("UPDATE withdrawals SET status = 'FAIL', reason = ? WHERE id = ?", (reason, wd_id))
                     # Refund balance back to user
-                    c.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (w["amount"], w["user_id"]))
+                    c.execute("SELECT balance FROM users WHERE id = ?", (w["user_id"],))
+                    urow = c.fetchone()
+                    curr_bal = float(urow["balance"]) if urow else 0.0
+                    new_bal = round(curr_bal + float(w["amount"]), 2)
+                    c.execute("UPDATE users SET balance = ? WHERE id = ?", (new_bal, w["user_id"]))
+                    tx_id = f"TX-WDREF-{int(now_ms)}-{random.randint(100, 999)}"
+                    c.execute("""
+                        INSERT INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status, created_at_ms)
+                        VALUES (?, ?, 'WITHDRAWAL_REFUND', 'Withdrawal Rejected Refund', ?, ?, ?, ?, 'COMPLETED', ?)
+                    """, (tx_id, w["user_id"], f"{wd_id}: {reason}", float(w["amount"]), curr_bal, new_bal, now_ms))
                     c.execute("""
                         INSERT INTO admin_audit_logs (actor, action, entity, desc)
                         VALUES ('ColourPrince', 'WITHDRAWAL_REJECT', ?, ?)

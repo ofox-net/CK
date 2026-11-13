@@ -34,6 +34,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -43,6 +46,7 @@ import androidx.compose.ui.unit.sp
 import com.example.ui.components.borderStroke
 import com.example.data.model.*
 import com.example.domain.RoundResult
+import com.example.domain.StatementExporter
 import com.example.ui.MainViewModel
 import com.example.ui.components.CasinoChip
 import com.example.ui.components.ProvablyFairDialog
@@ -72,10 +76,28 @@ fun GameScreen(
     val gameConfig by viewModel.gameConfig.collectAsState()
 
     val wallet by viewModel.wallet.collectAsState()
+    val context = LocalContext.current
+    val statementDays by viewModel.statementDays.collectAsState()
     var pendingBetTarget by remember { mutableStateOf<Pair<BetType, String>?>(null) }
     var showProvablyFairDialog by remember { mutableStateOf(false) }
     var activeTab by remember { mutableStateOf(0) } // 0: Game, 1: My Bets
     var betFilterMarketId by remember { mutableStateOf("ALL") }
+
+    val csvLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val csvData = viewModel.generateStatementCsv(days = statementDays, filter = "PROFIT_LOSS")
+                context.contentResolver.openOutputStream(uri)?.use { out ->
+                    out.write(csvData.toByteArray(Charsets.UTF_8))
+                }
+                viewModel.postNotification("90-Day Bet & P&L Statement CSV saved!", true)
+            } catch (e: Exception) {
+                viewModel.postNotification("Failed to save statement: ${e.message}", false)
+            }
+        }
+    }
 
 
 
@@ -111,6 +133,23 @@ fun GameScreen(
             clientSeed = currentRound?.clientSeed ?: "apex_community_seed",
             nonce = currentRound?.nonce ?: 0L,
             onDismiss = { showProvablyFairDialog = false }
+        )
+    }
+
+    val filteredBets = remember(userBets, betFilterMarketId, statementDays) {
+        val cutoffMs = StatementExporter.cutoffTimestampMs(statementDays)
+        userBets.filter { b ->
+            val mOk = betFilterMarketId == "ALL" || b.gameId == betFilterMarketId
+            mOk && b.createdAt >= cutoffMs
+        }
+    }
+    val betSummary = remember(filteredBets, statementDays, wallet) {
+        StatementExporter.computeSummary(
+            wallet = wallet,
+            bets = filteredBets,
+            ledger = emptyList(),
+            commissions = emptyList(),
+            days = statementDays
         )
     }
 
@@ -263,8 +302,140 @@ fun GameScreen(
                 Spacer(modifier = Modifier.height(24.dp))
             }
         } else {
-            // User Bets History Tab with Market Filter Chips
+            // User Bets History Tab (90-Day Records + P&L + CSV Export)
             item {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = SurfaceDark,
+                    border = borderStroke(1.dp, GoldAccent.copy(alpha = 0.4f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    text = "90-Day Bet Records (${filteredBets.size})",
+                                    color = TextPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                                Text(
+                                    text = "Stored up to 90 days • All Markets",
+                                    color = TextMuted,
+                                    fontSize = 10.sp
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    val df = SimpleDateFormat("yyyyMMdd", Locale.ENGLISH).format(Date())
+                                    csvLauncher.launch("ColourKing_${statementDays}Day_Bets_$df.csv")
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                border = borderStroke(1.dp, GoldAccent),
+                                modifier = Modifier
+                                    .height(34.dp)
+                                    .testTag("download_bets_statement_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Download,
+                                    contentDescription = "Download Bet Statement CSV",
+                                    tint = GoldAccent,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("CSV Statement", color = GoldAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = CardHighlight,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(modifier = Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("Wagered", color = TextMuted, fontSize = 10.sp)
+                                    Text(
+                                        text = MoneyUtils.formatCents(betSummary.totalBetWageredCents),
+                                        color = GoldAccent,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = CardHighlight,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(modifier = Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("Won Payout", color = TextMuted, fontSize = 10.sp)
+                                    Text(
+                                        text = MoneyUtils.formatCents(betSummary.totalBetWonCents),
+                                        color = ElectricCyan,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                            val netPl = betSummary.netBetProfitLossCents
+                            val plColor = if (netPl >= 0L) NeonGreen else NeonRed
+                            val plSign = if (netPl >= 0L) "+" else "-"
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = CardHighlight,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(modifier = Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("Net Bet P&L", color = TextMuted, fontSize = 10.sp)
+                                    Text(
+                                        text = "$plSign${MoneyUtils.formatCents(kotlin.math.abs(netPl))}",
+                                        color = plColor,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(90 to "90 Days", 30 to "30 Days", 7 to "7 Days").forEach { (d, label) ->
+                                val active = statementDays == d
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (active) ElectricCyan else CardHighlight)
+                                        .clickable { viewModel.setStatementDays(d) }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        text = label,
+                                        color = if (active) ObsidianBg else TextSecondary,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+
                 MarketBetsFilterRow(
                     selectedFilter = betFilterMarketId,
                     onSelectFilter = { betFilterMarketId = it }
@@ -272,18 +443,12 @@ fun GameScreen(
                 Spacer(modifier = Modifier.height(10.dp))
             }
 
-            val filteredBets = if (betFilterMarketId == "ALL") {
-                userBets
-            } else {
-                userBets.filter { it.gameId == betFilterMarketId }
-            }
-
             if (filteredBets.isEmpty()) {
                 item {
                     val filterName = if (betFilterMarketId == "ALL") "any market" else GameMarkets.getById(betFilterMarketId).name
                     EmptyStateCard(
                         icon = Icons.Default.ReceiptLong,
-                        title = "No Bets in $filterName",
+                        title = "No Bets in $filterName ($statementDays Days)",
                         subtitle = "Select a color or number in the Live Arena to start placing bets!"
                     )
                 }
@@ -2443,9 +2608,17 @@ fun BetHistoryItem(bet: BetEntity, round: GameRoundEntity? = null) {
                             fontSize = 12.sp
                         )
                     } else if (bet.status == "WON") {
+                        val netProfit = bet.actualPayout - bet.amount
                         Text(
-                            text = "Win: +" + MoneyUtils.formatCents(bet.actualPayout),
+                            text = "Win: +" + MoneyUtils.formatCents(bet.actualPayout) + " (P&L +${MoneyUtils.formatCents(netProfit)})",
                             color = NeonGreen,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 11.sp
+                        )
+                    } else if (bet.status == "LOST") {
+                        Text(
+                            text = "Loss: -" + MoneyUtils.formatCents(bet.amount),
+                            color = NeonRed,
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 12.sp
                         )

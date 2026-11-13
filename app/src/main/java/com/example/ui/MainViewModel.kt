@@ -144,11 +144,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         database.gameRoundDao().getRecentCompletedRounds(tId, gameId)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Active user bets (all)
+    // Active user bets (last 90 days retained & displayed)
     val userBets: StateFlow<List<BetEntity>> = combine(_activeTenantId, _activeUserId) { tenantId, userId ->
         Pair(tenantId, userId)
     }.flatMapLatest { (tId, uId) ->
-        database.betDao().getUserBetsFlow(tId, uId)
+        val cutoffMs = StatementExporter.cutoffTimestampMs(StatementExporter.RETENTION_DAYS)
+        database.betDao().getUserBetsSinceFlow(tId, uId, cutoffMs)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // All rounds map for looking up historical bet results and period info
@@ -192,6 +193,43 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }.flatMapLatest { (tId, uId) ->
         database.referralDao().getDescendantsForUserFlow(tId, uId)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Statement Window & Computed Summary (Wallet, Bet P&L, Refer & Earn, Deposit, Withdrawal)
+    private val _statementDays = MutableStateFlow(StatementExporter.RETENTION_DAYS)
+    val statementDays = _statementDays.asStateFlow()
+
+    fun setStatementDays(days: Int) {
+        _statementDays.value = days.coerceIn(1, StatementExporter.RETENTION_DAYS)
+    }
+
+    val statementSummary: StateFlow<AccountStatementSummary> = combine(
+        wallet,
+        userBets,
+        userLedger,
+        userCommissions,
+        _statementDays
+    ) { w, bets, ledger, comms, days ->
+        StatementExporter.computeSummary(
+            wallet = w,
+            bets = bets,
+            ledger = ledger,
+            commissions = comms,
+            days = days
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AccountStatementSummary())
+
+    fun generateStatementCsv(days: Int = _statementDays.value, filter: String = "ALL"): String {
+        return StatementExporter.buildStatementCsv(
+            user = _activeUser.value,
+            wallet = wallet.value,
+            bets = userBets.value,
+            ledger = userLedger.value,
+            commissions = userCommissions.value,
+            roundsMap = allRoundsMap.value,
+            days = days,
+            filter = filter
+        )
+    }
 
     // Game Config Flow for selected market
     val gameConfig: StateFlow<GameConfigEntity?> = combine(_activeTenantId, _selectedMarket) { tId, market ->
@@ -254,6 +292,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         // Start Real-Time Game Engine loop for all 4 Markets
         gameEngineService.startEngine(_activeTenantId.value)
+
+        // Collect real-time settlement events so placed bet results notify & play sound immediately
+        viewModelScope.launch {
+            gameEngineService.socketEvents.collect { event ->
+                when (event) {
+                    is GameSocketEvent.SettlementCompleted -> {
+                        val userId = _activeUserId.value
+                        val settledBets = database.betDao().getBetsForRound(event.roundId)
+                            .filter { it.userId == userId }
+                        if (settledBets.isNotEmpty()) {
+                            val totalWon = settledBets.filter { it.status == BetStatus.WON.name }.sumOf { it.actualPayout }
+                            val periodStr = event.roundId.substringAfterLast("_")
+                            if (totalWon > 0L) {
+                                playSoundEffect(soundFileName = "win-fanfare.mp3")
+                                postNotification("🎉 Round #$periodStr Result: WON ${MoneyUtils.formatCents(totalWon)}!", true)
+                            } else {
+                                postNotification("🎲 Result declared for Period #$periodStr — Bet status updated!", true)
+                            }
+                        }
+                    }
+                    else -> Unit
+                }
+            }
+        }
     }
 
     fun dismissNotification() {

@@ -123,10 +123,13 @@ interface BetDao {
     @Query("SELECT * FROM bets WHERE roundId = :roundId")
     suspend fun getBetsForRound(roundId: String): List<BetEntity>
 
-    @Query("SELECT * FROM bets WHERE tenantId = :tenantId AND userId = :userId ORDER BY createdAt DESC LIMIT 50")
+    @Query("SELECT * FROM bets WHERE tenantId = :tenantId AND userId = :userId AND createdAt >= :sinceTimestamp ORDER BY createdAt DESC")
+    fun getUserBetsSinceFlow(tenantId: String, userId: String, sinceTimestamp: Long): Flow<List<BetEntity>>
+
+    @Query("SELECT * FROM bets WHERE tenantId = :tenantId AND userId = :userId ORDER BY createdAt DESC")
     fun getUserBetsFlow(tenantId: String, userId: String): Flow<List<BetEntity>>
 
-    @Query("SELECT * FROM bets WHERE tenantId = :tenantId AND userId = :userId AND gameId = :gameId ORDER BY createdAt DESC LIMIT 50")
+    @Query("SELECT * FROM bets WHERE tenantId = :tenantId AND userId = :userId AND gameId = :gameId ORDER BY createdAt DESC")
     fun getUserBetsByMarketFlow(tenantId: String, userId: String, gameId: String): Flow<List<BetEntity>>
 
     @Query("SELECT * FROM bets WHERE roundId = :roundId AND userId = :userId")

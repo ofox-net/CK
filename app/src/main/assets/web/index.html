@@ -1353,15 +1353,41 @@
           </div>
         </div>
 
-        <!-- My Bet Slips History Section with Market Filter Chips -->
+        <!-- My Bet Slips History Section (90-Day Records & P&L) -->
         <div class="card">
           <div class="section-title">
-            <span>📋 My Bet Slips (History)</span>
-            <span id="userBetSlipsCountBadge" class="section-badge">0 Slips</span>
+            <span>📋 My Bet Slips (90-Day Records)</span>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <button class="chip-filter-btn" style="padding:3px 8px; font-size:10px; border-color:var(--gold); color:var(--gold);" onclick="downloadAccountStatement('BETS')">📥 CSV Statement</button>
+              <span id="userBetSlipsCountBadge" class="section-badge">0 Slips</span>
+            </div>
           </div>
-          
+
+          <!-- 90-Day Bet Profit / Loss Quick Strip -->
+          <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; margin-bottom:8px;">
+            <div style="background:var(--card-highlight); padding:6px 8px; border-radius:8px; text-align:center;">
+              <span style="font-size:9px; color:var(--text-muted);">Wagered</span>
+              <div style="font-size:12px; font-weight:900; color:var(--gold); font-family:monospace;" id="slipsTotalWagered">₹0.00</div>
+            </div>
+            <div style="background:var(--card-highlight); padding:6px 8px; border-radius:8px; text-align:center;">
+              <span style="font-size:9px; color:var(--text-muted);">Won Payout</span>
+              <div style="font-size:12px; font-weight:900; color:var(--cyan); font-family:monospace;" id="slipsTotalWon">₹0.00</div>
+            </div>
+            <div style="background:var(--card-highlight); padding:6px 8px; border-radius:8px; text-align:center;">
+              <span style="font-size:9px; color:var(--text-muted);">Net Bet P&L</span>
+              <div style="font-size:12px; font-weight:900; color:var(--green); font-family:monospace;" id="slipsNetProfitLoss">₹0.00</div>
+            </div>
+          </div>
+
+          <!-- Date Range + Market Filter Chips -->
+          <div class="filter-chips-row" style="margin-bottom:6px;">
+            <button class="chip-filter-btn active" onclick="setStatementDays(90, this)">90 Days</button>
+            <button class="chip-filter-btn" onclick="setStatementDays(30, this)">30 Days</button>
+            <button class="chip-filter-btn" onclick="setStatementDays(7, this)">7 Days</button>
+          </div>
+
           <!-- Market Filter Chips -->
-          <div class="filter-chips-row">
+          <div class="filter-chips-row" id="slipsMarketFilterRow">
             <button class="chip-filter-btn active" onclick="filterBetSlips('ALL', this)">ALL</button>
             <button class="chip-filter-btn" onclick="filterBetSlips('MIAMI', this)">🌴 MIAMI</button>
             <button class="chip-filter-btn" onclick="filterBetSlips('VEGAS', this)">🎰 VEGAS</button>
@@ -1370,7 +1396,7 @@
           </div>
 
           <div class="bets-list" id="userBetSlipsList">
-            <p style="font-size:12px; color:var(--text-muted); text-align:center; padding:10px;">Placed bet slips with Market, Period #, Seconds timing, Result & Status (Wait, Won, Lost) will appear here!</p>
+            <p style="font-size:12px; color:var(--text-muted); text-align:center; padding:10px;">All bet records up to 90 days (Market, Period #, Result, Profit/Loss & Status) are stored and shown here!</p>
           </div>
         </div>
 
@@ -1490,41 +1516,63 @@
           </div>
         </div>
 
-        <!-- Lifetime Financial Stats -->
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-          <div class="card" style="padding:10px;">
-            <span style="font-size:10px; color:var(--text-muted);">Total Deposits</span>
-            <div style="font-size:15px; font-weight:900; color:var(--green);" id="walletTotalDeposit">₹75,000.00</div>
+        <!-- 90-Day Financial Statement Summary -->
+        <div class="card" style="border:1px solid var(--cyan); padding:12px;">
+          <div class="section-title" style="margin-bottom:8px;">
+            <span>📊 Account Statement Summary (<span id="stmtDaysLabel">90</span> Days)</span>
+            <span class="section-badge" style="background:rgba(0,229,255,0.15); color:var(--cyan);">90-Day Vault</span>
           </div>
-          <div class="card" style="padding:10px;">
-            <span style="font-size:10px; color:var(--text-muted);">Total Withdrawals</span>
-            <div style="font-size:15px; font-weight:900; color:var(--cyan);" id="walletTotalWithdraw">₹28,000.00</div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+            <div style="background:var(--card-highlight); padding:10px; border-radius:10px;">
+              <span style="font-size:10px; color:var(--text-muted);">Bet Profit / Loss</span>
+              <div style="font-size:16px; font-weight:900; color:var(--green); font-family:monospace;" id="walletNetBetPL">₹0.00</div>
+              <div style="font-size:9px; color:var(--text-muted); margin-top:2px;" id="walletBetWagerWinSub">Won ₹0 • Wager ₹0</div>
+            </div>
+            <div style="background:var(--card-highlight); padding:10px; border-radius:10px;">
+              <span style="font-size:10px; color:var(--text-muted);">Refer &amp; Earn</span>
+              <div style="font-size:16px; font-weight:900; color:var(--gold); font-family:monospace;" id="walletTotalReferEarn">₹0.00</div>
+              <div style="font-size:9px; color:var(--text-muted); margin-top:2px;">Affiliate Commission</div>
+            </div>
+            <div style="background:var(--card-highlight); padding:10px; border-radius:10px;">
+              <span style="font-size:10px; color:var(--text-muted);">Total Deposits</span>
+              <div style="font-size:15px; font-weight:900; color:var(--green); font-family:monospace;" id="walletTotalDeposit">₹0.00</div>
+              <div style="font-size:9px; color:var(--text-muted); margin-top:2px;" id="walletDepositPendingSub">Approved in window</div>
+            </div>
+            <div style="background:var(--card-highlight); padding:10px; border-radius:10px;">
+              <span style="font-size:10px; color:var(--text-muted);">Total Withdrawals</span>
+              <div style="font-size:15px; font-weight:900; color:var(--cyan); font-family:monospace;" id="walletTotalWithdraw">₹0.00</div>
+              <div style="font-size:9px; color:var(--text-muted); margin-top:2px;" id="walletWithdrawPendingSub">Approved in window</div>
+            </div>
           </div>
-          <div class="card" style="padding:10px;">
-            <span style="font-size:10px; color:var(--text-muted);">Total Wagering</span>
-            <div style="font-size:15px; font-weight:900; color:var(--gold);">₹1,42,800.00</div>
-          </div>
-          <div class="card" style="padding:10px;">
-            <span style="font-size:10px; color:var(--text-muted);">Total Winnings</span>
-            <div style="font-size:15px; font-weight:900; color:var(--green);">₹1,84,350.00</div>
+
+          <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; align-items:center;">
+            <div style="display:flex; gap:4px;" id="walletDaysFilterRow">
+              <button class="chip-filter-btn active" onclick="setStatementDays(90, this)">90D</button>
+              <button class="chip-filter-btn" onclick="setStatementDays(30, this)">30D</button>
+              <button class="chip-filter-btn" onclick="setStatementDays(7, this)">7D</button>
+            </div>
+            <button class="btn-primary" style="flex:1; padding:8px 10px; font-size:11px; background:linear-gradient(135deg, var(--gold), #FF9100); color:#000;" onclick="downloadAccountStatement()">📥 Download Statement (CSV)</button>
+            <button class="btn-secondary" style="padding:8px 10px; font-size:11px;" onclick="openStatementModal()">📄 View Statement</button>
           </div>
         </div>
 
         <!-- Immutable Transaction Ledger -->
         <div class="card">
           <div class="section-title">
-            <span>Immutable Transaction Ledger</span>
-            <span id="ledgerCountBadge" class="section-badge">All</span>
+            <span>Immutable Transaction Statement</span>
+            <span id="ledgerCountBadge" class="section-badge">0 Entries</span>
           </div>
 
           <!-- Ledger Filter Chips -->
-          <div class="filter-chips-row">
+          <div class="filter-chips-row" id="walletLedgerFilterRow">
             <button class="chip-filter-btn active" onclick="filterLedger('ALL', this)">ALL</button>
+            <button class="chip-filter-btn" onclick="filterLedger('PROFIT_LOSS', this)">Bet P&L</button>
             <button class="chip-filter-btn" onclick="filterLedger('DEPOSIT', this)">Deposits</button>
             <button class="chip-filter-btn" onclick="filterLedger('WITHDRAWAL', this)">Withdrawals</button>
             <button class="chip-filter-btn" onclick="filterLedger('BET', this)">Bets</button>
             <button class="chip-filter-btn" onclick="filterLedger('WIN', this)">Wins</button>
-            <button class="chip-filter-btn" onclick="filterLedger('COMMISSION', this)">Commissions</button>
+            <button class="chip-filter-btn" onclick="filterLedger('COMMISSION', this)">Refer &amp; Earn</button>
           </div>
 
           <div class="bets-list" id="walletLedgerList">
@@ -2149,6 +2197,21 @@
     </div>
   </div>
 
+  <!-- 90-Day Account Statement Modal -->
+  <div class="modal-overlay" id="statementModal">
+    <div class="modal-content" style="max-width:460px; max-height:85vh; overflow-y:auto;">
+      <div class="modal-header">
+        <div class="modal-title" style="color:var(--gold);">📊 90-Day Wallet &amp; Bet Statement</div>
+        <button class="btn-close" onclick="closeModal('statementModal')">✕</button>
+      </div>
+      <div id="statementModalSummary" style="font-size:12px; display:flex; flex-direction:column; gap:8px;"></div>
+      <div style="display:flex; gap:8px; margin-top:10px;">
+        <button class="btn-primary" style="flex:1;" onclick="downloadAccountStatement()">📥 Download CSV Statement</button>
+        <button class="btn-secondary" onclick="closeModal('statementModal')">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Logout Confirmation Modal -->
   <div class="modal-overlay" id="logoutModal">
     <div class="modal-content">
@@ -2361,14 +2424,30 @@
       ];
     }
 
-    // Transaction Ledger History
-    let walletLedger = [
-      { id: 'TX-1092', type: 'DEPOSIT', title: 'Deposit via UPI (Instant)', ref: 'UTR #429188402911', amount: 5000.00, time: 'Today, 11:24 AM', status: 'COMPLETED' },
-      { id: 'TX-1088', type: 'WIN', title: 'Win MIAMI Round #220', ref: 'Target RED 2.0X', amount: 2000.00, time: 'Today, 11:25 AM', status: 'COMPLETED' },
-      { id: 'TX-1085', type: 'BET', title: 'Bet Placed on MIAMI', ref: 'Target RED 2.0X', amount: -1000.00, time: 'Today, 11:22 AM', status: 'COMPLETED' },
-      { id: 'TX-1076', type: 'COMMISSION', title: 'Tier 1 Referral Reward', ref: 'From Aman_Trader', amount: 350.00, time: 'Today, 10:45 AM', status: 'COMPLETED' },
-      { id: 'TX-1052', type: 'WITHDRAWAL', title: 'Withdrawal to SBI A/C', ref: 'Payout to 40928172901', amount: -8000.00, time: 'Today, 09:30 AM', status: 'PENDING' }
-    ];
+    const RETENTION_90D_MS = 90 * 24 * 60 * 60 * 1000;
+    let statementDaysFilter = 90;
+    let latestStatementData = null;
+
+    function pruneAndSaveBetSlips(slips) {
+      const cutoff = Date.now() - RETENTION_90D_MS;
+      const kept = (Array.isArray(slips) ? slips : []).filter(s => {
+        const ts = Number(s && (s.createdAtMs || 0));
+        return !ts || ts >= cutoff;
+      });
+      try {
+        localStorage.setItem('colour_king_user_bet_slips', JSON.stringify(kept));
+      } catch (e) {}
+      return kept;
+    }
+
+    // Transaction Ledger History (Synced live from /api/statement; local fallback in file:// preview)
+    let walletLedger = window.location.protocol === 'file:' ? [
+      { id: 'TX-1092', type: 'DEPOSIT', category: 'DEPOSIT', title: 'Deposit via UPI (Instant)', ref: 'UTR #429188402911', amount: 5000.00, time: 'Today, 11:24 AM', status: 'SUCCESS' },
+      { id: 'TX-1088', type: 'WIN', category: 'PROFIT_LOSS', title: 'Win MIAMI Round #220', ref: 'Target RED 2.0X', amount: 2000.00, time: 'Today, 11:25 AM', status: 'COMPLETED' },
+      { id: 'TX-1085', type: 'BET', category: 'PROFIT_LOSS', title: 'Bet Placed on MIAMI', ref: 'Target RED 2.0X', amount: -1000.00, time: 'Today, 11:22 AM', status: 'COMPLETED' },
+      { id: 'TX-1076', type: 'REFERRAL_COMMISSION', category: 'REFERRAL', title: 'Tier 1 Refer & Earn Reward', ref: 'From Aman_Trader', amount: 350.00, time: 'Today, 10:45 AM', status: 'COMPLETED' },
+      { id: 'TX-1052', type: 'WITHDRAWAL', category: 'WITHDRAWAL', title: 'Withdrawal to SBI A/C', ref: 'Payout to 40928172901', amount: -8000.00, time: 'Today, 09:30 AM', status: 'IN PROCESS' }
+    ] : [];
 
     // 6-Level Subordinates Team Directory
     let affiliateTeam = [
@@ -2985,23 +3064,64 @@
       playSound('betClick');
     }
 
-    // Bet Slips Filter
+    // Bet Slips Filter (90-Day Records & Profit/Loss)
     let activeSlipFilter = 'ALL';
     function filterBetSlips(marketKey, btn) {
       activeSlipFilter = marketKey;
-      document.querySelectorAll('#tab-arena .filter-chips-row .chip-filter-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('#slipsMarketFilterRow .chip-filter-btn').forEach(b => b.classList.remove('active'));
       if (btn) btn.classList.add('active');
       renderBetSlips();
+    }
+
+    function setStatementDays(days, btn) {
+      statementDaysFilter = Number(days) || 90;
+      document.querySelectorAll('#walletDaysFilterRow .chip-filter-btn, #tab-arena .filter-chips-row .chip-filter-btn').forEach(b => {
+        if (['90D', '30D', '7D', '90 Days', '30 Days', '7 Days'].includes(b.innerText.trim())) {
+          const isMatch = b.innerText.trim().startsWith(String(statementDaysFilter));
+          b.classList.toggle('active', isMatch);
+        }
+      });
+      const lbl = document.getElementById('stmtDaysLabel');
+      if (lbl) lbl.innerText = String(statementDaysFilter);
+      renderBetSlips();
+      renderWalletLedger();
+      loadUserBetsFromBackend();
+      syncUserTransactions();
     }
 
     function renderBetSlips() {
       const container = document.getElementById('userBetSlipsList');
       if (!container) return;
-      const filtered = activeSlipFilter === 'ALL' ? userBetSlipsHistory : userBetSlipsHistory.filter(s => s.marketId === activeSlipFilter);
+      const cutoffMs = Date.now() - (statementDaysFilter * 24 * 60 * 60 * 1000);
+      const filtered = userBetSlipsHistory.filter(s => {
+        const mOk = activeSlipFilter === 'ALL' || s.marketId === activeSlipFilter;
+        const ts = Number(s.createdAtMs || 0);
+        const dOk = !ts || ts >= cutoffMs;
+        return mOk && dOk;
+      });
       document.getElementById('userBetSlipsCountBadge').innerText = `${filtered.length} Slips`;
 
+      let totalWager = 0;
+      let totalWon = 0;
+      filtered.forEach(s => {
+        const st = (s.status || 'PENDING').toUpperCase();
+        const amt = Number(s.amount || 0);
+        if (st !== 'CANCELLED' && st !== 'REFUNDED') totalWager += amt;
+        if (st === 'WON') totalWon += Number(s.winAmount || 0);
+      });
+      const netPL = totalWon - totalWager;
+      const wagerEl = document.getElementById('slipsTotalWagered');
+      const wonEl = document.getElementById('slipsTotalWon');
+      const plEl = document.getElementById('slipsNetProfitLoss');
+      if (wagerEl) wagerEl.innerText = `₹${totalWager.toFixed(2)}`;
+      if (wonEl) wonEl.innerText = `₹${totalWon.toFixed(2)}`;
+      if (plEl) {
+        plEl.innerText = `${netPL >= 0 ? '+' : '-'}₹${Math.abs(netPL).toFixed(2)}`;
+        plEl.style.color = netPL >= 0 ? 'var(--green)' : 'var(--red)';
+      }
+
       if (filtered.length === 0) {
-        container.innerHTML = `<p style="font-size:12px; color:var(--text-muted); text-align:center; padding:10px;">No placed bet slips found for ${activeSlipFilter} market.</p>`;
+        container.innerHTML = `<p style="font-size:12px; color:var(--text-muted); text-align:center; padding:10px;">No placed bet slips found in last ${statementDaysFilter} days for ${activeSlipFilter}.</p>`;
         return;
       }
 
@@ -3037,6 +3157,12 @@
 
         const betAmt = Number(slip.amount || 0);
         const winAmt = Number(slip.winAmount || 0);
+        const netSlipPL = isWon ? (winAmt - betAmt) : (isLost ? -betAmt : 0);
+        const plTag = isWon
+          ? `<span style="color:var(--green); font-weight:800; font-size:11px;">(P&L +₹${netSlipPL.toFixed(2)} • Paid ₹${winAmt.toFixed(2)})</span>`
+          : (isLost
+            ? `<span style="color:var(--red); font-weight:800; font-size:11px;">(Loss -₹${betAmt.toFixed(2)})</span>`
+            : (isCancelled ? `<span style="color:var(--cyan); font-weight:800; font-size:11px;">(Refunded +₹${betAmt.toFixed(2)})</span>` : ''));
 
         return `
           <div class="bet-slip-card ${statusClass}">
@@ -3048,9 +3174,9 @@
               </div>
               <span class="badge-pill" style="background:${badgeBg}; color:${statusColor}; font-weight:900; font-size:11px; padding:3px 8px; border-radius:12px;">${status}</span>
             </div>
-            <div style="display:flex; justify-content:space-between; font-size:12px; margin-top:4px;">
+            <div style="display:flex; justify-content:space-between; font-size:12px; margin-top:4px; gap:6px; flex-wrap:wrap;">
               <span>Target: <strong style="color:var(--gold);">${slip.target}</strong> (${slip.mult}X)</span>
-              <span>Stake: <strong style="color:#FFF;">₹${betAmt.toFixed(2)}</strong> ${isCancelled ? `<span style="color:var(--cyan); font-weight:800; font-size:11px;">(Refunded +₹${betAmt.toFixed(2)})</span>` : (isWon ? `<span style="color:var(--green); font-weight:800; font-size:11px;">(+₹${winAmt.toFixed(2)})</span>` : '')}</span>
+              <span>Stake: <strong style="color:#FFF;">₹${betAmt.toFixed(2)}</strong> ${plTag}</span>
             </div>
             <div style="display:flex; justify-content:space-between; font-size:10px; color:var(--text-muted); border-top:1px solid rgba(255,255,255,0.05); padding-top:4px; margin-top:4px;">
               <span>🕒 Placed: ${slip.time || 'Just now'}</span>
@@ -3446,18 +3572,109 @@
       }
     }
 
-    // Load User Bets Directly From Backend (Database Single Source of Truth)
+    // Track last known statuses & server periods so settlements update live without refresh
+    let lastKnownBetStatuses = {};
+    let lastServerPeriodByMarket = {};
+    let isLoadingUserBets = false;
+
+    function applyLocalBetSettlementFallback(mKey, oldPeriod, rec) {
+      if (!rec) return;
+      const winNum = rec.number;
+      const isBig = rec.isBig;
+      const outcomeColor = String(rec.color || '').toUpperCase();
+      let settledAny = false;
+      let wonTotal = 0;
+
+      const st = marketStates[mKey];
+      const matchPeriod = (b) => b && b.marketId === mKey && String(b.period) === String(oldPeriod) && (b.status === 'PENDING' || b.status === 'LOCKED');
+
+      const evaluateSlip = (slip) => {
+        const btype = String(slip.type || 'COLOR').toUpperCase();
+        const target = String(slip.target || '').toUpperCase();
+        const amt = Number(slip.amount || 0);
+        let actualMult = Number(slip.mult || 2.0);
+        let won = false;
+        if (btype === 'BIG_SMALL') {
+          won = (target === 'BIG' && isBig) || (target === 'SMALL' && !isBig);
+        } else if (btype === 'COLOR') {
+          if (target === 'VIOLET' && (winNum === 0 || winNum === 5)) {
+            won = true; actualMult = 4.5;
+          } else if (target === 'GREEN') {
+            if ([1, 3, 7, 9].includes(winNum)) { won = true; actualMult = 2.0; }
+            else if (winNum === 5) { won = true; actualMult = 1.5; }
+          } else if (target === 'RED') {
+            if ([2, 4, 6, 8].includes(winNum)) { won = true; actualMult = 2.0; }
+            else if (winNum === 0) { won = true; actualMult = 1.5; }
+          }
+        } else if (btype === 'NUMBER' && target === String(winNum)) {
+          won = true; actualMult = 9.0;
+        }
+        if (won) {
+          const winAmt = Math.round(amt * actualMult * 100) / 100;
+          slip.status = 'WON';
+          slip.winAmount = winAmt;
+          slip.lossAmount = 0;
+          slip.result = `Won ₹${winAmt.toFixed(2)} (Outcome ${winNum} ${outcomeColor})`;
+          wonTotal += winAmt;
+        } else {
+          slip.status = 'LOST';
+          slip.winAmount = 0;
+          slip.lossAmount = amt;
+          slip.result = `Lost (Outcome ${winNum} ${outcomeColor})`;
+        }
+        settledAny = true;
+      };
+
+      userBetSlipsHistory.forEach(s => { if (matchPeriod(s)) evaluateSlip(s); });
+      if (st && Array.isArray(st.activeBets)) {
+        st.activeBets = st.activeBets.filter(b => !matchPeriod(b));
+      }
+
+      if (settledAny) {
+        if (wonTotal > 0 && window.location.protocol === 'file:') {
+          userBalance += wonTotal;
+          updateBalanceUI();
+          playSound('winFanfare');
+          showToast(`🎉 WON +₹${wonTotal.toFixed(2)} on ${mKey} #${oldPeriod} (${winNum} ${outcomeColor})!`);
+        }
+        try {
+          localStorage.setItem('colour_king_user_bet_slips', JSON.stringify(userBetSlipsHistory));
+        } catch (e) {}
+        renderActiveBets();
+        renderBetSlips();
+      }
+    }
+
+    // Load User Bets Directly From Backend (90-Day Database Single Source of Truth)
     async function loadUserBetsFromBackend() {
+      if (window.location.protocol === 'file:' || isLoadingUserBets) return;
+      isLoadingUserBets = true;
       const uid = currentUserId || 'USR-1001';
       try {
-        const res = await fetch(`/api/bets?userId=${encodeURIComponent(uid)}`);
+        const res = await fetch(`/api/bets?userId=${encodeURIComponent(uid)}&days=${encodeURIComponent(statementDaysFilter)}`);
         if (res.ok) {
           const data = await res.json();
+          let newlySettledWin = 0;
+          let newlySettledCount = 0;
+          let lastSettledMarket = '';
+          let lastSettledPeriod = '';
+
           if (Array.isArray(data.betHistory)) {
-            userBetSlipsHistory = data.betHistory;
-            try {
-              localStorage.setItem('colour_king_user_bet_slips', JSON.stringify(userBetSlipsHistory));
-            } catch (e) {}
+            data.betHistory.forEach(b => {
+              const prevStatus = lastKnownBetStatuses[b.id];
+              const curStatus = String(b.status || '').toUpperCase();
+              if (prevStatus && (prevStatus === 'PENDING' || prevStatus === 'LOCKED') && (curStatus === 'WON' || curStatus === 'LOST')) {
+                newlySettledCount++;
+                lastSettledMarket = b.marketId || '';
+                lastSettledPeriod = b.period || '';
+                if (curStatus === 'WON') {
+                  newlySettledWin += Number(b.winAmount || 0);
+                }
+              }
+              lastKnownBetStatuses[b.id] = curStatus;
+            });
+
+            userBetSlipsHistory = pruneAndSaveBetSlips(data.betHistory);
           }
           if (Array.isArray(data.activeBets)) {
             ['MIAMI', 'VEGAS', 'PARIS', 'DUBAI'].forEach(mKey => {
@@ -3468,14 +3685,28 @@
           }
           renderActiveBets();
           renderBetSlips();
+
+          if (newlySettledCount > 0) {
+            fetchInitialBackendWallet();
+            syncUserTransactions();
+            if (newlySettledWin > 0) {
+              playSound('winFanfare');
+              showToast(`🎉 Bet Won +₹${newlySettledWin.toFixed(2)} in ${lastSettledMarket} #${lastSettledPeriod}!`);
+            } else {
+              showToast(`🎲 Result declared for ${lastSettledMarket} #${lastSettledPeriod} — Bet slips updated!`);
+            }
+          }
         }
       } catch (e) {
         console.warn('Error fetching bets from backend:', e);
+      } finally {
+        isLoadingUserBets = false;
       }
     }
 
     // Sync Admin Draw Overrides Safely
     async function syncAdminDrawOverrides() {
+      if (window.location.protocol === 'file:') return;
       try {
         const res = await fetch('/api/admin/draw-override');
         if (res.ok) {
@@ -3490,6 +3721,7 @@
     // Sync 4 Independent Markets from Backend
     let lastRolloverSyncMs = 0;
     async function syncAuthoritativeMarkets() {
+      if (window.location.protocol === 'file:') return;
       try {
         const res = await fetch('/api/markets');
         if (res.ok) {
@@ -3499,25 +3731,26 @@
           }
           authoritativeMarketsData = data.markets;
 
-          const nowMs = Date.now() + serverClockOffsetMs;
           const keys = ['MIAMI', 'VEGAS', 'PARIS', 'DUBAI'];
+          let anyServerRollover = false;
 
           keys.forEach(k => {
             const m = authoritativeMarketsData[k];
             if (!m) return;
             const st = marketStates[k];
 
+            const prevServerPeriod = lastServerPeriodByMarket[k];
+            const serverPeriodStr = String(m.period);
+            const serverRolledOver = Boolean(prevServerPeriod && prevServerPeriod !== serverPeriodStr);
+            lastServerPeriodByMarket[k] = serverPeriodStr;
+
             const sync = getGlobalSyncedRoundState(k);
             st.secondsLeft = sync.secondsLeft;
             st.isBettingLocked = sync.isBettingLocked;
+            st.currentPeriod = serverPeriodStr;
 
-            // Check if period changed (Round Completed & Next Round Started!)
-            const periodChanged = (st.currentPeriod && st.currentPeriod !== String(m.period));
-            st.currentPeriod = String(m.period);
-
-            if (periodChanged) {
-              loadUserBetsFromBackend();
-              syncBalanceWithBackend();
+            if (serverRolledOver) {
+              anyServerRollover = true;
               fetchMarketHistory(k);
             }
 
@@ -3565,6 +3798,18 @@
               }
             }
           });
+
+          // If server rolled over OR any bet slip in an older period is still PENDING/LOCKED, refresh bets & wallet immediately
+          const hasStalePendingSlips = userBetSlipsHistory.some(s => {
+            const st = marketStates[s.marketId];
+            const statusUp = String(s.status || '').toUpperCase();
+            return (statusUp === 'PENDING' || statusUp === 'LOCKED') && st && Number(s.period) < Number(st.currentPeriod);
+          }) || keys.some(k => (marketStates[k].activeBets || []).some(b => Number(b.period) < Number(marketStates[k].currentPeriod)));
+
+          if (anyServerRollover || hasStalePendingSlips) {
+            await loadUserBetsFromBackend();
+            fetchInitialBackendWallet();
+          }
 
           updateMarketUI();
         }
@@ -3675,6 +3920,8 @@
                   st.pastRecords.sort((a, b) => Number(b.period) - Number(a.period));
                   st.pastRecords = st.pastRecords.slice(0, 100);
                 }
+                // Immediately settle/update placed bet UI on rollover without refresh
+                applyLocalBetSettlementFallback(k, oldPeriod, detRec);
                 if (k === currentMarketId) {
                   renderTrendChart();
                   renderHistoryTable();
@@ -3693,9 +3940,10 @@
 
           // At round end or every 2 seconds, sync with authoritative backend (when served over HTTP/HTTPS)
           const nowReal = Date.now();
-          if ((rolledOver || activeSt.secondsLeft === 0) && (nowReal - lastRolloverSyncMs > 900)) {
+          if (rolledOver || (activeSt.secondsLeft === 0 && (nowReal - lastRolloverSyncMs > 700))) {
             lastRolloverSyncMs = nowReal;
-            syncAuthoritativeMarkets();
+            syncAuthoritativeMarkets().then(() => loadUserBetsFromBackend()).then(() => fetchInitialBackendWallet());
+            fetchMarketHistory(currentMarketId);
           } else if (engineTickCount % 8 === 0) {
             // Every 2 seconds (8 * 250ms)
             syncAuthoritativeMarkets();
@@ -3728,6 +3976,11 @@
 
       const circle = document.getElementById('timerCircle');
       if (circle) circle.classList.toggle('danger', st.isBettingLocked);
+
+      if (typeof st._lastRenderedLockState === 'undefined' || st._lastRenderedLockState !== st.isBettingLocked) {
+        st._lastRenderedLockState = st.isBettingLocked;
+        renderActiveBets();
+      }
 
       // Display Clear Statuses: BETTING OPEN, BETTING LOCKED, WAITING FOR RESULT
       const statusBadge = document.getElementById('bettingStatusBadge');
@@ -4015,116 +4268,274 @@
       syncBalanceWithBackend();
     }
 
-    // WALLET & LEDGER FUNCTIONS
+    // WALLET & 90-DAY ACCOUNT STATEMENT FUNCTIONS
     let ledgerFilterType = 'ALL';
     function filterLedger(type, btn) {
       ledgerFilterType = type;
-      document.querySelectorAll('#tab-wallet .filter-chips-row .chip-filter-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('#walletLedgerFilterRow .chip-filter-btn').forEach(b => b.classList.remove('active'));
       if (btn) btn.classList.add('active');
       renderWalletLedger();
     }
 
+    function computeLocalStatementSummary() {
+      const cutoff = Date.now() - (statementDaysFilter * 24 * 60 * 60 * 1000);
+      let wagered = 0, won = 0, dep = 0, wd = 0, refEarn = 0, wonCnt = 0, lostCnt = 0;
+      const slipsInWin = userBetSlipsHistory.filter(s => !s.createdAtMs || Number(s.createdAtMs) >= cutoff);
+      slipsInWin.forEach(s => {
+        const st = (s.status || '').toUpperCase();
+        const amt = Number(s.amount || 0);
+        if (st !== 'CANCELLED' && st !== 'REFUNDED') wagered += amt;
+        if (st === 'WON') { won += Number(s.winAmount || 0); wonCnt++; }
+        if (st === 'LOST') lostCnt++;
+      });
+      walletLedger.forEach(tx => {
+        const tp = (tx.type || '').toUpperCase();
+        const st = (tx.status || '').toUpperCase();
+        const amt = Number(tx.amount || 0);
+        if (tp === 'DEPOSIT' && (st === 'SUCCESS' || st === 'COMPLETED')) dep += Math.max(0, amt);
+        if (tp === 'WITHDRAWAL' && (st === 'SUCCESS' || st === 'COMPLETED')) wd += Math.abs(amt);
+        if (tp === 'COMMISSION' || tp === 'REFERRAL_COMMISSION') refEarn += Math.max(0, amt);
+      });
+      return {
+        walletBalance: userBalance,
+        days: statementDaysFilter,
+        totalBetsCount: slipsInWin.length,
+        wonBetsCount: wonCnt,
+        lostBetsCount: lostCnt,
+        totalWagered: wagered,
+        totalWon: won,
+        netBetProfitLoss: won - wagered,
+        totalReferEarn: refEarn,
+        totalDeposit: dep,
+        pendingDepositTotal: 0,
+        totalWithdrawal: wd,
+        pendingWithdrawalTotal: 0
+      };
+    }
+
+    function updateStatementSummaryCards(summary) {
+      const s = summary || computeLocalStatementSummary();
+      const pl = Number(s.netBetProfitLoss || 0);
+      const plEl = document.getElementById('walletNetBetPL');
+      if (plEl) {
+        plEl.innerText = `${pl >= 0 ? '+' : '-'}₹${Math.abs(pl).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        plEl.style.color = pl >= 0 ? 'var(--green)' : 'var(--red)';
+      }
+      const subEl = document.getElementById('walletBetWagerWinSub');
+      if (subEl) subEl.innerText = `Won ₹${Number(s.totalWon || 0).toFixed(0)} • Wager ₹${Number(s.totalWagered || 0).toFixed(0)}`;
+
+      const refEl = document.getElementById('walletTotalReferEarn');
+      if (refEl) refEl.innerText = `₹${Number(s.totalReferEarn || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+      const depEl = document.getElementById('walletTotalDeposit');
+      if (depEl) depEl.innerText = `₹${Number(s.totalDeposit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const depSub = document.getElementById('walletDepositPendingSub');
+      if (depSub) depSub.innerText = Number(s.pendingDepositTotal || 0) > 0 ? `In Process: ₹${Number(s.pendingDepositTotal).toFixed(0)}` : `Last ${s.days || statementDaysFilter} days approved`;
+
+      const wdEl = document.getElementById('walletTotalWithdraw');
+      if (wdEl) wdEl.innerText = `₹${Number(s.totalWithdrawal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const wdSub = document.getElementById('walletWithdrawPendingSub');
+      if (wdSub) wdSub.innerText = Number(s.pendingWithdrawalTotal || 0) > 0 ? `In Process: ₹${Number(s.pendingWithdrawalTotal).toFixed(0)}` : `Last ${s.days || statementDaysFilter} days approved`;
+    }
+
+    function filterWalletLedgerEntries() {
+      return walletLedger.filter(tx => {
+        const tp = String(tx.type || '').toUpperCase();
+        const cat = String(tx.category || '').toUpperCase();
+        if (ledgerFilterType === 'ALL') return true;
+        if (ledgerFilterType === 'PROFIT_LOSS') return ['BET', 'WIN', 'REFUND', 'PROFIT_LOSS'].includes(tp) || cat === 'PROFIT_LOSS';
+        if (ledgerFilterType === 'COMMISSION') return ['COMMISSION', 'REFERRAL_COMMISSION'].includes(tp) || cat === 'REFERRAL';
+        if (ledgerFilterType === 'WITHDRAWAL') return ['WITHDRAWAL', 'WITHDRAWAL_REFUND'].includes(tp);
+        return tp === ledgerFilterType;
+      });
+    }
+
     function renderWalletLedger() {
+      updateStatementSummaryCards(latestStatementData ? latestStatementData.summary : null);
       const container = document.getElementById('walletLedgerList');
       if (!container) return;
-      const list = ledgerFilterType === 'ALL' ? walletLedger : walletLedger.filter(tx => tx.type === ledgerFilterType);
+      const list = filterWalletLedgerEntries();
       document.getElementById('ledgerCountBadge').innerText = `${list.length} Entries`;
 
+      if (list.length === 0) {
+        container.innerHTML = `<p style="font-size:12px; color:var(--text-muted); text-align:center; padding:14px;">No statement transactions found for ${ledgerFilterType} in the last ${statementDaysFilter} days.</p>`;
+        return;
+      }
+
       container.innerHTML = list.map(tx => {
-        const isPos = tx.amount > 0;
-        const color = isPos ? 'var(--green)' : 'var(--text)';
-        
+        const isPos = Number(tx.amount || 0) >= 0;
+        const color = isPos ? 'var(--green)' : 'var(--red)';
+
         let statusBadge = '';
         const stUpper = (tx.status || '').toUpperCase();
         if (stUpper === 'IN PROCESS' || stUpper === 'PENDING') {
           statusBadge = `<span style="background:rgba(255, 170, 0, 0.18); color:#FFAA00; border:1px solid #FFAA00; padding:2px 8px; border-radius:12px; font-size:10px; font-weight:800; letter-spacing:0.3px;">⏳ IN PROCESS</span>`;
-        } else if (stUpper === 'SUCCESS' || stUpper === 'COMPLETED' || stUpper === 'APPROVED') {
-          statusBadge = `<span style="background:rgba(0, 230, 118, 0.18); color:#00E676; border:1px solid #00E676; padding:2px 8px; border-radius:12px; font-size:10px; font-weight:800; letter-spacing:0.3px;">✓ SUCCESS</span>`;
+        } else if (stUpper === 'SUCCESS' || stUpper === 'COMPLETED' || stUpper === 'APPROVED' || stUpper === 'SETTLED') {
+          statusBadge = `<span style="background:rgba(0, 230, 118, 0.18); color:#00E676; border:1px solid #00E676; padding:2px 8px; border-radius:12px; font-size:10px; font-weight:800; letter-spacing:0.3px;">✓ ${stUpper === 'SETTLED' ? 'CREDITED' : 'SUCCESS'}</span>`;
         } else if (stUpper === 'FAIL' || stUpper === 'REJECTED') {
           statusBadge = `<span style="background:rgba(255, 82, 82, 0.18); color:#FF5252; border:1px solid #FF5252; padding:2px 8px; border-radius:12px; font-size:10px; font-weight:800; letter-spacing:0.3px;">✕ FAIL${tx.reason ? ` (${tx.reason})` : ''}</span>`;
         } else {
           statusBadge = `<span style="background:rgba(0, 229, 255, 0.18); color:var(--cyan); border:1px solid var(--cyan); padding:2px 8px; border-radius:12px; font-size:10px; font-weight:800;">${tx.status}</span>`;
         }
 
+        const balAfterTxt = (tx.balanceAfter !== null && tx.balanceAfter !== undefined)
+          ? `<div style="font-size:9px; color:var(--text-muted); font-family:monospace;">Bal: ₹${Number(tx.balanceAfter).toFixed(2)}</div>`
+          : '';
+
         return `
-          <div class="bet-item" style="display:flex; justify-content:space-between; align-items:center; padding:12px; border-bottom:1px solid var(--border);">
-            <div>
-              <div style="font-weight:800; font-size:13px; color:#FFF; display:flex; align-items:center; gap:8px;">
+          <div class="bet-item" style="display:flex; justify-content:space-between; align-items:center; padding:12px; border-bottom:1px solid var(--border); gap:8px;">
+            <div style="flex:1;">
+              <div style="font-weight:800; font-size:13px; color:#FFF; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
                 ${tx.title} ${statusBadge}
               </div>
-              <div style="font-size:10px; color:var(--text-muted); margin-top:3px;">${tx.ref} • ${tx.time}</div>
+              <div style="font-size:10px; color:var(--text-muted); margin-top:3px;">${tx.ref || ''} • ${tx.time || ''}</div>
             </div>
-            <div style="font-weight:900; font-size:14px; font-family:monospace; color:${color};">
-              ${isPos ? '+' : ''}₹${Math.abs(tx.amount).toFixed(2)}
+            <div style="text-align:right;">
+              <div style="font-weight:900; font-size:14px; font-family:monospace; color:${color};">
+                ${isPos ? '+' : '-'}₹${Math.abs(Number(tx.amount || 0)).toFixed(2)}
+              </div>
+              ${balAfterTxt}
             </div>
           </div>
         `;
       }).join('');
     }
 
+    function openStatementModal() {
+      const s = (latestStatementData && latestStatementData.summary) ? latestStatementData.summary : computeLocalStatementSummary();
+      const pl = Number(s.netBetProfitLoss || 0);
+      const box = document.getElementById('statementModalSummary');
+      if (box) {
+        box.innerHTML = `
+          <div style="background:var(--card-highlight); padding:10px; border-radius:10px;">
+            <div style="color:var(--text-muted); font-size:10px;">ACCOUNT HOLDER</div>
+            <div style="font-weight:900; color:#FFF;">${currentUserName} (${currentUserId || 'USR-1001'})</div>
+            <div style="color:var(--cyan); font-size:11px; margin-top:2px;">Window: Last ${statementDaysFilter} Days (90-Day Storage Active)</div>
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+            <div style="background:var(--card); padding:10px; border-radius:8px; border:1px solid var(--border);">
+              <div style="font-size:10px; color:var(--text-muted);">Current Wallet</div>
+              <div style="font-weight:900; color:var(--gold); font-family:monospace;">₹${Number(s.walletBalance || userBalance).toFixed(2)}</div>
+            </div>
+            <div style="background:var(--card); padding:10px; border-radius:8px; border:1px solid var(--border);">
+              <div style="font-size:10px; color:var(--text-muted);">Net Bet Profit / Loss</div>
+              <div style="font-weight:900; color:${pl >= 0 ? 'var(--green)' : 'var(--red)'}; font-family:monospace;">${pl >= 0 ? '+' : '-'}₹${Math.abs(pl).toFixed(2)}</div>
+            </div>
+            <div style="background:var(--card); padding:10px; border-radius:8px; border:1px solid var(--border);">
+              <div style="font-size:10px; color:var(--text-muted);">Total Bet Wagered</div>
+              <div style="font-weight:900; color:#FFF; font-family:monospace;">₹${Number(s.totalWagered || 0).toFixed(2)}</div>
+            </div>
+            <div style="background:var(--card); padding:10px; border-radius:8px; border:1px solid var(--border);">
+              <div style="font-size:10px; color:var(--text-muted);">Total Bet Won</div>
+              <div style="font-weight:900; color:var(--green); font-family:monospace;">₹${Number(s.totalWon || 0).toFixed(2)}</div>
+            </div>
+            <div style="background:var(--card); padding:10px; border-radius:8px; border:1px solid var(--border);">
+              <div style="font-size:10px; color:var(--text-muted);">Refer &amp; Earn</div>
+              <div style="font-weight:900; color:var(--gold); font-family:monospace;">+₹${Number(s.totalReferEarn || 0).toFixed(2)}</div>
+            </div>
+            <div style="background:var(--card); padding:10px; border-radius:8px; border:1px solid var(--border);">
+              <div style="font-size:10px; color:var(--text-muted);">Bets Record Count</div>
+              <div style="font-weight:900; color:var(--cyan); font-family:monospace;">${s.totalBetsCount || 0} (W:${s.wonBetsCount || 0} / L:${s.lostBetsCount || 0})</div>
+            </div>
+            <div style="background:var(--card); padding:10px; border-radius:8px; border:1px solid var(--border);">
+              <div style="font-size:10px; color:var(--text-muted);">Total Deposits</div>
+              <div style="font-weight:900; color:var(--green); font-family:monospace;">+₹${Number(s.totalDeposit || 0).toFixed(2)}</div>
+            </div>
+            <div style="background:var(--card); padding:10px; border-radius:8px; border:1px solid var(--border);">
+              <div style="font-size:10px; color:var(--text-muted);">Total Withdrawals</div>
+              <div style="font-weight:900; color:var(--cyan); font-family:monospace;">-₹${Number(s.totalWithdrawal || 0).toFixed(2)}</div>
+            </div>
+          </div>
+        `;
+      }
+      document.getElementById('statementModal').classList.add('active');
+    }
+
+    function buildClientCsvStatement() {
+      const s = (latestStatementData && latestStatementData.summary) ? latestStatementData.summary : computeLocalStatementSummary();
+      const esc = (v) => '"' + String(v === null || v === undefined ? '' : v).replace(/"/g, '""') + '"';
+      const rows = [
+        ['COLOUR KING - 90-DAY ACCOUNT & BETTING STATEMENT'],
+        ['User ID', currentUserId || 'USR-1001', 'User Name', currentUserName, 'Window', `Last ${statementDaysFilter} Days`],
+        [],
+        ['FINANCIAL SUMMARY (INR)'],
+        ['Current Wallet Balance', Number(s.walletBalance || userBalance).toFixed(2)],
+        ['Total Bet Wagered', Number(s.totalWagered || 0).toFixed(2), 'Total Bet Won', Number(s.totalWon || 0).toFixed(2), 'Net Bet Profit/Loss', Number(s.netBetProfitLoss || 0).toFixed(2)],
+        ['Total Refer & Earn', Number(s.totalReferEarn || 0).toFixed(2), 'Total Deposits', Number(s.totalDeposit || 0).toFixed(2), 'Total Withdrawals', Number(s.totalWithdrawal || 0).toFixed(2)],
+        [],
+        ['WALLET TRANSACTIONS STATEMENT'],
+        ['Date & Time', 'Entry ID', 'Category', 'Type', 'Title', 'Reference', 'Amount (INR)', 'Balance After', 'Status']
+      ];
+      walletLedger.forEach(tx => {
+        rows.push([
+          tx.time || '', tx.id || '', tx.category || tx.type || '', tx.type || '',
+          tx.title || '', tx.ref || '', Number(tx.amount || 0).toFixed(2),
+          tx.balanceAfter !== null && tx.balanceAfter !== undefined ? Number(tx.balanceAfter).toFixed(2) : '-',
+          tx.status || ''
+        ]);
+      });
+      rows.push([], ['90-DAY BETTING RECORDS HISTORY'], ['Placed At', 'Bet ID', 'Market', 'Period', 'Type', 'Target', 'Multiplier', 'Stake', 'Status', 'Win Amount', 'Net P&L', 'Result']);
+      userBetSlipsHistory.forEach(b => {
+        const st = (b.status || '').toUpperCase();
+        const amt = Number(b.amount || 0);
+        const winAmt = Number(b.winAmount || 0);
+        const pl = st === 'WON' ? (winAmt - amt) : (st === 'LOST' ? -amt : 0);
+        rows.push([b.time || '', b.id || '', b.marketId || '', b.period || '', b.type || '', b.target || '', `${b.mult || 2}x`, amt.toFixed(2), st, winAmt.toFixed(2), pl.toFixed(2), b.result || '']);
+      });
+      return '\ufeff' + rows.map(r => r.map(esc).join(',')).join('\r\n');
+    }
+
+    async function downloadAccountStatement(categoryOverride) {
+      const uid = currentUserId || 'USR-1001';
+      const cat = categoryOverride || ledgerFilterType || 'ALL';
+      const fname = `ColourKing_${statementDaysFilter}Day_Statement_${uid}_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.csv`;
+      try {
+        let csvText = '';
+        if (window.location.protocol !== 'file:') {
+          const url = `/api/statement/export?userId=${encodeURIComponent(uid)}&days=${encodeURIComponent(statementDaysFilter)}&category=${encodeURIComponent(cat)}`;
+          const res = await fetch(url);
+          if (res.ok) {
+            csvText = await res.text();
+          }
+        }
+        if (!csvText) {
+          csvText = buildClientCsvStatement();
+        }
+        if (window.AndroidBridge && window.AndroidBridge.downloadStatementCsv) {
+          window.AndroidBridge.downloadStatementCsv(fname, csvText);
+          showToast(`📥 Saving statement: ${fname}`);
+          return;
+        }
+        const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.setAttribute('download', fname);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(link.href), 1500);
+        showToast(`📥 Statement downloaded: ${fname}`);
+      } catch (e) {
+        showToast('⚠️ Failed to export statement: ' + e.message);
+      }
+    }
+
     function syncUserTransactions() {
-      if (!currentUserId || currentUserId === 'Guest') return;
-      Promise.all([
-        fetch('/api/deposits').then(r => r.json()).catch(() => []),
-        fetch('/api/withdrawals').then(r => r.json()).catch(() => [])
-      ]).then(([deposits, withdrawals]) => {
-        let changed = false;
-        if (Array.isArray(deposits)) {
-          deposits.forEach(d => {
-            if (d.userId === currentUserId) {
-              const item = walletLedger.find(tx => tx.id === d.id);
-              if (item) {
-                if (item.status !== d.status || item.reason !== d.reason) {
-                  item.status = d.status;
-                  item.reason = d.reason;
-                  changed = true;
-                }
-              } else {
-                walletLedger.unshift({
-                  id: d.id,
-                  type: 'DEPOSIT',
-                  title: `Deposit via ${d.method || 'UPI'}`,
-                  ref: `UTR: ${d.utr}`,
-                  amount: d.amount,
-                  time: d.time || 'Today',
-                  status: d.status || 'IN PROCESS',
-                  reason: d.reason
-                });
-                changed = true;
-              }
-            }
-          });
-        }
-        if (Array.isArray(withdrawals)) {
-          withdrawals.forEach(w => {
-            if (w.userId === currentUserId) {
-              const item = walletLedger.find(tx => tx.id === w.id);
-              if (item) {
-                if (item.status !== w.status || item.reason !== w.reason) {
-                  item.status = w.status;
-                  item.reason = w.reason;
-                  changed = true;
-                }
-              } else {
-                walletLedger.unshift({
-                  id: w.id,
-                  type: 'WITHDRAWAL',
-                  title: `Withdrawal to ${w.bankName || 'Bank'}`,
-                  ref: `A/C: ${w.accNo || w.upiId || 'N/A'}`,
-                  amount: -w.amount,
-                  time: w.time || 'Today',
-                  status: w.status || 'IN PROCESS',
-                  reason: w.reason
-                });
-                changed = true;
-              }
-            }
-          });
-        }
-        if (changed) {
+      if (!currentUserId || currentUserId === 'Guest' || window.location.protocol === 'file:') return;
+      fetch(`/api/statement?userId=${encodeURIComponent(currentUserId)}&days=${encodeURIComponent(statementDaysFilter)}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(stmt => {
+          if (!stmt || !stmt.summary) return;
+          latestStatementData = stmt;
+          if (Array.isArray(stmt.statementEntries)) {
+            walletLedger = stmt.statementEntries;
+          }
+          if (Array.isArray(stmt.bets) && stmt.bets.length >= userBetSlipsHistory.length) {
+            userBetSlipsHistory = pruneAndSaveBetSlips(stmt.bets);
+            renderBetSlips();
+          }
           renderWalletLedger();
-        }
-      }).catch(() => {});
+        }).catch(() => {});
     }
 
     // COPY SHORTCUTS
@@ -4337,19 +4748,20 @@
     }
 
     function syncBalanceWithBackend() {
-      fetch('/api/user/balance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUserId, balance: userBalance })
-      }).catch(()=>{});
+      fetchInitialBackendWallet();
     }
 
     function fetchInitialBackendWallet() {
-      fetch(`/api/wallet?userId=${currentUserId}`).then(r => r.json()).then(data => {
+      if (window.location.protocol === 'file:') return;
+      const uid = currentUserId || 'USR-1001';
+      fetch(`/api/wallet?userId=${encodeURIComponent(uid)}`).then(r => r.json()).then(data => {
         if (data && typeof data.balance === 'number') {
           userBalance = data.balance;
           if (data.name) currentUserName = data.name;
           updateBalanceUI();
+          if (window.AndroidBridge && window.AndroidBridge.syncWalletBalance) {
+            window.AndroidBridge.syncWalletBalance(userBalance, 'Server settlement sync');
+          }
         }
       }).catch(()=>{});
     }
@@ -4374,6 +4786,12 @@
       currentUserId = null;
       currentUserName = 'Guest';
       userBalance = 0.00;
+      latestStatementData = null;
+      userBetSlipsHistory = [];
+      walletLedger = [];
+      renderBetSlips();
+      renderActiveBets();
+      renderWalletLedger();
       updateBalanceUI();
       document.getElementById('headerUserSubtitle').innerText = `Guest • Please Login`;
       showToast('Logged out. Please log in or register.');
@@ -4392,11 +4810,16 @@
       const names = { 'USR-1001': 'Rahul_Player', 'USR-1002': 'Aman_Trader', 'USR-1003': 'Priya_VIP', 'USR-1004': 'Vikram_99' };
       currentUserName = names[sel] || sel;
       userBalance = 50200.00;
+      latestStatementData = null;
+      userBetSlipsHistory = [];
+      walletLedger = [];
+      lastKnownBetStatuses = {};
       localStorage.setItem('colour_king_user_session', JSON.stringify({ id: currentUserId, name: currentUserName, balance: userBalance }));
       document.getElementById('headerUserSubtitle').innerText = `${currentUserName} • VIP 1`;
       closeModal('authModal');
       fetchInitialBackendWallet();
       updateBalanceUI();
+      loadUserBetsFromBackend();
       syncUserTransactions();
       showToast(`Switched account to ${currentUserName}!`);
     }
@@ -4405,11 +4828,16 @@
       currentUserId = 'USR-' + Math.floor(2000 + Math.random() * 8000);
       currentUserName = name;
       userBalance = 50000.00;
+      latestStatementData = null;
+      userBetSlipsHistory = [];
+      walletLedger = [];
+      lastKnownBetStatuses = {};
       localStorage.setItem('colour_king_user_session', JSON.stringify({ id: currentUserId, name: currentUserName, balance: userBalance }));
       updateBalanceUI();
       syncBalanceWithBackend();
       document.getElementById('headerUserSubtitle').innerText = `${currentUserName} • VIP 1`;
       closeModal('authModal');
+      loadUserBetsFromBackend();
       syncUserTransactions();
       showToast(`Welcome ${currentUserName}! ₹50,000 sign-up bonus credited!`);
       playSound('win');
