@@ -68,7 +68,7 @@ fun ProfileScreen(
             text = {
                 Column {
                     Text(
-                        text = "Enter the URL of your Admin/SQLite backend server for real-time SSE synchronization (leave blank to auto-detect).",
+                        text = "Enter the URL of your Cloud Game Server for real-time SSE synchronization (leave blank to auto-detect).",
                         color = TextSecondary,
                         fontSize = 12.sp
                     )
@@ -595,7 +595,7 @@ fun ProfileScreen(
                             .background(CardHighlight)
                             .padding(horizontal = 12.dp, vertical = 8.dp)
                     ) {
-                        Text(text = "Active Backend Server:", color = TextMuted, fontSize = 10.sp)
+                        Text(text = "Live Sync Server:", color = TextMuted, fontSize = 10.sp)
                         Text(
                             text = backendUrl,
                             color = ElectricCyan,
@@ -675,7 +675,7 @@ fun ProfileScreen(
                                 fontSize = 14.sp
                             )
                             Text(
-                                text = "Sign out from this account / Switch user",
+                                text = "Sign out from this account",
                                 color = TextMuted,
                                 fontSize = 11.sp
                             )

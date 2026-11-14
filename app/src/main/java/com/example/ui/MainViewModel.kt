@@ -678,13 +678,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 if (user != null) {
                     val hashedInput = ProvablyFairEngine.hashSha256(cleanPass)
-                    val isMatch = cleanPass == "password123" ||
-                            cleanPass == "admin" ||
-                            cleanPass == "demo" ||
-                            cleanPass == "8888" ||
-                            user.passwordHash == hashedInput ||
+                    val isMatch = user.passwordHash == hashedInput ||
                             user.passwordHash == cleanPass ||
-                            user.passwordHash.startsWith("hash_")
+                            (user.passwordHash.startsWith("hash_") && cleanPass == "password123")
 
                     if (isMatch) {
                         _activeUserId.value = user.id
@@ -695,10 +691,74 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         postNotification("Welcome back, ${user.username}!", true)
                         onResult(true, null)
                     } else {
-                        onResult(false, "Incorrect password. Please try again.")
+                        // Also try validating against the SQLite server in case password was changed on Web
+                        val (serverUser, _) = backendSyncService.loginUserOnServer(cleanId, cleanPass)
+                        if (serverUser != null) {
+                            val updatedUser = user.copy(
+                                passwordHash = hashedInput,
+                                email = serverUser.email.ifBlank { user.email },
+                                phone = serverUser.phone.ifBlank { user.phone },
+                                status = serverUser.status
+                            )
+                            database.userDao().insertUser(updatedUser)
+                            _activeUserId.value = updatedUser.id
+                            _activeTenantId.value = updatedUser.tenantId
+                            _activeUser.value = updatedUser
+                            _isLoggedIn.value = true
+                            viewModelScope.launch { backendSyncService.forceSyncNow() }
+                            postNotification("Welcome back, ${updatedUser.username}!", true)
+                            onResult(true, null)
+                        } else {
+                            onResult(false, "Incorrect password. Please try again.")
+                        }
                     }
                 } else {
-                    onResult(false, "User not found. Please register a new account.")
+                    val (serverUser, serverErr) = backendSyncService.loginUserOnServer(cleanId, cleanPass)
+                    if (serverUser != null) {
+                        val syncedUser = UserEntity(
+                            id = serverUser.id,
+                            tenantId = tenantId,
+                            username = serverUser.name,
+                            email = serverUser.email.ifBlank { "${serverUser.name.lowercase()}@colourking.in" },
+                            phone = serverUser.phone,
+                            passwordHash = ProvablyFairEngine.hashSha256(cleanPass),
+                            role = UserRole.USER.name,
+                            referralCode = serverUser.referralCode.ifBlank { serverUser.name.take(4).uppercase() + "777" },
+                            referredBy = serverUser.referredBy,
+                            status = serverUser.status,
+                            createdAt = System.currentTimeMillis()
+                        )
+                        database.userDao().insertUser(syncedUser)
+
+                        val balCents = backendSyncService.rupeesToCents(serverUser.balanceRupees)
+                        val depCents = backendSyncService.rupeesToCents(serverUser.totalDepositRupees)
+                        val wdCents = backendSyncService.rupeesToCents(serverUser.totalWithdrawRupees)
+                        val existingWallet = database.walletDao().getWallet(tenantId, syncedUser.id)
+                        database.walletDao().insertWallet(
+                            existingWallet?.copy(
+                                availableBalance = balCents,
+                                lifetimeDeposit = depCents,
+                                lifetimeWithdrawal = wdCents
+                            ) ?: WalletEntity(
+                                id = "wallet_${syncedUser.id}",
+                                tenantId = tenantId,
+                                userId = syncedUser.id,
+                                availableBalance = balCents,
+                                lifetimeDeposit = depCents,
+                                lifetimeWithdrawal = wdCents
+                            )
+                        )
+
+                        _activeUserId.value = syncedUser.id
+                        _activeTenantId.value = syncedUser.tenantId
+                        _activeUser.value = syncedUser
+                        _isLoggedIn.value = true
+                        viewModelScope.launch { backendSyncService.forceSyncNow() }
+                        postNotification("Welcome back, ${syncedUser.username}!", true)
+                        onResult(true, null)
+                    } else {
+                        onResult(false, serverErr ?: "User not found. Please register a new account.")
+                    }
                 }
             } catch (e: Exception) {
                 onResult(false, e.message ?: "Authentication failed")
@@ -838,7 +898,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         phone = cleanPhone,
                         email = newUser.email,
                         balanceRupees = starterBonusCents / 100.0,
-                        referredBy = referralCode
+                        referredBy = referralCode,
+                        password = cleanPass
                     )
                     backendSyncService.forceSyncNow()
                 }

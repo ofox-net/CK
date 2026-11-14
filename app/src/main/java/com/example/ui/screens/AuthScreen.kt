@@ -202,7 +202,7 @@ fun AuthScreen(
                                     loginError = null
                                 },
                                 label = { Text("Mobile Number or Username") },
-                                placeholder = { Text("e.g. Rahul_Player or 9876543210") },
+                                placeholder = { Text("e.g. 9876543210 or Username") },
                                 leadingIcon = {
                                     Icon(
                                         imageVector = Icons.Default.AccountCircle,
@@ -331,68 +331,6 @@ fun AuthScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(20.dp))
-
-                    // Quick Switch / Demo Accounts
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = SurfaceDark,
-                        border = borderStroke(1.dp, CardBorder),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(14.dp)) {
-                            Text(
-                                text = "⚡ Quick Test Demo Accounts",
-                                color = GoldAccent,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                DemoAccountChip(
-                                    name = "Rahul_Player",
-                                    role = "Player",
-                                    onClick = {
-                                        loginIdentifier = "Rahul_Player"
-                                        loginPassword = "password123"
-                                        viewModel.login("Rahul_Player", "password123") { success, err ->
-                                            if (!success) loginError = err
-                                        }
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                )
-                                DemoAccountChip(
-                                    name = "ApexSuperAdmin",
-                                    role = "Admin",
-                                    onClick = {
-                                        loginIdentifier = "ApexSuperAdmin"
-                                        loginPassword = "admin"
-                                        viewModel.login("ApexSuperAdmin", "admin") { success, err ->
-                                            if (!success) loginError = err
-                                        }
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                )
-                                DemoAccountChip(
-                                    name = "Vikram_L6",
-                                    role = "Affiliate",
-                                    onClick = {
-                                        loginIdentifier = "Vikram_L6"
-                                        loginPassword = "password123"
-                                        viewModel.login("Vikram_L6", "password123") { success, err ->
-                                            if (!success) loginError = err
-                                        }
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
-                    }
-
                     Spacer(modifier = Modifier.height(16.dp))
 
                     // Switch to Register prompt
@@ -443,44 +381,7 @@ fun AuthScreen(
                                 fontSize = 11.sp
                             )
 
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            // Quick Demo Auto-Fill helper
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = CardHighlight,
-                                border = borderStroke(1.dp, GoldAccent.copy(alpha = 0.4f)),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        val rand = (1000..9999).random()
-                                        regUsername = "Player_$rand"
-                                        regPhone = "98" + (10000000..99999999).random()
-                                        regEmail = "player_$rand@apexplay.io"
-                                        regPassword = "password123"
-                                        regConfirmPassword = "password123"
-                                        regReferralCode = "APEXROOT"
-                                        regAgreeTerms = true
-                                        regError = null
-                                    }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center
-                                ) {
-                                    Text(text = "⚡", fontSize = 12.sp)
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = "1-Tap Fill Demo Registration Data",
-                                        color = GoldAccent,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(12.dp))
+                            Spacer(modifier = Modifier.height(14.dp))
 
                             // Username
                             OutlinedTextField(
@@ -836,39 +737,6 @@ private fun TabPill(
             fontSize = 13.sp,
             fontWeight = FontWeight.Black
         )
-    }
-}
-
-@Composable
-private fun DemoAccountChip(
-    name: String,
-    role: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = CardHighlight,
-        border = borderStroke(1.dp, CardBorder),
-        modifier = modifier.clickable { onClick() }
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = name,
-                color = TextPrimary,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = role,
-                color = ElectricCyan,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-        }
     }
 }
 

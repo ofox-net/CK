@@ -1682,16 +1682,16 @@
         <!-- Player Bio Card -->
         <div class="card" style="border:1px solid var(--border); background:linear-gradient(135deg, var(--card) 0%, var(--surface) 100%);">
           <div style="display:flex; align-items:center; gap:12px;">
-            <div style="width:52px; height:52px; border-radius:50%; background:linear-gradient(135deg, var(--gold), var(--amber)); color:#000; font-size:24px; font-weight:900; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+            <div id="profileAvatarInitials" style="width:52px; height:52px; border-radius:50%; background:linear-gradient(135deg, var(--gold), var(--amber)); color:#000; font-size:20px; font-weight:900; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
               RP
             </div>
             <div style="flex:1;">
               <div style="display:flex; align-items:center; gap:8px;">
-                <h3 style="font-size:16px; font-weight:900; color:#FFF;">Rahul_Player</h3>
+                <h3 id="profileUsernameDisplay" style="font-size:16px; font-weight:900; color:#FFF;">Rahul_Player</h3>
                 <span class="badge-pill badge-green">KYC VERIFIED</span>
                 <span class="badge-pill" style="background:rgba(255,215,0,0.2); color:var(--gold);">VIP 1</span>
               </div>
-              <p style="font-size:11px; color:var(--text-muted); margin-top:2px;">User ID: <span style="font-family:monospace; color:var(--cyan);">USR-1001</span> • rahul@gmail.com</p>
+              <p id="profileMetaDisplay" style="font-size:11px; color:var(--text-muted); margin-top:2px;">User ID: <span style="font-family:monospace; color:var(--cyan);">USR-1001</span> • rahul@gmail.com</p>
             </div>
           </div>
 
@@ -1753,19 +1753,7 @@
 
           <div style="display:flex; gap:8px; margin-top:6px;">
             <button class="btn-secondary" style="flex:1;" onclick="openChangePasswordModal()">🔑 Change Password</button>
-            <button class="btn-secondary" style="flex:1;" onclick="openAuthModal()">🔄 Switch User</button>
           </div>
-        </div>
-
-        <!-- Direct Android APK Download Card -->
-        <div class="card" style="border:1px solid var(--cyan); background:rgba(0, 229, 255, 0.05);">
-          <div class="section-title">
-            <span style="color:var(--cyan);">📱 Download Android Mobile App (APK)</span>
-          </div>
-          <p style="font-size:11px; color:var(--text-muted);">Install the official Android application directly on your phone for seamless push notifications, native haptics, and instant payments.</p>
-          <a href="/app-debug.apk" download="ColourKing.apk" class="btn-primary" style="background:linear-gradient(135deg, #00E5FF, #0077B6); text-decoration:none; display:block;">
-            📥 Download Android App (APK)
-          </a>
         </div>
 
         <!-- Log Out Action Card -->
@@ -2160,45 +2148,123 @@
     </div>
   </div>
 
-  <!-- Auth Switch / Login & Register Modal -->
-  <div class="modal-overlay" id="authModal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <div class="modal-title">Colour King Authentication</div>
-        <button class="btn-close" onclick="closeModal('authModal')">✕</button>
+  <!-- Auth Full-Screen Login & New Registration Overlay (Matches Android AuthScreen) -->
+  <div class="modal-overlay" id="authModal" style="background:#090D14; z-index:9999; align-items:flex-start; overflow-y:auto; padding:20px 16px;">
+    <div style="width:100%; max-width:440px; margin:8px auto 24px; display:flex; flex-direction:column; align-items:center;">
+      <button id="authCloseBtn" class="btn-close" onclick="closeModal('authModal')" style="align-self:flex-end; display:none;">✕</button>
+
+      <!-- Crown Logo & Title -->
+      <div style="width:74px; height:74px; border-radius:50%; background:radial-gradient(circle, var(--gold) 0%, var(--amber) 55%, var(--surface) 100%); border:2px solid var(--gold); display:flex; align-items:center; justify-content:center; font-size:36px; box-shadow:0 0 22px rgba(255,215,0,0.35);">
+        👑
       </div>
-      
-      <div class="trend-toggle-group" style="margin-bottom:8px;">
-        <button class="trend-mode-btn active" id="authTabLogin" onclick="setAuthTab(0)" style="flex:1;">Login</button>
-        <button class="trend-mode-btn" id="authTabReg" onclick="setAuthTab(1)" style="flex:1;">Register</button>
+      <h2 style="color:var(--gold); font-size:24px; font-weight:900; letter-spacing:0.8px; margin-top:12px;">Colour King</h2>
+      <p style="color:var(--text-muted); font-size:12px; font-weight:600; margin-top:2px; text-align:center;">Provably Fair 30s Real-Time Gaming Arena</p>
+
+      <!-- Welcome Bonus Offer Banner -->
+      <div style="width:100%; margin-top:16px; background:var(--card-highlight); border:1px solid rgba(255,215,0,0.45); border-radius:12px; padding:10px 14px; display:flex; align-items:center; gap:10px;">
+        <span style="font-size:20px;">🎁</span>
+        <div style="flex:1;">
+          <div style="color:var(--gold); font-size:12px; font-weight:900;">NEW PLAYER BONUS ₹500.00</div>
+          <div style="color:var(--text-muted); font-size:10px; margin-top:1px;">Instant wallet credit on registration • 100% SHA-256 Verifiable</div>
+        </div>
       </div>
 
-      <div id="authLoginForm" style="display:flex; flex-direction:column; gap:8px;">
-        <div>
-          <label style="font-size:11px; color:var(--text-muted); display:block; margin-bottom:2px;">Select Existing User Profile:</label>
-          <select id="authSelectUser" style="width:100%; background:var(--card); border:1px solid var(--border); border-radius:8px; padding:8px 10px; color:#FFF;" onchange="onAuthUserSelected(this.value)">
-            <option value="USR-1001">Rahul_Player (USR-1001 • Balance ₹50,200)</option>
-            <option value="USR-1002">Aman_Trader (USR-1002 • Balance ₹14,500)</option>
-            <option value="USR-1003">Priya_VIP (USR-1003 • Balance ₹1,25,000)</option>
-            <option value="USR-1004">Vikram_99 (USR-1004 • Balance ₹3,200)</option>
-          </select>
-        </div>
-        <button class="btn-primary" onclick="switchActiveUser()">Switch Account</button>
+      <!-- Auth Mode Segmented Tabs -->
+      <div style="width:100%; margin-top:16px; background:var(--surface); border-radius:14px; padding:4px; display:flex; gap:4px; border:1px solid var(--border);">
+        <button id="authTabLogin" onclick="setAuthTab(0)" style="flex:1; border:none; border-radius:10px; padding:10px; font-size:13px; font-weight:900; cursor:pointer; background:var(--gold); color:#090D14;">
+          🔐 Login
+        </button>
+        <button id="authTabReg" onclick="setAuthTab(1)" style="flex:1; border:none; border-radius:10px; padding:10px; font-size:13px; font-weight:900; cursor:pointer; background:transparent; color:var(--text-muted);">
+          ✨ New Register
+        </button>
       </div>
 
-      <div id="authRegForm" style="display:none; flex-direction:column; gap:8px;">
-        <div>
-          <label style="font-size:11px; color:var(--text-muted); display:block; margin-bottom:2px;">Full Name / Username:</label>
-          <input type="text" id="regNameInput" placeholder="e.g. Rohit_Pro" style="width:100%; background:var(--card); border:1px solid var(--border); border-radius:8px; padding:8px 10px; color:#FFF;" />
+      <!-- LOGIN FORM (No Admin/Demo quick-login cards) -->
+      <div id="authLoginForm" style="width:100%; margin-top:16px; background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:18px; display:flex; flex-direction:column; gap:12px;">
+        <div style="font-size:16px; font-weight:800; color:#FFF;">Sign In to Your Account</div>
+
+        <div style="display:flex; align-items:center; gap:10px; background:var(--bg); border:1px solid var(--border); border-radius:12px; padding:10px 12px;">
+          <span style="color:var(--gold); font-size:16px;">👤</span>
+          <input type="text" id="loginIdentifierInput" placeholder="Mobile Number or Username" autocomplete="username" style="flex:1; background:transparent; border:none; outline:none; color:#FFF; font-size:13px;" onkeydown="if(event.key==='Enter') submitLoginUser()" />
         </div>
-        <div>
-          <label style="font-size:11px; color:var(--text-muted); display:block; margin-bottom:2px;">Referral Code:</label>
-          <input type="text" id="regRefInput" value="RAHUL777" style="width:100%; background:var(--card); border:1px solid var(--gold); border-radius:8px; padding:8px 10px; color:var(--gold); font-weight:800;" />
+
+        <div style="display:flex; align-items:center; gap:10px; background:var(--bg); border:1px solid var(--border); border-radius:12px; padding:10px 12px;">
+          <span style="color:var(--gold); font-size:16px;">🔒</span>
+          <input type="password" id="loginPasswordInput" placeholder="Password" autocomplete="current-password" style="flex:1; background:transparent; border:none; outline:none; color:#FFF; font-size:13px;" onkeydown="if(event.key==='Enter') submitLoginUser()" />
+          <button type="button" onclick="toggleAuthPwVisibility('loginPasswordInput', this)" style="background:transparent; border:none; color:var(--text-muted); cursor:pointer; font-size:15px;" aria-label="Toggle password">👁</button>
         </div>
-        <button class="btn-primary" onclick="submitRegisterUser()">Register & Claim Bonus</button>
+
+        <div id="loginErrorBox" style="display:none; background:rgba(255,23,68,0.16); border:1px solid rgba(255,23,68,0.45); color:#FF6B81; border-radius:8px; padding:8px 10px; font-size:11px; font-weight:700;"></div>
+
+        <button id="loginSubmitBtn" class="btn-primary" onclick="submitLoginUser()" style="margin-top:4px; height:46px; font-size:13px; font-weight:900; letter-spacing:0.8px;">
+          LOGIN TO ARENA
+        </button>
+
+        <div style="text-align:center; font-size:12px; color:var(--text-muted); margin-top:4px;">
+          Don't have an account yet?
+          <span onclick="setAuthTab(1)" style="color:var(--gold); font-weight:800; cursor:pointer; margin-left:4px;">Register Now</span>
+        </div>
       </div>
 
-      <button class="btn-secondary" onclick="closeModal('authModal')">Cancel</button>
+      <!-- NEW REGISTRATION FORM -->
+      <div id="authRegForm" style="width:100%; margin-top:16px; background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:18px; display:none; flex-direction:column; gap:10px;">
+        <div>
+          <div style="font-size:16px; font-weight:800; color:#FFF;">Create New Player Account</div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Register now &amp; get instant ₹500 starter wallet credit</div>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:10px; background:var(--bg); border:1px solid var(--border); border-radius:12px; padding:10px 12px;">
+          <span style="color:var(--gold); font-size:15px;">👤</span>
+          <input type="text" id="regNameInput" placeholder="Choose Username *" autocomplete="username" style="flex:1; background:transparent; border:none; outline:none; color:#FFF; font-size:13px;" />
+        </div>
+
+        <div style="display:flex; align-items:center; gap:8px; background:var(--bg); border:1px solid var(--border); border-radius:12px; padding:10px 12px;">
+          <span style="color:var(--gold); font-size:15px;">📞</span>
+          <span style="color:var(--gold); font-weight:800; font-size:13px;">+91</span>
+          <input type="tel" id="regPhoneInput" maxlength="10" placeholder="10-Digit Mobile Number *" oninput="this.value=this.value.replace(/[^0-9]/g,'').slice(0,10)" style="flex:1; background:transparent; border:none; outline:none; color:#FFF; font-size:13px;" />
+        </div>
+
+        <div style="display:flex; align-items:center; gap:10px; background:var(--bg); border:1px solid var(--border); border-radius:12px; padding:10px 12px;">
+          <span style="color:var(--cyan); font-size:15px;">✉️</span>
+          <input type="email" id="regEmailInput" placeholder="Email Address (Optional)" autocomplete="email" style="flex:1; background:transparent; border:none; outline:none; color:#FFF; font-size:13px;" />
+        </div>
+
+        <div style="display:flex; align-items:center; gap:10px; background:var(--bg); border:1px solid var(--border); border-radius:12px; padding:10px 12px;">
+          <span style="color:var(--gold); font-size:15px;">🔒</span>
+          <input type="password" id="regPasswordInput" placeholder="Create Password *" autocomplete="new-password" style="flex:1; background:transparent; border:none; outline:none; color:#FFF; font-size:13px;" />
+          <button type="button" onclick="toggleAuthPwVisibility('regPasswordInput', this)" style="background:transparent; border:none; color:var(--text-muted); cursor:pointer; font-size:15px;" aria-label="Toggle password">👁</button>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:10px; background:var(--bg); border:1px solid var(--border); border-radius:12px; padding:10px 12px;">
+          <span style="color:var(--gold); font-size:15px;">🔐</span>
+          <input type="password" id="regConfirmPasswordInput" placeholder="Confirm Password *" autocomplete="new-password" style="flex:1; background:transparent; border:none; outline:none; color:#FFF; font-size:13px;" />
+        </div>
+
+        <div style="display:flex; align-items:center; gap:10px; background:var(--bg); border:1px solid var(--border); border-radius:12px; padding:10px 12px;">
+          <span style="color:#D500F9; font-size:15px;">👥</span>
+          <input type="text" id="regRefInput" placeholder="Referral / Invite Code (Optional)" oninput="this.value=this.value.toUpperCase()" style="flex:1; background:transparent; border:none; outline:none; color:var(--gold); font-weight:700; font-size:13px;" />
+        </div>
+
+        <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer; margin-top:2px;">
+          <input type="checkbox" id="regAgreeTerms" checked style="accent-color:var(--gold); width:16px; height:16px; margin-top:2px; flex-shrink:0;" />
+          <span style="font-size:10px; color:var(--text-muted); line-height:1.4;">I certify that I am 18+ years of age and accept Provably Fair Terms &amp; Conditions</span>
+        </label>
+
+        <div id="regErrorBox" style="display:none; background:rgba(255,23,68,0.16); border:1px solid rgba(255,23,68,0.45); color:#FF6B81; border-radius:8px; padding:8px 10px; font-size:11px; font-weight:700;"></div>
+
+        <button id="registerSubmitBtn" class="btn-primary" onclick="submitRegisterUser()" style="margin-top:4px; height:46px; font-size:13px; font-weight:900; letter-spacing:0.6px;">
+          REGISTER &amp; CLAIM ₹500 BONUS
+        </button>
+
+        <div style="text-align:center; font-size:12px; color:var(--text-muted); margin-top:4px;">
+          Already have an account?
+          <span onclick="setAuthTab(0)" style="color:var(--gold); font-weight:800; cursor:pointer; margin-left:4px;">Login Here</span>
+        </div>
+      </div>
+
+      <p style="margin-top:20px; color:var(--text-muted); font-size:10px; text-align:center;">
+        🔒 100% Provably Fair SHA-256 • High Volatility Gaming • 24/7 Instant Payouts
+      </p>
     </div>
   </div>
 
@@ -2874,13 +2940,17 @@
       let walletChanged = false;
       if (currentUserId && state.users && state.users[currentUserId]) {
         const sUser = state.users[currentUserId];
+        if (sUser.name && sUser.name !== currentUserName) {
+          currentUserName = sUser.name;
+        }
+        updateProfileIdentityUI(currentUserId, currentUserName, sUser.email || sUser.phone || '');
         if (typeof sUser.balance === 'number' && Math.abs(sUser.balance - userBalance) > 0.01) {
           const diff = sUser.balance - userBalance;
           userBalance = sUser.balance;
           walletChanged = true;
           updateBalanceUI();
           try {
-            localStorage.setItem('colour_king_user_session', JSON.stringify({ id: currentUserId, name: sUser.name || currentUserName, balance: userBalance }));
+            localStorage.setItem('colour_king_user_session', JSON.stringify({ id: currentUserId, name: sUser.name || currentUserName, email: sUser.email || '', phone: sUser.phone || '', balance: userBalance }));
           } catch(e) {}
           if (!hasBackendConnection() && window.AndroidBridge && window.AndroidBridge.syncWalletBalance) {
             window.AndroidBridge.syncWalletBalance(userBalance, 'Real-time Admin/Server sync');
@@ -5030,8 +5100,39 @@
       document.getElementById('fairModal').classList.add('active');
       playSound('betClick');
     }
+    function updateProfileIdentityUI(uid, uname, contact) {
+      const cleanName = uname || 'Player';
+      const initials = cleanName.split(/[\s_]+/).filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase() || 'CK';
+      const avEl = document.getElementById('profileAvatarInitials');
+      const nameEl = document.getElementById('profileUsernameDisplay');
+      const metaEl = document.getElementById('profileMetaDisplay');
+      const hdrEl = document.getElementById('headerUserSubtitle');
+      if (avEl) avEl.innerText = initials;
+      if (nameEl) nameEl.innerText = cleanName;
+      if (metaEl) metaEl.innerHTML = `User ID: <span style="font-family:monospace; color:var(--cyan);">${uid || 'Guest'}</span>${contact ? ' • ' + contact : ''}`;
+      if (hdrEl) hdrEl.innerText = (uid && uid !== 'Guest') ? `${cleanName} • VIP 1` : 'Guest • Please Login';
+    }
+
     function openChangePasswordModal() { document.getElementById('changePasswordModal').classList.add('active'); }
-    function submitChangePassword() {
+    async function submitChangePassword() {
+      const np = (document.getElementById('cpNewInput')?.value || '').trim();
+      const cp = (document.getElementById('cpConfirmInput')?.value || '').trim();
+      if (np.length < 4) { showToast('⚠️ New password must be at least 4 characters'); return; }
+      if (np !== cp) { showToast('⚠️ Passwords do not match!'); return; }
+      if (hasBackendConnection() && currentUserId && currentUserId !== 'Guest') {
+        try {
+          const res = await fetch(apiUrl('/api/users/change-password'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: currentUserId, newPassword: np })
+          });
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            showToast('⚠️ ' + (data.error || 'Could not update password'));
+            return;
+          }
+        } catch (e) {}
+      }
       showToast('✓ Password updated successfully!');
       closeModal('changePasswordModal');
     }
@@ -5045,116 +5146,209 @@
       latestStatementData = null;
       userBetSlipsHistory = [];
       walletLedger = [];
+      lastKnownBetStatuses = {};
       renderBetSlips();
       renderActiveBets();
       renderWalletLedger();
       updateBalanceUI();
-      document.getElementById('headerUserSubtitle').innerText = `Guest • Please Login`;
+      updateProfileIdentityUI(null, 'Guest', '');
       showToast('Logged out. Please log in or register.');
-      openAuthModal();
-    }
-    function refreshAuthUserOptions() {
-      if (!hasBackendConnection()) return;
-      const sel = document.getElementById('authSelectUser');
-      if (!sel) return;
-      fetch(apiUrl('/api/state?t=' + Date.now()), { cache: 'no-store' })
-        .then(r => r.ok ? r.json() : null)
-        .then(state => {
-          if (!state || !state.users) return;
-          const prevVal = sel.value;
-          const usersArr = Object.values(state.users);
-          if (usersArr.length === 0) return;
-          sel.innerHTML = usersArr.map(u => {
-            const balStr = Number(u.balance || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
-            const blockedTag = u.status === 'BLOCKED' ? ' [BLOCKED]' : '';
-            return `<option value="${u.id}">${u.name} (${u.id} • Balance ₹${balStr})${blockedTag}</option>`;
-          }).join('');
-          if (currentUserId && state.users[currentUserId]) {
-            sel.value = currentUserId;
-          } else if (prevVal && state.users[prevVal]) {
-            sel.value = prevVal;
-          }
-        }).catch(() => {});
+      openAuthModal(0);
     }
 
-    function openAuthModal() {
-      refreshAuthUserOptions();
+    function openAuthModal(defaultTab = 0) {
+      setAuthTab(defaultTab);
+      const closeBtn = document.getElementById('authCloseBtn');
+      if (closeBtn) {
+        closeBtn.style.display = (currentUserId && currentUserId !== 'Guest') ? 'block' : 'none';
+      }
+      const loginErr = document.getElementById('loginErrorBox');
+      const regErr = document.getElementById('regErrorBox');
+      if (loginErr) loginErr.style.display = 'none';
+      if (regErr) regErr.style.display = 'none';
       document.getElementById('authModal').classList.add('active');
     }
+
     function setAuthTab(tab) {
-      document.getElementById('authTabLogin').classList.toggle('active', tab === 0);
-      document.getElementById('authTabReg').classList.toggle('active', tab === 1);
-      document.getElementById('authLoginForm').style.display = tab === 0 ? 'flex' : 'none';
-      document.getElementById('authRegForm').style.display = tab === 1 ? 'flex' : 'none';
+      const isLogin = (tab === 0);
+      const tLogin = document.getElementById('authTabLogin');
+      const tReg = document.getElementById('authTabReg');
+      if (tLogin) {
+        tLogin.style.background = isLogin ? 'var(--gold)' : 'transparent';
+        tLogin.style.color = isLogin ? '#090D14' : 'var(--text-muted)';
+      }
+      if (tReg) {
+        tReg.style.background = !isLogin ? 'var(--gold)' : 'transparent';
+        tReg.style.color = !isLogin ? '#090D14' : 'var(--text-muted)';
+      }
+      document.getElementById('authLoginForm').style.display = isLogin ? 'flex' : 'none';
+      document.getElementById('authRegForm').style.display = !isLogin ? 'flex' : 'none';
     }
-    function switchActiveUser() {
-      const sel = document.getElementById('authSelectUser').value;
-      const selOpt = document.getElementById('authSelectUser').selectedOptions[0];
-      currentUserId = sel;
-      const names = { 'USR-1001': 'Rahul_Player', 'USR-1002': 'Aman_Trader', 'USR-1003': 'Priya_VIP', 'USR-1004': 'Vikram_99' };
-      currentUserName = names[sel] || (selOpt ? selOpt.text.split(' (')[0] : sel);
-      lastKnownAccountStatus = 'ACTIVE';
+
+    function toggleAuthPwVisibility(inputId, btn) {
+      const inp = document.getElementById(inputId);
+      if (!inp) return;
+      const show = inp.type === 'password';
+      inp.type = show ? 'text' : 'password';
+      if (btn) btn.style.color = show ? 'var(--gold)' : 'var(--text-muted)';
+    }
+
+    function showAuthError(boxId, msg) {
+      const el = document.getElementById(boxId);
+      if (!el) return;
+      if (!msg) {
+        el.style.display = 'none';
+        el.innerText = '';
+      } else {
+        el.style.display = 'block';
+        el.innerText = '⚠️ ' + msg;
+      }
+    }
+
+    function completeAuthSession(userObj) {
+      currentUserId = userObj.id;
+      currentUserName = userObj.name || userObj.username || userObj.id;
+      userBalance = typeof userObj.balance === 'number' ? userObj.balance : 500.00;
+      const curStatus = String(userObj.status || 'ACTIVE').toUpperCase();
+      lastKnownAccountStatus = curStatus;
+      setAccountBlockedBanner(curStatus === 'BLOCKED');
       latestStatementData = null;
       userBetSlipsHistory = [];
       walletLedger = [];
       lastKnownBetStatuses = {};
-      localStorage.setItem('colour_king_user_session', JSON.stringify({ id: currentUserId, name: currentUserName, balance: userBalance }));
-      document.getElementById('headerUserSubtitle').innerText = `${currentUserName} • VIP 1`;
+      localStorage.setItem('colour_king_user_session', JSON.stringify({
+        id: currentUserId,
+        name: currentUserName,
+        email: userObj.email || '',
+        phone: userObj.phone || '',
+        balance: userBalance
+      }));
+      updateBalanceUI();
+      updateProfileIdentityUI(currentUserId, currentUserName, userObj.email || userObj.phone || '');
       closeModal('authModal');
       fetchInitialBackendWallet();
-      updateBalanceUI();
       loadUserBetsFromBackend();
       syncUserTransactions();
       syncAdminStateRealtime(true);
-      showToast(`Switched account to ${currentUserName}!`);
     }
-    async function submitRegisterUser() {
-      const name = document.getElementById('regNameInput').value.trim() || 'New_Player';
-      const refCodeInput = (document.getElementById('regRefInput')?.value || '').trim();
-      const newUid = 'USR-' + Math.floor(2000 + Math.random() * 8000);
-      currentUserId = newUid;
-      currentUserName = name;
-      userBalance = 50000.00;
-      lastKnownAccountStatus = 'ACTIVE';
-      latestStatementData = null;
-      userBetSlipsHistory = [];
-      walletLedger = [];
-      lastKnownBetStatuses = {};
 
-      if (hasBackendConnection()) {
-        try {
+    async function submitLoginUser() {
+      const identifier = (document.getElementById('loginIdentifierInput')?.value || '').trim();
+      const password = (document.getElementById('loginPasswordInput')?.value || '').trim();
+      showAuthError('loginErrorBox', '');
+
+      if (!identifier) {
+        showAuthError('loginErrorBox', 'Please enter your mobile number or username');
+        return;
+      }
+      if (!password) {
+        showAuthError('loginErrorBox', 'Please enter your password');
+        return;
+      }
+
+      const btn = document.getElementById('loginSubmitBtn');
+      if (btn) { btn.disabled = true; btn.innerText = 'Verifying...'; }
+
+      try {
+        if (hasBackendConnection()) {
+          const res = await fetch(apiUrl('/api/users/login'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ identifier, password })
+          });
+          const data = await res.json();
+          if (!res.ok || !data.success || !data.user) {
+            showAuthError('loginErrorBox', data.error || 'Invalid login credentials');
+            return;
+          }
+          completeAuthSession(data.user);
+          showToast(`Welcome back, ${currentUserName}!`);
+          playSound('betClick');
+        } else {
+          showAuthError('loginErrorBox', 'Server connection unavailable');
+        }
+      } catch (e) {
+        showAuthError('loginErrorBox', 'Network error while signing in. Please retry.');
+      } finally {
+        if (btn) { btn.disabled = false; btn.innerText = 'LOGIN TO ARENA'; }
+      }
+    }
+
+    async function submitRegisterUser() {
+      const name = (document.getElementById('regNameInput')?.value || '').trim();
+      const phone = (document.getElementById('regPhoneInput')?.value || '').replace(/[^0-9]/g, '').trim();
+      const email = (document.getElementById('regEmailInput')?.value || '').trim();
+      const password = (document.getElementById('regPasswordInput')?.value || '').trim();
+      const confirmPw = (document.getElementById('regConfirmPasswordInput')?.value || '').trim();
+      const refCodeInput = (document.getElementById('regRefInput')?.value || '').trim();
+      const agreeTerms = document.getElementById('regAgreeTerms')?.checked;
+
+      showAuthError('regErrorBox', '');
+      if (name.length < 3) {
+        showAuthError('regErrorBox', 'Username must be at least 3 characters');
+        return;
+      }
+      if (phone.length < 10) {
+        showAuthError('regErrorBox', 'Please enter a valid 10-digit mobile number');
+        return;
+      }
+      if (password.length < 4) {
+        showAuthError('regErrorBox', 'Password must be at least 4 characters');
+        return;
+      }
+      if (password !== confirmPw) {
+        showAuthError('regErrorBox', 'Passwords do not match!');
+        return;
+      }
+      if (!agreeTerms) {
+        showAuthError('regErrorBox', 'Please accept the 18+ terms to proceed');
+        return;
+      }
+
+      const btn = document.getElementById('registerSubmitBtn');
+      if (btn) { btn.disabled = true; btn.innerText = 'Registering Account...'; }
+
+      const newUid = 'USR-' + Math.floor(2000 + Math.random() * 8000);
+      let registeredUser = {
+        id: newUid,
+        name: name,
+        phone: '+91' + phone,
+        email: email || `${name.toLowerCase().replace(/\s+/g, '_')}@colourking.in`,
+        balance: 500.00,
+        status: 'ACTIVE'
+      };
+
+      try {
+        if (hasBackendConnection()) {
           const res = await fetch(apiUrl('/api/users/register'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               id: newUid,
               name: name,
-              balance: 50000.00,
+              phone: '+91' + phone,
+              email: email,
+              password: password,
+              balance: 500.00,
               referredBy: refCodeInput
             })
           });
-          if (res.ok) {
-            const data = await res.json();
-            if (data && data.user) {
-              currentUserId = data.user.id || newUid;
-              currentUserName = data.user.name || name;
-              if (typeof data.user.balance === 'number') userBalance = data.user.balance;
-            }
+          const data = await res.json();
+          if (!res.ok || !data.success) {
+            showAuthError('regErrorBox', data.error || 'Registration failed');
+            return;
           }
-        } catch (e) {
-          console.warn('User registration sync error:', e);
+          if (data.user) registeredUser = data.user;
         }
-      }
 
-      localStorage.setItem('colour_king_user_session', JSON.stringify({ id: currentUserId, name: currentUserName, balance: userBalance }));
-      updateBalanceUI();
-      document.getElementById('headerUserSubtitle').innerText = `${currentUserName} • VIP 1`;
-      closeModal('authModal');
-      loadUserBetsFromBackend();
-      syncUserTransactions();
-      syncAdminStateRealtime(true);
-      showToast(`Welcome ${currentUserName}! ₹${userBalance.toLocaleString('en-IN')} sign-up bonus credited!`);
-      playSound('win');
+        completeAuthSession(registeredUser);
+        showToast(`🎉 Welcome ${currentUserName}! ₹${Number(userBalance).toLocaleString('en-IN')} welcome bonus credited!`);
+        playSound('win');
+      } catch (e) {
+        showAuthError('regErrorBox', 'Registration sync error. Please retry.');
+      } finally {
+        if (btn) { btn.disabled = false; btn.innerText = 'REGISTER & CLAIM ₹500 BONUS'; }
+      }
     }
 
     // INITIALIZATION
@@ -5173,15 +5367,20 @@
       renderAffiliateTeam();
 
       if (currentUserId && currentUserId !== 'Guest') {
-        document.getElementById('headerUserSubtitle').innerText = `${currentUserName} • VIP 1`;
+        let savedContact = '';
+        try {
+          const p = JSON.parse(localStorage.getItem('colour_king_user_session') || '{}');
+          savedContact = p.email || p.phone || '';
+        } catch(e) {}
+        updateProfileIdentityUI(currentUserId, currentUserName, savedContact);
         fetchInitialBackendWallet();
         syncUserTransactions();
       } else {
-        document.getElementById('headerUserSubtitle').innerText = `Guest • Please Login`;
+        updateProfileIdentityUI(null, 'Guest', '');
         updateBalanceUI();
         setTimeout(() => {
-          openAuthModal();
-        }, 400);
+          openAuthModal(0);
+        }, 120);
       }
 
       setInterval(() => syncAdminStateRealtime(false), 3000);

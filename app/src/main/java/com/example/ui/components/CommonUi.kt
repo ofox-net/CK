@@ -92,6 +92,7 @@ fun AppHeader(
                                 overflow = TextOverflow.Ellipsis
                             )
                             Spacer(modifier = Modifier.width(4.dp))
+                            val displayRole = if (userRole.contains("ADMIN", ignoreCase = true)) "VIP" else userRole
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(4.dp))
@@ -99,7 +100,7 @@ fun AppHeader(
                                     .padding(horizontal = 4.dp, vertical = 1.dp)
                             ) {
                                 Text(
-                                    text = userRole,
+                                    text = displayRole,
                                     color = ElectricCyan,
                                     fontSize = 8.sp,
                                     fontWeight = FontWeight.SemiBold

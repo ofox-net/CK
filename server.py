@@ -270,6 +270,7 @@ def init_database():
         for alter_sql in [
             "ALTER TABLE users ADD COLUMN referral_code TEXT",
             "ALTER TABLE users ADD COLUMN referred_by TEXT",
+            "ALTER TABLE users ADD COLUMN password_hash TEXT",
             "ALTER TABLE transactions ADD COLUMN created_at_ms INTEGER DEFAULT 0",
             "ALTER TABLE deposits ADD COLUMN created_at_ms INTEGER DEFAULT 0",
             "ALTER TABLE withdrawals ADD COLUMN created_at_ms INTEGER DEFAULT 0",
@@ -279,6 +280,8 @@ def init_database():
             except Exception:
                 pass
         try:
+            default_pw_hash = hashlib.sha256(b"password123").hexdigest()
+            c.execute("UPDATE users SET password_hash = ? WHERE password_hash IS NULL OR password_hash = ''", (default_pw_hash,))
             c.execute("UPDATE transactions SET created_at_ms = CAST(strftime('%s', created_at) AS INTEGER) * 1000 WHERE created_at_ms IS NULL OR created_at_ms = 0")
             c.execute("UPDATE deposits SET created_at_ms = CAST(strftime('%s', created_at) AS INTEGER) * 1000 WHERE created_at_ms IS NULL OR created_at_ms = 0")
             c.execute("UPDATE withdrawals SET created_at_ms = CAST(strftime('%s', created_at) AS INTEGER) * 1000 WHERE created_at_ms IS NULL OR created_at_ms = 0")
@@ -2006,16 +2009,50 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         if path == "/api/users/register":
             uid = str(payload.get("id") or payload.get("userId") or f"USR-{random.randint(2000, 9999)}").strip()
-            name = str(payload.get("name") or uid).strip()
-            phone = str(payload.get("phone") or "").strip()
+            name = str(payload.get("name") or payload.get("username") or "").strip()
+            raw_phone = str(payload.get("phone") or "").strip()
+            digits_phone = "".join(ch for ch in raw_phone if ch.isdigit())
+            norm_phone = digits_phone[-10:] if len(digits_phone) >= 10 else digits_phone
+            formatted_phone = f"+91{norm_phone}" if len(norm_phone) == 10 else raw_phone
             email = str(payload.get("email") or "").strip()
-            bal = float(payload.get("balance", 50000.00))
-            ref_code = str(payload.get("referralCode") or f"CK-{uid[-4:]}").strip().upper()
+            raw_password = str(payload.get("password") or "").strip()
+            pw_hash_in = str(payload.get("passwordHash") or "").strip()
+            bal = float(payload.get("balance", 500.00))
+            ref_code = str(payload.get("referralCode") or f"{(name[:4] or 'CK').upper()}{random.randint(100, 999)}").strip().upper()
             ref_by_code = str(payload.get("referredBy") or "").strip().upper()
+
+            if len(name) < 3:
+                self._send_json({ "success": False, "error": "Username must be at least 3 characters" }, status=400)
+                return
+            if not payload.get("id") and len(norm_phone) < 10:
+                self._send_json({ "success": False, "error": "Please enter a valid 10-digit mobile number" }, status=400)
+                return
+            if not payload.get("id") and len(raw_password) < 4 and not pw_hash_in:
+                self._send_json({ "success": False, "error": "Password must be at least 4 characters" }, status=400)
+                return
+
+            pw_hash = pw_hash_in or hashlib.sha256((raw_password or "password123").encode("utf-8")).hexdigest()
+            if not email:
+                email = f"{name.lower().replace(' ', '_')}@colourking.in"
 
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
+                c.execute("SELECT id FROM users WHERE LOWER(name) = LOWER(?) AND id != ?", (name, uid))
+                if c.fetchone():
+                    conn.close()
+                    self._send_json({ "success": False, "error": "Username already exists. Please choose another." }, status=409)
+                    return
+
+                if len(norm_phone) == 10:
+                    c.execute("SELECT id, phone FROM users WHERE id != ?", (uid,))
+                    for pr in c.fetchall():
+                        existing_digits = "".join(ch for ch in str(pr["phone"] or "") if ch.isdigit())
+                        if existing_digits[-10:] == norm_phone:
+                            conn.close()
+                            self._send_json({ "success": False, "error": "Mobile number already registered. Please login." }, status=409)
+                            return
+
                 referred_by_uid = None
                 if ref_by_code:
                     c.execute("SELECT id FROM users WHERE UPPER(referral_code) = ? OR UPPER(id) = ?", (ref_by_code, ref_by_code))
@@ -2027,18 +2064,26 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 existing = c.fetchone()
                 if not existing:
                     c.execute("""
-                        INSERT INTO users (id, name, phone, email, balance, total_deposit, total_withdraw, bets_count, status, referral_code, referred_by)
-                        VALUES (?, ?, ?, ?, ?, 0.0, 0.0, 0, 'ACTIVE', ?, ?)
-                    """, (uid, name, phone, email, bal, ref_code, referred_by_uid))
+                        INSERT INTO users (id, name, phone, email, balance, total_deposit, total_withdraw, bets_count, status, referral_code, referred_by, password_hash)
+                        VALUES (?, ?, ?, ?, ?, ?, 0.0, 0, 'ACTIVE', ?, ?, ?)
+                    """, (uid, name, formatted_phone, email, bal, bal, ref_code, referred_by_uid, pw_hash))
+                    c.execute("""
+                        INSERT INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status, created_at_ms)
+                        VALUES (?, ?, 'DEPOSIT', 'New Player Sign-Up Bonus', ?, ?, 0.0, ?, 'SUCCESS', ?)
+                    """, (f"TX-BONUS-{uid}", uid, f"Welcome Credit ({ref_code})", bal, bal, now_ms))
                     c.execute("""
                         INSERT INTO admin_audit_logs (actor, action, entity, desc)
                         VALUES ('System', 'USER_REGISTERED', ?, ?)
                     """, (uid, f"Registered user {name} (Bal ₹{bal:.2f})"))
                 else:
                     c.execute("""
-                        UPDATE users SET name = ?, phone = COALESCE(NULLIF(?, ''), phone), email = COALESCE(NULLIF(?, ''), email)
+                        UPDATE users
+                        SET name = ?,
+                            phone = COALESCE(NULLIF(?, ''), phone),
+                            email = COALESCE(NULLIF(?, ''), email),
+                            password_hash = COALESCE(NULLIF(?, ''), password_hash)
                         WHERE id = ?
-                    """, (name, phone, email, uid))
+                    """, (name, formatted_phone, email, pw_hash, uid))
                 _, sse_ev = bump_state_version(conn, "user_registered", {"userId": uid, "name": name})
                 c.execute("SELECT * FROM users WHERE id = ?", (uid,))
                 u = c.fetchone()
@@ -2054,6 +2099,78 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     "referralCode": u["referral_code"] if "referral_code" in u.keys() else ref_code
                 }
             })
+            return
+
+        if path == "/api/users/login":
+            identifier = str(payload.get("identifier") or payload.get("username") or "").strip()
+            raw_password = str(payload.get("password") or "").strip()
+            if not identifier:
+                self._send_json({ "success": False, "error": "Please enter your mobile number or username" }, status=400)
+                return
+            if not raw_password:
+                self._send_json({ "success": False, "error": "Please enter your password" }, status=400)
+                return
+
+            ident_digits = "".join(ch for ch in identifier if ch.isdigit())
+            ident_last10 = ident_digits[-10:] if len(ident_digits) >= 10 else ""
+            pw_hash_input = hashlib.sha256(raw_password.encode("utf-8")).hexdigest()
+
+            with db_lock:
+                conn = get_db()
+                c = conn.cursor()
+                c.execute("""
+                    SELECT * FROM users
+                    WHERE UPPER(id) = UPPER(?) OR LOWER(name) = LOWER(?) OR LOWER(email) = LOWER(?)
+                    LIMIT 1
+                """, (identifier, identifier, identifier))
+                u = c.fetchone()
+                if not u and ident_last10:
+                    c.execute("SELECT * FROM users")
+                    for row in c.fetchall():
+                        r_digits = "".join(ch for ch in str(row["phone"] or "") if ch.isdigit())
+                        if len(r_digits) >= 10 and r_digits[-10:] == ident_last10:
+                            u = row
+                            break
+                conn.close()
+
+            if not u:
+                self._send_json({ "success": False, "error": "User not found. Please register a new account." }, status=404)
+                return
+
+            stored_hash = (u["password_hash"] if "password_hash" in u.keys() else "") or ""
+            is_valid = (stored_hash == pw_hash_input) or (not stored_hash and raw_password == "password123")
+            if not is_valid:
+                self._send_json({ "success": False, "error": "Incorrect password. Please try again." }, status=401)
+                return
+
+            self._send_json({
+                "success": True,
+                "user": {
+                    "id": u["id"],
+                    "name": u["name"],
+                    "phone": u["phone"],
+                    "email": u["email"],
+                    "balance": u["balance"],
+                    "status": u["status"],
+                    "referralCode": u["referral_code"] if "referral_code" in u.keys() else ""
+                }
+            })
+            return
+
+        if path == "/api/users/change-password":
+            uid = str(payload.get("userId") or "").strip()
+            new_pw = str(payload.get("newPassword") or "").strip()
+            if not uid or len(new_pw) < 4:
+                self._send_json({ "success": False, "error": "Password must be at least 4 characters" }, status=400)
+                return
+            new_hash = hashlib.sha256(new_pw.encode("utf-8")).hexdigest()
+            with db_lock:
+                conn = get_db()
+                c = conn.cursor()
+                c.execute("UPDATE users SET password_hash = ? WHERE id = ?", (new_hash, uid))
+                conn.commit()
+                conn.close()
+            self._send_json({ "success": True, "message": "Password updated successfully" })
             return
 
         if path == "/api/user/adjust":

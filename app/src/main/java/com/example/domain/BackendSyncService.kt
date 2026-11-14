@@ -673,7 +673,8 @@ class BackendSyncService(
         phone: String,
         email: String,
         balanceRupees: Double = 500.0,
-        referredBy: String? = null
+        referredBy: String? = null,
+        password: String? = null
     ): Boolean = withContext(Dispatchers.IO) {
         val payload = JSONObject().apply {
             put("id", userId)
@@ -682,8 +683,40 @@ class BackendSyncService(
             put("email", email)
             put("balance", balanceRupees)
             if (!referredBy.isNullOrBlank()) put("referredBy", referredBy)
+            if (!password.isNullOrBlank()) put("password", password)
         }
         return@withContext postJson("/api/users/register", payload) != null
+    }
+
+    suspend fun loginUserOnServer(
+        identifier: String,
+        password: String
+    ): Pair<ServerUserState?, String?> = withContext(Dispatchers.IO) {
+        val payload = JSONObject().apply {
+            put("identifier", identifier)
+            put("password", password)
+        }
+        val resp = postJsonWithStatus("/api/users/login", payload)
+            ?: return@withContext null to "Unable to reach server. Check connection."
+        if (!resp.optBoolean("success", false)) {
+            return@withContext null to (resp.optString("error").takeIf { it.isNotBlank() } ?: "Invalid credentials")
+        }
+        val uObj = resp.optJSONObject("user")
+            ?: return@withContext null to "Invalid server response"
+        val userState = ServerUserState(
+            id = uObj.optString("id"),
+            name = uObj.optString("name"),
+            phone = uObj.optString("phone", ""),
+            email = uObj.optString("email", ""),
+            balanceRupees = uObj.optDouble("balance", 0.0),
+            totalDepositRupees = uObj.optDouble("totalDeposit", 0.0),
+            totalWithdrawRupees = uObj.optDouble("totalWithdraw", 0.0),
+            betsCount = uObj.optInt("betsCount", 0),
+            status = uObj.optString("status", "ACTIVE").uppercase(),
+            referralCode = uObj.optString("referralCode", ""),
+            referredBy = uObj.optString("referredBy").takeIf { it.isNotBlank() && it != "null" }
+        )
+        return@withContext userState to null
     }
 
     suspend fun placeBetOnServer(

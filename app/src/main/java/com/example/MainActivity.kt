@@ -34,7 +34,6 @@ import com.example.ui.theme.*
 
 enum class AppNavDestination(val label: String, val icon: ImageVector) {
     GAME("Arena", Icons.Default.Casino),
-    WEB("Web", Icons.Default.Language),
     CASINO("Providers", Icons.Default.SportsEsports),
     WALLET("Wallet", Icons.Default.AccountBalanceWallet),
     AFFILIATE("Affiliate", Icons.Default.Groups),
@@ -223,7 +222,6 @@ fun MainAppScaffold(viewModel: MainViewModel) {
         ) {
             when (currentDestination) {
                 AppNavDestination.GAME -> GameScreen(viewModel = viewModel)
-                AppNavDestination.WEB -> WebScreen(viewModel = viewModel)
                 AppNavDestination.CASINO -> CasinoScreen(viewModel = viewModel)
                 AppNavDestination.WALLET -> WalletScreen(viewModel = viewModel)
                 AppNavDestination.AFFILIATE -> AffiliateScreen(viewModel = viewModel)
