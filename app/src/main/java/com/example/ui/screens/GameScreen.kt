@@ -26,6 +26,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
@@ -41,6 +42,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.borderStroke
@@ -55,6 +57,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.roundToLong
 
 @Composable
 fun GameScreen(
@@ -102,6 +105,31 @@ fun GameScreen(
 
 
 
+    var prevBettingOpen by remember(selectedMarket.id) { mutableStateOf<Boolean?>(null) }
+    var phaseBannerLocked by remember { mutableStateOf<Boolean?>(null) }
+
+    LaunchedEffect(isBettingOpen, selectedMarket.id) {
+        if (!isBettingOpen) {
+            pendingBetTarget = null
+        }
+        val prev = prevBettingOpen
+        if (prev == null) {
+            prevBettingOpen = isBettingOpen
+        } else if (prev != isBettingOpen) {
+            prevBettingOpen = isBettingOpen
+            val nowLocked = !isBettingOpen
+            viewModel.playBetPhaseSound(nowLocked)
+            phaseBannerLocked = nowLocked
+        }
+    }
+
+    LaunchedEffect(phaseBannerLocked) {
+        if (phaseBannerLocked != null) {
+            delay(5000L)
+            phaseBannerLocked = null
+        }
+    }
+
     val pendingType = pendingBetTarget?.first
     val pendingSelection = pendingBetTarget?.second ?: ""
     val pendingMultiplier = when {
@@ -113,12 +141,13 @@ fun GameScreen(
         else -> 2.0
     }
 
-    if (pendingBetTarget != null) {
+    if (pendingBetTarget != null && isBettingOpen) {
         BetPlacementDialog(
             betType = pendingType ?: BetType.COLOR,
             selection = pendingSelection,
             multiplier = pendingMultiplier,
             availableBalanceCents = wallet?.availableBalance ?: 0L,
+            isBettingOpen = isBettingOpen,
             onConfirm = { amountCents ->
                 viewModel.toggleBet(pendingType ?: BetType.COLOR, pendingSelection, amountCents)
                 pendingBetTarget = null
@@ -160,10 +189,14 @@ fun GameScreen(
         filteredBets.drop(safeBetSlipsPage * betsPerPage).take(betsPerPage)
     }
 
-    LazyColumn(
+    Box(
         modifier = modifier
             .fillMaxSize()
             .background(ObsidianBg)
+    ) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
             .padding(horizontal = 14.dp)
     ) {
         item {
@@ -226,20 +259,54 @@ fun GameScreen(
 
 
 
-            // Color Selection Pads (RED, VIOLET, GREEN) — Tap opens bet popup or cancels if already placed
+            if (!isBettingOpen) {
+                item {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = NeonRed.copy(alpha = 0.16f),
+                        border = borderStroke(1.2.dp, NeonRed.copy(alpha = 0.85f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("betting_locked_notice")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = "Betting Locked",
+                                tint = NeonRed,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "BETTING LOCKED • Buttons re-enable after Result Draw",
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+            }
+
+            // Color Selection Pads (RED, VIOLET, GREEN) — Disabled during Bet Lock
             item {
                 ColorSelectionPads(
                     activeBets = activeBetsMap,
                     redMultiplier = gameConfig?.redMultiplier ?: 2.0,
                     violetMultiplier = gameConfig?.violetMultiplier ?: 3.0,
                     greenMultiplier = gameConfig?.greenMultiplier ?: 2.0,
+                    enabled = isBettingOpen,
                     onToggleColor = { color ->
+                        if (!isBettingOpen) return@ColorSelectionPads
                         val existingBet = activeBetsMap[color]
                         if (existingBet != null) {
-                            // Cancel & refund
                             viewModel.toggleBet(BetType.COLOR, color, existingBet.amount)
                         } else {
-                            // Open Bet Amount Dialog
                             pendingBetTarget = Pair(BetType.COLOR, color)
                         }
                     }
@@ -247,19 +314,19 @@ fun GameScreen(
                 Spacer(modifier = Modifier.height(10.dp))
             }
 
-            // Big / Small Selection Pads (BIG: 5,6,7,8,9 | SMALL: 0,1,2,3,4) — 2x Payout
+            // Big / Small Selection Pads (BIG: 5,6,7,8,9 | SMALL: 0,1,2,3,4) — Disabled during Bet Lock
             item {
                 BigSmallSelectionPads(
                     activeBets = activeBetsMap,
                     bigMultiplier = 2.0,
                     smallMultiplier = 2.0,
+                    enabled = isBettingOpen,
                     onToggleSelection = { selection ->
+                        if (!isBettingOpen) return@BigSmallSelectionPads
                         val existingBet = activeBetsMap[selection]
                         if (existingBet != null) {
-                            // Cancel & refund
                             viewModel.toggleBet(BetType.BIG_SMALL, selection, existingBet.amount)
                         } else {
-                            // Open Bet Amount Dialog
                             pendingBetTarget = Pair(BetType.BIG_SMALL, selection)
                         }
                     }
@@ -267,19 +334,19 @@ fun GameScreen(
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
-            // Number Grid Selection (0 to 9) — Tap opens bet popup or cancels if already placed
+            // Number Grid Selection (0 to 9) — Disabled during Bet Lock
             item {
                 NumberGridSelection(
                     activeBets = activeBetsMap,
                     numberMultiplier = gameConfig?.numberMultiplier ?: 9.0,
+                    enabled = isBettingOpen,
                     onToggleNumber = { num ->
+                        if (!isBettingOpen) return@NumberGridSelection
                         val selStr = "$num"
                         val existingBet = activeBetsMap[selStr]
                         if (existingBet != null) {
-                            // Cancel & refund
                             viewModel.toggleBet(BetType.NUMBER, selStr, existingBet.amount)
                         } else {
-                            // Open Bet Amount Dialog
                             pendingBetTarget = Pair(BetType.NUMBER, selStr)
                         }
                     }
@@ -287,11 +354,13 @@ fun GameScreen(
                 Spacer(modifier = Modifier.height(14.dp))
             }
 
-            // IN-BETWEEN LIST: Current Round Placed Bets (Shows what user selected, amount, potential win, and EXACT time placed!)
+            // IN-BETWEEN LIST: Current Round Placed Bets
             item {
                 CurrentRoundPlacedBetsSection(
                     activeBets = activeBetsMap,
+                    isBettingOpen = isBettingOpen,
                     onCancelBet = { bet ->
+                        if (!isBettingOpen) return@CurrentRoundPlacedBetsSection
                         val bType = when (bet.betType) {
                             BetType.NUMBER.name -> BetType.NUMBER
                             BetType.BIG_SMALL.name -> BetType.BIG_SMALL
@@ -524,6 +593,98 @@ fun GameScreen(
                 }
             }
             item { Spacer(modifier = Modifier.height(30.dp)) }
+        }
+    }
+
+    BetPhaseOverlayBanner(
+        isLocked = phaseBannerLocked == true,
+        visible = phaseBannerLocked != null,
+        marketName = selectedMarket.name,
+        periodNumber = currentRound?.roundNumber?.toString() ?: "---",
+        onDismiss = { phaseBannerLocked = null },
+        modifier = Modifier
+            .align(Alignment.TopCenter)
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+    )
+    }
+}
+
+@Composable
+fun BetPhaseOverlayBanner(
+    isLocked: Boolean,
+    visible: Boolean,
+    marketName: String,
+    periodNumber: String,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val accent = if (isLocked) NeonRed else NeonGreen
+    val infiniteTransition = rememberInfiniteTransition(label = "phasePulse")
+    val pulse by infiniteTransition.animateFloat(
+        initialValue = 0.96f,
+        targetValue = 1.03f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(550, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "phaseScale"
+    )
+
+    AnimatedVisibility(
+        visible = visible,
+        enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(animationSpec = tween(250)),
+        exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(animationSpec = tween(250)),
+        modifier = modifier
+    ) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = if (isLocked) Color(0xFF280B12) else Color(0xFF0A261A),
+            border = borderStroke(2.dp, accent),
+            shadowElevation = 14.dp,
+            modifier = Modifier
+                .fillMaxWidth()
+                .scale(pulse)
+                .clickable { onDismiss() }
+                .testTag("bet_phase_banner")
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(accent.copy(alpha = 0.22f))
+                        .border(1.5.dp, accent, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (isLocked) "🔒" else "🟢",
+                        fontSize = 22.sp
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (isLocked) "BETTING LOCKED (5s ALERT)" else "BETTING OPEN — DRAW DECLARED!",
+                        color = accent,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 13.sp,
+                        letterSpacing = 0.5.sp
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = if (isLocked)
+                            "$marketName Period #$periodNumber is locked. Awaiting official draw..."
+                        else
+                            "$marketName Period #$periodNumber is live! Place your bets now.",
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
         }
     }
 }
@@ -1490,6 +1651,7 @@ fun BetPlacementDialog(
     selection: String,
     multiplier: Double,
     availableBalanceCents: Long,
+    isBettingOpen: Boolean = true,
     onConfirm: (amountCents: Long) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1497,8 +1659,10 @@ fun BetPlacementDialog(
     var multiplierFactor by remember { mutableStateOf(1) }
 
     val totalBetCents = selectedChipCents * multiplierFactor
-    val potentialWinCents = (totalBetCents * multiplier).toLong()
-    val hasSufficientBalance = availableBalanceCents >= totalBetCents
+    val platformFeeCents = (totalBetCents * 3L) / 100L
+    val netStakeCents = totalBetCents - platformFeeCents
+    val potentialWinCents = (netStakeCents * multiplier).roundToLong()
+    val hasSufficientBalance = availableBalanceCents >= totalBetCents && isBettingOpen
 
     val themeColor = when (selection.uppercase()) {
         "GREEN" -> NeonGreen
@@ -1711,7 +1875,7 @@ fun BetPlacementDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Calculation Summary
+                // Calculation Summary (Total Bet Paid, 3% Platform Fee, Net Bet, Payout on Net)
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = ObsidianBg,
@@ -1736,12 +1900,38 @@ fun BetPlacementDialog(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text(text = "Potential Win Payout", color = TextSecondary, fontSize = 12.sp)
+                            Text(text = "Platform Fee (3%)", color = TextSecondary, fontSize = 12.sp)
+                            Text(
+                                text = "-${MoneyUtils.formatCents(platformFeeCents)}",
+                                color = AmberGlow,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(text = "Net Active Bet (97%)", color = TextSecondary, fontSize = 12.sp)
+                            Text(
+                                text = MoneyUtils.formatCents(netStakeCents),
+                                color = ElectricCyan,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(text = "Win Payout (${multiplier}x on Net)", color = TextSecondary, fontSize = 12.sp)
                             Text(
                                 text = MoneyUtils.formatCents(potentialWinCents),
                                 color = NeonGreen,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 14.sp
                             )
                         }
                         Spacer(modifier = Modifier.height(4.dp))
@@ -1760,7 +1950,15 @@ fun BetPlacementDialog(
                     }
                 }
 
-                if (!hasSufficientBalance) {
+                if (!isBettingOpen) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "🔒 Betting is locked for this round! Wait for result draw.",
+                        color = NeonRed,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                } else if (availableBalanceCents < totalBetCents) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "⚠️ Insufficient wallet balance! Please reduce bet or deposit funds.",
@@ -1821,6 +2019,7 @@ fun BetPlacementDialog(
 @Composable
 fun CurrentRoundPlacedBetsSection(
     activeBets: Map<String, BetEntity>,
+    isBettingOpen: Boolean = true,
     onCancelBet: (BetEntity) -> Unit
 ) {
     val totalDeductedCents = activeBets.values.sumOf { it.amount }
@@ -1833,7 +2032,6 @@ fun CurrentRoundPlacedBetsSection(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
-            // Header Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1871,7 +2069,7 @@ fun CurrentRoundPlacedBetsSection(
 
                 if (activeBets.isNotEmpty()) {
                     Text(
-                        text = "Deducted: ${MoneyUtils.formatCents(totalDeductedCents)}",
+                        text = MoneyUtils.formatCents(totalDeductedCents),
                         color = GoldAccent,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.ExtraBold
@@ -1880,7 +2078,7 @@ fun CurrentRoundPlacedBetsSection(
             }
 
             Text(
-                text = "Live bets stream • Shows your selections, bet time, and direct cancel/refund",
+                text = if (isBettingOpen) "Live bet slips • Includes 3% platform fee breakdown & instant cancel" else "Round Locked • Waiting for official draw outcome",
                 color = TextSecondary,
                 fontSize = 11.sp
             )
@@ -1911,20 +2109,20 @@ fun CurrentRoundPlacedBetsSection(
                         Text(
                             text = "No pending bets. Tap any color or number above to bet!",
                             color = TextMuted,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Normal
+                            fontSize = 12.sp
                         )
                     }
                 }
             } else {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     activeBets.values.forEach { bet ->
                         PlacedBetItemCard(
                             bet = bet,
                             timeFormat = timeFormat,
+                            isBettingOpen = isBettingOpen,
                             onCancel = { onCancelBet(bet) }
                         )
                     }
@@ -1938,6 +2136,7 @@ fun CurrentRoundPlacedBetsSection(
 fun PlacedBetItemCard(
     bet: BetEntity,
     timeFormat: SimpleDateFormat,
+    isBettingOpen: Boolean = true,
     onCancel: () -> Unit
 ) {
     val themeColor = when (bet.selection.uppercase()) {
@@ -1953,81 +2152,25 @@ fun PlacedBetItemCard(
     val market = GameMarkets.getById(bet.gameId)
     val marketAccent = Color(market.accentColorHex)
     val periodNumber = bet.roundId.substringAfterLast("_")
+    val feeCents = if (bet.platformFeeCents > 0L) bet.platformFeeCents else (bet.amount * 3L) / 100L
+    val netCents = if (bet.netAmountCents > 0L) bet.netAmountCents else (bet.amount - feeCents)
 
     Surface(
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(16.dp),
         color = ObsidianBg,
-        border = borderStroke(1.dp, themeColor.copy(alpha = 0.5f)),
+        border = borderStroke(1.dp, themeColor.copy(alpha = 0.55f)),
+        tonalElevation = 4.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            // Header: Market Name, Period Number, and Status WAIT
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = marketAccent.copy(alpha = 0.2f),
-                        border = borderStroke(1.dp, marketAccent.copy(alpha = 0.7f))
-                    ) {
-                        Text(
-                            text = "${market.emoji} ${market.name}",
-                            color = marketAccent,
-                            fontWeight = FontWeight.Black,
-                            fontSize = 10.sp,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "PERIOD #$periodNumber",
-                        color = GoldAccent,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = AmberGlow.copy(alpha = 0.2f),
-                    border = borderStroke(1.dp, AmberGlow.copy(alpha = 0.8f))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(5.dp)
-                                .clip(CircleShape)
-                                .background(AmberGlow)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "WAIT",
-                            color = AmberGlow,
-                            fontWeight = FontWeight.Black,
-                            fontSize = 10.sp
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Body: Selection, Timing with seconds, Result, Amounts & Cancel
+            // Top Strip: Selection Avatar + Name + Market/Period + Status Pill
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Selection Badge
                 Box(
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(38.dp)
                         .clip(CircleShape)
                         .background(themeColor)
                         .border(1.5.dp, Color.White, CircleShape),
@@ -2056,85 +2199,150 @@ fun PlacedBetItemCard(
                                 else -> bet.selection
                             },
                             color = TextPrimary,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(CardHighlight)
-                                .padding(horizontal = 4.dp, vertical = 1.dp)
+                        Surface(
+                            shape = RoundedCornerShape(5.dp),
+                            color = GoldAccent.copy(alpha = 0.16f)
                         ) {
                             Text(
                                 text = "${bet.multiplier}x",
                                 color = GoldAccent,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp)
                             )
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(3.dp))
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.AccessTime,
-                            contentDescription = null,
-                            tint = ElectricCyan,
-                            modifier = Modifier.size(11.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "Placed: ${timeFormat.format(Date(bet.createdAt))}",
-                            color = ElectricCyan,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            fontFamily = FontFamily.Monospace
-                        )
-                    }
-
                     Spacer(modifier = Modifier.height(2.dp))
-
                     Text(
-                        text = "Result: Awaiting Draw",
-                        color = TextMuted,
+                        text = "${market.emoji} ${market.name} • #$periodNumber",
+                        color = marketAccent,
+                        fontWeight = FontWeight.Bold,
                         fontSize = 10.sp,
-                        fontWeight = FontWeight.Normal
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
-                // Amount, Potential Win, and Cancel Button
-                Column(horizontalAlignment = Alignment.End) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = (if (isBettingOpen) AmberGlow else NeonRed).copy(alpha = 0.18f),
+                    border = borderStroke(1.dp, (if (isBettingOpen) AmberGlow else NeonRed).copy(alpha = 0.75f))
+                ) {
                     Text(
-                        text = MoneyUtils.formatCents(bet.amount),
-                        color = TextPrimary,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
+                        text = if (isBettingOpen) "● WAIT" else "🔒 LOCKED",
+                        color = if (isBettingOpen) AmberGlow else NeonRed,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 10.sp,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // 3-Column Metrics Grid: Paid | Fee & Net | Target Win
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = SurfaceDark,
+                border = borderStroke(0.8.dp, CardBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("BET PAID", color = TextMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = MoneyUtils.formatCents(bet.amount),
+                            color = TextPrimary,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 12.sp
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1.25f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("3% FEE / NET", color = TextMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "${MoneyUtils.formatCents(feeCents)} / ${MoneyUtils.formatCents(netCents)}",
+                            color = ElectricCyan,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            maxLines = 1
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                        Text("TARGET WIN", color = TextMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "+${MoneyUtils.formatCents(bet.potentialPayout)}",
+                            color = NeonGreen,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Footer: Placed Timestamp & Cancel / Lock badge
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.AccessTime,
+                        contentDescription = null,
+                        tint = ElectricCyan,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "Win: +${MoneyUtils.formatCents(bet.potentialPayout)}",
-                        color = NeonGreen,
+                        text = timeFormat.format(Date(bet.createdAt)),
+                        color = ElectricCyan,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.SemiBold,
-                        fontSize = 10.sp
+                        fontFamily = FontFamily.Monospace
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Box(
+                }
+
+                if (isBettingOpen) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = NeonRed.copy(alpha = 0.18f),
+                        border = borderStroke(1.dp, NeonRed),
                         modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(NeonRed.copy(alpha = 0.2f))
-                            .border(0.8.dp, NeonRed, RoundedCornerShape(6.dp))
                             .clickable { onCancel() }
-                            .padding(horizontal = 8.dp, vertical = 3.dp)
                             .testTag("cancel_bet_${bet.selection}")
                     ) {
                         Text(
                             text = "✕ Cancel & Refund",
                             color = NeonRed,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 9.sp
+                            fontSize = 10.sp,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                         )
                     }
+                } else {
+                    Text(
+                        text = "Awaiting Official Draw...",
+                        color = TextMuted,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
             }
         }
@@ -2147,10 +2355,13 @@ fun ColorSelectionPads(
     redMultiplier: Double,
     violetMultiplier: Double,
     greenMultiplier: Double,
+    enabled: Boolean = true,
     onToggleColor: (String) -> Unit
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .alpha(if (enabled) 1f else 0.45f),
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         // GREEN (2x)
@@ -2159,6 +2370,7 @@ fun ColorSelectionPads(
             multiplier = "${greenMultiplier}x",
             bgColor = NeonGreen,
             activeBet = activeBets["GREEN"],
+            enabled = enabled,
             onClick = { onToggleColor("GREEN") },
             modifier = Modifier.weight(1f)
         )
@@ -2169,6 +2381,7 @@ fun ColorSelectionPads(
             multiplier = "${violetMultiplier}x",
             bgColor = NeonViolet,
             activeBet = activeBets["VIOLET"],
+            enabled = enabled,
             onClick = { onToggleColor("VIOLET") },
             modifier = Modifier.weight(1f)
         )
@@ -2179,6 +2392,7 @@ fun ColorSelectionPads(
             multiplier = "${redMultiplier}x",
             bgColor = NeonRed,
             activeBet = activeBets["RED"],
+            enabled = enabled,
             onClick = { onToggleColor("RED") },
             modifier = Modifier.weight(1f)
         )
@@ -2191,6 +2405,7 @@ fun ColorPad(
     multiplier: String,
     bgColor: Color,
     activeBet: BetEntity?,
+    enabled: Boolean = true,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -2205,7 +2420,7 @@ fun ColorPad(
         ),
         modifier = modifier
             .height(68.dp)
-            .clickable { onClick() }
+            .clickable(enabled = enabled) { onClick() }
             .testTag("bet_color_${name.lowercase()}")
     ) {
         Column(
@@ -2236,7 +2451,7 @@ fun ColorPad(
                         .padding(horizontal = 6.dp, vertical = 1.dp)
                 ) {
                     Text(
-                        text = "₹${activeBet.amount / 100} ✕ Cancel",
+                        text = if (enabled) "₹${activeBet.amount / 100} ✕ Cancel" else "₹${activeBet.amount / 100} 🔒",
                         color = ObsidianBg,
                         fontWeight = FontWeight.Black,
                         fontSize = 9.sp
@@ -2252,16 +2467,18 @@ fun BigSmallSelectionPads(
     activeBets: Map<String, BetEntity>,
     bigMultiplier: Double = 2.0,
     smallMultiplier: Double = 2.0,
+    enabled: Boolean = true,
     onToggleSelection: (String) -> Unit
 ) {
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = SurfaceDark,
         border = borderStroke(1.dp, CardBorder),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .alpha(if (enabled) 1f else 0.45f)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            // Header Info Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -2275,10 +2492,7 @@ fun BigSmallSelectionPads(
                             .background(GoldAccent.copy(alpha = 0.2f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = "⚡",
-                            fontSize = 12.sp
-                        )
+                        Text(text = "⚡", fontSize = 12.sp)
                     }
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
@@ -2305,30 +2519,29 @@ fun BigSmallSelectionPads(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Two Prominent Betting Pads: BIG and SMALL
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // BIG PAD (5, 6, 7, 8, 9)
                 BigSmallPad(
                     name = "BIG",
                     rangeLabel = "5, 6, 7, 8, 9",
                     multiplier = "${bigMultiplier}x",
                     accentColor = AmberGlow,
                     activeBet = activeBets["BIG"],
+                    enabled = enabled,
                     onClick = { onToggleSelection("BIG") },
                     testTag = "bet_big_button",
                     modifier = Modifier.weight(1f)
                 )
 
-                // SMALL PAD (0, 1, 2, 3, 4)
                 BigSmallPad(
                     name = "SMALL",
                     rangeLabel = "0, 1, 2, 3, 4",
                     multiplier = "${smallMultiplier}x",
                     accentColor = ElectricCyan,
                     activeBet = activeBets["SMALL"],
+                    enabled = enabled,
                     onClick = { onToggleSelection("SMALL") },
                     testTag = "bet_small_button",
                     modifier = Modifier.weight(1f)
@@ -2345,6 +2558,7 @@ fun BigSmallPad(
     multiplier: String,
     accentColor: Color,
     activeBet: BetEntity?,
+    enabled: Boolean = true,
     onClick: () -> Unit,
     testTag: String,
     modifier: Modifier = Modifier
@@ -2360,7 +2574,7 @@ fun BigSmallPad(
         ),
         modifier = modifier
             .height(82.dp)
-            .clickable { onClick() }
+            .clickable(enabled = enabled) { onClick() }
             .testTag(testTag)
     ) {
         Column(
@@ -2415,7 +2629,7 @@ fun BigSmallPad(
                         .padding(horizontal = 6.dp, vertical = 1.5.dp)
                 ) {
                     Text(
-                        text = "₹${activeBet.amount / 100} ✕ Cancel",
+                        text = if (enabled) "₹${activeBet.amount / 100} ✕ Cancel" else "₹${activeBet.amount / 100} 🔒",
                         color = ObsidianBg,
                         fontWeight = FontWeight.Black,
                         fontSize = 9.sp
@@ -2430,13 +2644,16 @@ fun BigSmallPad(
 fun NumberGridSelection(
     activeBets: Map<String, BetEntity>,
     numberMultiplier: Double,
+    enabled: Boolean = true,
     onToggleNumber: (Int) -> Unit
 ) {
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = SurfaceDark,
         border = borderStroke(1.dp, CardBorder),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .alpha(if (enabled) 1f else 0.45f)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
@@ -2459,7 +2676,6 @@ fun NumberGridSelection(
             }
 
             Spacer(modifier = Modifier.height(10.dp))
-            // 2 rows of 5 numbers (0 to 4, 5 to 9)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -2468,6 +2684,7 @@ fun NumberGridSelection(
                     NumberBall(
                         number = num,
                         activeBet = activeBets["$num"],
+                        enabled = enabled,
                         onClick = { onToggleNumber(num) }
                     )
                 }
@@ -2482,6 +2699,7 @@ fun NumberGridSelection(
                     NumberBall(
                         number = num,
                         activeBet = activeBets["$num"],
+                        enabled = enabled,
                         onClick = { onToggleNumber(num) }
                     )
                 }
@@ -2494,12 +2712,13 @@ fun NumberGridSelection(
 fun NumberBall(
     number: Int,
     activeBet: BetEntity?,
+    enabled: Boolean = true,
     onClick: () -> Unit
 ) {
     val isPlaced = activeBet != null
     val ballColor = when (number) {
-        0 -> NeonViolet // Combo Red + Violet
-        5 -> NeonViolet // Combo Green + Violet
+        0 -> NeonViolet
+        5 -> NeonViolet
         1, 3, 7, 9 -> NeonGreen
         else -> NeonRed
     }
@@ -2514,7 +2733,7 @@ fun NumberBall(
                 color = if (isPlaced) Color.White else ballColor,
                 shape = CircleShape
             )
-            .clickable { onClick() }
+            .clickable(enabled = enabled) { onClick() }
             .testTag("bet_number_$number"),
         contentAlignment = Alignment.Center
     ) {
@@ -2527,7 +2746,7 @@ fun NumberBall(
             )
             if (isPlaced) {
                 Text(
-                    text = "₹${activeBet.amount / 100}✕",
+                    text = if (enabled) "₹${activeBet.amount / 100}✕" else "₹${activeBet.amount / 100}🔒",
                     color = GoldAccent,
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 8.sp
@@ -2547,59 +2766,106 @@ fun BetHistoryItem(bet: BetEntity, round: GameRoundEntity? = null) {
         else -> Triple(bet.status, TextMuted, CardHighlight)
     }
 
+    val themeColor = when (bet.selection.uppercase()) {
+        "GREEN" -> NeonGreen
+        "RED" -> NeonRed
+        "VIOLET" -> NeonViolet
+        "BIG" -> AmberGlow
+        "SMALL" -> ElectricCyan
+        "0", "5" -> NeonViolet
+        "1", "3", "7", "9" -> NeonGreen
+        else -> NeonRed
+    }
+
     val market = GameMarkets.getById(bet.gameId)
     val marketAccentColor = Color(market.accentColorHex)
     val periodNumber = round?.roundNumber?.let { "#$it" } ?: ("#" + bet.roundId.substringAfterLast("_"))
-    val timeFormatWithSeconds = remember { SimpleDateFormat("dd MMM yyyy, hh:mm:ss a", Locale.ENGLISH) }
+    val timeFormatWithSeconds = remember { SimpleDateFormat("dd MMM, hh:mm:ss a", Locale.ENGLISH) }
+    val feeCents = if (bet.platformFeeCents > 0L) bet.platformFeeCents else (bet.amount * 3L) / 100L
+    val netCents = if (bet.netAmountCents > 0L) bet.netAmountCents else (bet.amount - feeCents)
 
     Surface(
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(16.dp),
         color = SurfaceDark,
         border = borderStroke(1.dp, CardBorder),
+        tonalElevation = 4.dp,
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            // Header Row: Market Name, Period Number, and Status Badge (WAIT, WON, LOST)
+            // Top Row: Selection Badge, Market/Period, Status Pill
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Market Name Badge
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = marketAccentColor.copy(alpha = 0.2f),
-                        border = borderStroke(1.dp, marketAccentColor.copy(alpha = 0.7f))
-                    ) {
-                        Text(
-                            text = "${market.emoji} ${market.name}",
-                            color = marketAccentColor,
-                            fontWeight = FontWeight.Black,
-                            fontSize = 11.sp,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    // Period Number
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(themeColor)
+                        .border(1.2.dp, Color.White.copy(alpha = 0.85f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
                     Text(
-                        text = "PERIOD $periodNumber",
-                        color = GoldAccent,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
-                        letterSpacing = 0.5.sp
+                        text = if (bet.betType == BetType.NUMBER.name) bet.selection else bet.selection.take(1),
+                        color = if (themeColor == NeonGreen || themeColor == AmberGlow || themeColor == ElectricCyan) ObsidianBg else Color.White,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 14.sp
                     )
                 }
 
-                // Status Badge (WAIT, WON, LOST)
+                Spacer(modifier = Modifier.width(10.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = when (bet.betType) {
+                                BetType.NUMBER.name -> "Number ${bet.selection}"
+                                BetType.BIG_SMALL.name -> when (bet.selection.uppercase()) {
+                                    "BIG" -> "BIG (5–9)"
+                                    "SMALL" -> "SMALL (0–4)"
+                                    else -> bet.selection
+                                }
+                                else -> bet.selection
+                            },
+                            color = TextPrimary,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            shape = RoundedCornerShape(5.dp),
+                            color = CardHighlight
+                        ) {
+                            Text(
+                                text = "${bet.multiplier}x",
+                                color = GoldAccent,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "${market.emoji} ${market.name} • $periodNumber",
+                        color = marketAccentColor,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
                 Surface(
-                    shape = RoundedCornerShape(6.dp),
+                    shape = RoundedCornerShape(8.dp),
                     color = statusBg,
                     border = borderStroke(1.dp, statusColor.copy(alpha = 0.8f))
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
@@ -2621,78 +2887,68 @@ fun BetHistoryItem(bet: BetEntity, round: GameRoundEntity? = null) {
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Middle Row: Bet Target/Selection & Bet Amount / Payout
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            // 3-Column Metrics Strip: Paid | 3% Fee / Net | Result Payout
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = ObsidianBg,
+                border = borderStroke(0.8.dp, CardBorder),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = when (bet.betType) {
-                            BetType.NUMBER.name -> "Number ${bet.selection}"
-                            BetType.BIG_SMALL.name -> when (bet.selection.uppercase()) {
-                                "BIG" -> "BIG (5–9)"
-                                "SMALL" -> "SMALL (0–4)"
-                                else -> bet.selection
-                            }
-                            else -> bet.selection
-                        },
-                        color = TextPrimary,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(CardHighlight)
-                            .padding(horizontal = 5.dp, vertical = 1.dp)
-                    ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("PAID", color = TextMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "${bet.multiplier}x",
-                            color = GoldAccent,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
+                            text = MoneyUtils.formatCents(bet.amount),
+                            color = TextPrimary,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 12.sp
                         )
                     }
-                }
-
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        text = "Bet: " + MoneyUtils.formatCents(bet.amount),
-                        color = TextPrimary,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp
-                    )
-                    if (bet.status.uppercase() in listOf("REFUNDED", "CANCELLED")) {
+                    Column(modifier = Modifier.weight(1.25f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("3% FEE / NET", color = TextMuted, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "Refunded: +" + MoneyUtils.formatCents(bet.amount),
+                            text = "${MoneyUtils.formatCents(feeCents)} / ${MoneyUtils.formatCents(netCents)}",
                             color = ElectricCyan,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            maxLines = 1
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = when {
+                                bet.status.uppercase() in listOf("REFUNDED", "CANCELLED") -> "REFUNDED"
+                                bet.status == "WON" -> "PAYOUT"
+                                bet.status == "LOST" -> "LOSS"
+                                else -> "TARGET"
+                            },
+                            color = TextMuted,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        val (valText, valColor) = when {
+                            bet.status.uppercase() in listOf("REFUNDED", "CANCELLED") ->
+                                "+${MoneyUtils.formatCents(bet.amount)}" to ElectricCyan
+                            bet.status == "WON" ->
+                                "+${MoneyUtils.formatCents(bet.actualPayout)}" to NeonGreen
+                            bet.status == "LOST" ->
+                                "-${MoneyUtils.formatCents(bet.amount)}" to NeonRed
+                            else ->
+                                "+${MoneyUtils.formatCents(bet.potentialPayout)}" to AmberGlow
+                        }
+                        Text(
+                            text = valText,
+                            color = valColor,
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 12.sp
-                        )
-                    } else if (bet.status == "WON") {
-                        val netProfit = bet.actualPayout - bet.amount
-                        Text(
-                            text = "Win: +" + MoneyUtils.formatCents(bet.actualPayout) + " (P&L +${MoneyUtils.formatCents(netProfit)})",
-                            color = NeonGreen,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 11.sp
-                        )
-                    } else if (bet.status == "LOST") {
-                        Text(
-                            text = "Loss: -" + MoneyUtils.formatCents(bet.amount),
-                            color = NeonRed,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 12.sp
-                        )
-                    } else if (statusLabel == "WAIT") {
-                        Text(
-                            text = "Pot: +" + MoneyUtils.formatCents(bet.potentialPayout),
-                            color = AmberGlow,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 11.sp
                         )
                     }
                 }
@@ -2700,13 +2956,12 @@ fun BetHistoryItem(bet: BetEntity, round: GameRoundEntity? = null) {
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Bottom Row: Bet Generate Timing with Seconds & Result Details
+            // Bottom Row: Timestamp & Result Outcome
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Bet Generate Timing with second
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         imageVector = Icons.Default.AccessTime,
@@ -2724,39 +2979,25 @@ fun BetHistoryItem(bet: BetEntity, round: GameRoundEntity? = null) {
                     )
                 }
 
-                // Result display (Refunded bets permanently display Result: Refunded with no status change after round declaration)
                 if (bet.status.uppercase() in listOf("REFUNDED", "CANCELLED")) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "Result: ",
-                            color = TextMuted,
-                            fontSize = 11.sp
-                        )
-                        Text(
-                            text = "Refunded",
-                            color = ElectricCyan,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp
-                        )
-                    }
+                    Text(
+                        text = "Result: Refunded",
+                        color = ElectricCyan,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp
+                    )
                 } else if (round != null && round.resultNumber != null) {
                     val outcomeNum = round.resultNumber
                     val outcomeColor = round.resultColor ?: ""
                     val isOutcomeBig = outcomeNum >= 5
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "Result: ",
-                            color = TextMuted,
-                            fontSize = 11.sp
-                        )
+                        Text(text = "Draw: ", color = TextMuted, fontSize = 11.sp)
                         Text(
                             text = "$outcomeNum $outcomeColor (${if (isOutcomeBig) "BIG" else "SMALL"})",
                             color = when {
-                                outcomeColor.contains("GREEN") && outcomeColor.contains("VIOLET") -> NeonViolet
-                                outcomeColor.contains("RED") && outcomeColor.contains("VIOLET") -> NeonViolet
+                                outcomeColor.contains("VIOLET") -> NeonViolet
                                 outcomeColor.contains("GREEN") -> NeonGreen
                                 outcomeColor.contains("RED") -> NeonRed
-                                outcomeColor.contains("VIOLET") -> NeonViolet
                                 else -> TextPrimary
                             },
                             fontWeight = FontWeight.Bold,
@@ -2765,7 +3006,7 @@ fun BetHistoryItem(bet: BetEntity, round: GameRoundEntity? = null) {
                     }
                 } else {
                     Text(
-                        text = "Result: Awaiting Draw",
+                        text = "Awaiting Draw",
                         color = TextMuted,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium

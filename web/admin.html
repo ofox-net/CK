@@ -1202,6 +1202,7 @@
               <thead>
                 <tr>
                   <th>User Details</th>
+                  <th>Password</th>
                   <th>Wallet Balance</th>
                   <th>Total Deposits</th>
                   <th>Total Withdrawals</th>
@@ -2730,12 +2731,19 @@
 
       tbody.innerHTML = filtered.map(u => {
         const netPL = u.totalDeposit - u.totalWithdraw - u.balance;
+        const safePw = String(u.password || 'password123').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/'/g, '&#39;');
         return `
           <tr>
             <td>
               <strong style="font-size:14px; color:#FFF;">${u.name}</strong><br/>
               <span style="font-size:11px; color:var(--cyan); font-family:monospace;">${u.id}</span> • 
               <span style="font-size:11px; color:var(--text-muted);">${u.phone}</span>
+            </td>
+            <td>
+              <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(255,215,0,0.08); border:1px solid rgba(255,215,0,0.28); padding:4px 8px; border-radius:6px;">
+                <span style="font-family:monospace; font-size:12px; font-weight:700; color:var(--gold); letter-spacing:0.4px;">${safePw}</span>
+                <button type="button" onclick="navigator.clipboard && navigator.clipboard.writeText('${safePw}'); showToast('Password copied!');" title="Copy Password" style="background:none; border:none; color:var(--cyan); cursor:pointer; font-size:11px; padding:0;">📋</button>
+              </div>
             </td>
             <td><strong style="color:var(--green); font-size:14px;">₹${u.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></td>
             <td>₹${u.totalDeposit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
@@ -2844,7 +2852,8 @@
         name: rName,
         phone: "+91 9" + Math.floor(100000000 + Math.random() * 900000000),
         email: rName.toLowerCase() + "@gmail.com",
-        balance: 10000.00,
+        password: "demo123",
+        balance: 100.00,
         totalDeposit: 0.00,
         totalWithdraw: 0.00,
         betsCount: 0,
@@ -2951,7 +2960,10 @@
         return matchesMarket && matchesStatus && matchesQ;
       });
 
-      tbody.innerHTML = filtered.map(b => `
+      tbody.innerHTML = filtered.map(b => {
+        const feeVal = typeof b.platformFee === 'number' ? b.platformFee : +(Number(b.amount || 0) * 0.03).toFixed(2);
+        const netVal = typeof b.netAmount === 'number' ? b.netAmount : +(Number(b.amount || 0) - feeVal).toFixed(2);
+        return `
         <tr>
           <td><strong style="color:var(--gold); font-family:monospace;">${b.id}</strong></td>
           <td><strong style="color:var(--cyan);">${b.market}</strong></td>
@@ -2965,7 +2977,11 @@
               ${b.target}
             </span>
           </td>
-          <td><strong>₹${b.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></td>
+          <td>
+            <strong>₹${b.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong><br/>
+            <span style="font-size:10px; color:var(--amber);">3% Fee: ₹${feeVal.toFixed(2)}</span> • 
+            <span style="font-size:10px; color:var(--cyan);">Net: ₹${netVal.toFixed(2)}</span>
+          </td>
           <td style="color:var(--gold); font-weight:700;">${b.multiplier}X</td>
           <td>
             <span class="badge ${b.status === 'WON' ? 'badge-approved' : b.status === 'LOST' ? 'badge-rejected' : 'badge-pending'}">
@@ -2977,13 +2993,15 @@
           </td>
           <td style="font-size:11px; color:var(--text-muted);">${b.time}</td>
         </tr>
-      `).join('');
+      `; }).join('');
     }
 
     function exportBetsToCSV() {
-      let csv = "BetID,Market,Period,UserID,UserName,Target,Amount,Multiplier,Status,Payout,Time\n";
+      let csv = "BetID,Market,Period,UserID,UserName,Target,GrossAmount,PlatformFee3Pct,NetAmount,Multiplier,Status,Payout,Time\n";
       allBets.forEach(b => {
-        csv += `${b.id},${b.market},${b.period},${b.userId},${b.userName},${b.target},${b.amount},${b.multiplier},${b.status},${b.payout},${b.time}\n`;
+        const feeVal = typeof b.platformFee === 'number' ? b.platformFee : +(Number(b.amount || 0) * 0.03).toFixed(2);
+        const netVal = typeof b.netAmount === 'number' ? b.netAmount : +(Number(b.amount || 0) - feeVal).toFixed(2);
+        csv += `${b.id},${b.market},${b.period},${b.userId},${b.userName},${b.target},${b.amount},${feeVal},${netVal},${b.multiplier},${b.status},${b.payout},${b.time}\n`;
       });
       const blob = new Blob([csv], { type: 'text/csv' });
       const url = URL.createObjectURL(blob);

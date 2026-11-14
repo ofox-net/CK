@@ -20,6 +20,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:label="@string/app_name"
             android:screenOrientation="portrait"
             android:theme="@style/Theme.MyApplication">
@@ -27,6 +28,28 @@
                 <action android:name="android.intent.action.MAIN" />
 
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="ais-pre-zgi6cruhcpqtgg5frvcozc-221262354191.asia-southeast1.run.app" />
+                <data
+                    android:scheme="https"
+                    android:host="ais-dev-zgi6cruhcpqtgg5frvcozc-221262354191.asia-southeast1.run.app" />
+                <data
+                    android:scheme="https"
+                    android:host="colourking.app" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="colourking" />
             </intent-filter>
         </activity>
     </application>

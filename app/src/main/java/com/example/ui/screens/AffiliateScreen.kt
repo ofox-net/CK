@@ -148,7 +148,7 @@ fun AffiliateScreen(
             val referralCode = serverAffiliateStats?.referralCode?.takeIf { it.isNotBlank() }
                 ?: activeUser?.referralCode?.takeIf { it.isNotBlank() }
                 ?: "----"
-            val referralLink = if (referralCode != "----") "https://colourking.app/join?ref=$referralCode" else ""
+            val referralLink = if (referralCode != "----") "https://ais-pre-zgi6cruhcpqtgg5frvcozc-221262354191.asia-southeast1.run.app/?ref=$referralCode" else ""
 
             Surface(
                 shape = RoundedCornerShape(14.dp),

@@ -153,6 +153,8 @@ data class BetEntity(
     val betType: String, // COLOR, NUMBER
     val selection: String, // RED, GREEN, VIOLET, or "0".."9"
     val amount: Long, // in cents
+    val platformFeeCents: Long = 0L, // 3% platform fee in cents
+    val netAmountCents: Long = 0L, // Net active bet amount in cents (97%)
     val multiplier: Double,
     val potentialPayout: Long,
     val actualPayout: Long = 0L,

@@ -522,8 +522,13 @@ class GameEngineService(
             }
             try {
                 val (isWon, multiplier) = evaluateBet(bet, result, config)
+                val stakeBase = if (bet.netAmountCents > 0L) {
+                    bet.netAmountCents
+                } else {
+                    bet.amount - (bet.amount * 3L) / 100L
+                }
                 val payoutCents = if (isWon) {
-                    (bet.amount * multiplier).toLong()
+                    kotlin.math.round(stakeBase * multiplier).toLong()
                 } else 0L
 
                 if (isWon && payoutCents > 0L) {

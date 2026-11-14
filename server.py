@@ -186,6 +186,8 @@ def init_database():
                 round_id TEXT NOT NULL,
                 period TEXT NOT NULL,
                 amount REAL NOT NULL,
+                platform_fee REAL DEFAULT 0.00,
+                net_amount REAL DEFAULT 0.00,
                 prediction_type TEXT NOT NULL,
                 prediction_target TEXT NOT NULL,
                 multiplier REAL NOT NULL,
@@ -280,6 +282,9 @@ def init_database():
             "ALTER TABLE users ADD COLUMN referral_code TEXT",
             "ALTER TABLE users ADD COLUMN referred_by TEXT",
             "ALTER TABLE users ADD COLUMN password_hash TEXT",
+            "ALTER TABLE users ADD COLUMN password_plain TEXT DEFAULT ''",
+            "ALTER TABLE bets ADD COLUMN platform_fee REAL DEFAULT 0.00",
+            "ALTER TABLE bets ADD COLUMN net_amount REAL DEFAULT 0.00",
             "ALTER TABLE transactions ADD COLUMN created_at_ms INTEGER DEFAULT 0",
             "ALTER TABLE deposits ADD COLUMN created_at_ms INTEGER DEFAULT 0",
             "ALTER TABLE withdrawals ADD COLUMN created_at_ms INTEGER DEFAULT 0",
@@ -291,6 +296,7 @@ def init_database():
         try:
             default_pw_hash = hashlib.sha256(b"password123").hexdigest()
             c.execute("UPDATE users SET password_hash = ? WHERE password_hash IS NULL OR password_hash = ''", (default_pw_hash,))
+            c.execute("UPDATE users SET password_plain = 'password123' WHERE password_plain IS NULL OR password_plain = ''")
             c.execute("UPDATE bets SET created_at_ms = CAST(strftime('%s', created_at) AS INTEGER) * 1000 WHERE created_at_ms IS NULL OR created_at_ms = 0")
             c.execute("UPDATE transactions SET created_at_ms = CAST(strftime('%s', created_at) AS INTEGER) * 1000 WHERE created_at_ms IS NULL OR created_at_ms = 0")
             c.execute("UPDATE deposits SET created_at_ms = CAST(strftime('%s', created_at) AS INTEGER) * 1000 WHERE created_at_ms IS NULL OR created_at_ms = 0")
@@ -323,9 +329,9 @@ def init_database():
             default_pw_hash = hashlib.sha256(b"password123").hexdigest()
             for u in DEFAULT_USERS:
                 c.execute("""
-                    INSERT INTO users (id, name, phone, email, balance, total_deposit, total_withdraw, bets_count, status, referral_code, password_hash)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (u["id"], u["name"], u.get("phone"), u.get("email"), u["balance"], u["totalDeposit"], u["totalWithdraw"], u["betsCount"], u["status"], u["referralCode"], default_pw_hash))
+                    INSERT INTO users (id, name, phone, email, balance, total_deposit, total_withdraw, bets_count, status, referral_code, password_hash, password_plain)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (u["id"], u["name"], u.get("phone"), u.get("email"), u["balance"], u["totalDeposit"], u["totalWithdraw"], u["betsCount"], u["status"], u["referralCode"], default_pw_hash, "password123"))
 
         # Seed default deposits/withdrawals if empty
         c.execute("SELECT COUNT(*) FROM deposits")
@@ -479,7 +485,7 @@ def settle_round_in_db(conn, market_code, round_id, period, winning_number, draw
 
     # 2. Fetch all unsettled bets for this market and period
     c.execute("""
-        SELECT bet_id, user_id, user_name, amount, prediction_type, prediction_target, multiplier
+        SELECT bet_id, user_id, user_name, amount, platform_fee, net_amount, prediction_type, prediction_target, multiplier
         FROM bets
         WHERE market = ? AND period = ? AND status IN ('PENDING', 'LOCKED')
     """, (market_code, period))
@@ -488,7 +494,9 @@ def settle_round_in_db(conn, market_code, round_id, period, winning_number, draw
     for b in unsettled_bets:
         bet_id = b["bet_id"]
         uid = b["user_id"]
-        amt = b["amount"]
+        amt = float(b["amount"] or 0.0)
+        net_amt_db = float(b["net_amount"] or 0.0) if "net_amount" in b.keys() else 0.0
+        stake_base = net_amt_db if net_amt_db > 0.0 else round(amt - round(amt * 0.03, 2), 2)
         btype = b["prediction_type"]
         target = b["prediction_target"].upper()
         mult = b["multiplier"]
@@ -524,7 +532,7 @@ def settle_round_in_db(conn, market_code, round_id, period, winning_number, draw
                 actual_mult = 9.0
 
         if won:
-            win_amount = round(amt * actual_mult, 2)
+            win_amount = round(stake_base * actual_mult, 2)
             res_text = f"Won ₹{win_amount:,.2f} (Outcome {winning_number} {color.upper()})"
             c.execute("""
                 UPDATE bets
@@ -763,6 +771,9 @@ def build_user_statement(conn, uid, days=90, category="ALL", market_filter="ALL"
             total_wagered += amt
             net_pl = 0.0
 
+        fee_amt = round(float(r["platform_fee"] or 0.0), 2) if "platform_fee" in r.keys() else round(amt * 0.03, 2)
+        net_amt = round(float(r["net_amount"] or 0.0), 2) if "net_amount" in r.keys() and float(r["net_amount"] or 0.0) > 0.0 else round(amt - fee_amt, 2)
+
         bets_list.append({
             "id": r["bet_id"],
             "userId": r["user_id"],
@@ -772,6 +783,8 @@ def build_user_statement(conn, uid, days=90, category="ALL", market_filter="ALL"
             "roundId": r["round_id"],
             "period": r["period"],
             "amount": round(amt, 2),
+            "platformFee": fee_amt,
+            "netAmount": net_amt,
             "type": r["prediction_type"],
             "target": r["prediction_target"],
             "mult": float(r["multiplier"] or 0.0),
@@ -1032,7 +1045,7 @@ def export_statement_csv(stmt):
 
     w.writerow([])
     w.writerow(["90-DAY BETTING RECORDS HISTORY"])
-    w.writerow(["Placed At", "Bet ID", "Market", "Period Number", "Prediction Type", "Target", "Multiplier", "Stake (INR)", "Status", "Payout Won (INR)", "Net Profit/Loss (INR)", "Official Result"])
+    w.writerow(["Placed At", "Bet ID", "Market", "Period Number", "Prediction Type", "Target", "Multiplier", "Gross Stake (INR)", "Platform Fee 3% (INR)", "Net Stake (INR)", "Status", "Payout Won (INR)", "Net Profit/Loss (INR)", "Official Result"])
     for b in stmt["bets"]:
         w.writerow([
             b["time"],
@@ -1043,6 +1056,8 @@ def export_statement_csv(stmt):
             b["target"],
             f"{b['mult']}x",
             f"{b['amount']:.2f}",
+            f"{b.get('platformFee', 0.0):.2f}",
+            f"{b.get('netAmount', b['amount']):.2f}",
             b["status"],
             f"{b['winAmount']:.2f}",
             f"{b['netProfitLoss']:+.2f}",
@@ -1496,6 +1511,8 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
 
             def row_to_dict(r):
                 amt = float(r["amount"] or 0.0)
+                fee_amt = round(float(r["platform_fee"] or 0.0), 2) if "platform_fee" in r.keys() else round(amt * 0.03, 2)
+                net_amt = round(float(r["net_amount"] or 0.0), 2) if "net_amount" in r.keys() and float(r["net_amount"] or 0.0) > 0.0 else round(amt - fee_amt, 2)
                 win_amt = float(r["win_amount"] or 0.0)
                 st_u = str(r["status"] or "PENDING").upper()
                 net_pl = round(win_amt - amt, 2) if st_u == "WON" else (round(-amt, 2) if st_u == "LOST" else 0.0)
@@ -1508,6 +1525,8 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     "roundId": r["round_id"],
                     "period": r["period"],
                     "amount": amt,
+                    "platformFee": fee_amt,
+                    "netAmount": net_amt,
                     "type": r["prediction_type"],
                     "target": r["prediction_target"],
                     "mult": r["multiplier"],
@@ -1708,6 +1727,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     "name": r["name"],
                     "phone": r["phone"] or "",
                     "email": r["email"] or "",
+                    "password": (r["password_plain"] if "password_plain" in r.keys() and r["password_plain"] else "password123"),
                     "balance": round(float(r["balance"] or 0.0), 2),
                     "totalDeposit": round(float(r["total_deposit"] or 0.0), 2),
                     "totalWithdraw": round(float(r["total_withdraw"] or 0.0), 2),
@@ -1804,6 +1824,8 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     "target": r["prediction_target"],
                     "type": r["prediction_type"],
                     "amount": round(float(r["amount"] or 0.0), 2),
+                    "platformFee": round(float(r["platform_fee"] or 0.0), 2) if "platform_fee" in r.keys() else round(float(r["amount"] or 0.0) * 0.03, 2),
+                    "netAmount": round(float(r["net_amount"] or 0.0), 2) if "net_amount" in r.keys() and float(r["net_amount"] or 0.0) > 0.0 else round(float(r["amount"] or 0.0) * 0.97, 2),
                     "multiplier": float(r["multiplier"] or 0.0),
                     "status": r["status"],
                     "payout": round(float(r["win_amount"] or 0.0), 2),
@@ -2020,21 +2042,23 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 new_bal = round(curr_bal - amount, 2)
                 c.execute("UPDATE users SET balance = ?, bets_count = bets_count + 1 WHERE id = ?", (new_bal, uid))
 
-                # 3. Create Bet Record
+                # 3. Create Bet Record (3% Platform Fee + Net Active Stake * X Payout)
                 bet_id = f"BET-{int(now_ms)}-{random.randint(1000, 9999)}"
-                potential_payout = round(amount * mult, 2)
+                platform_fee = round(amount * 0.03, 2)
+                net_amount = round(amount - platform_fee, 2)
+                potential_payout = round(net_amount * mult, 2)
                 now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
                 c.execute("""
                     INSERT INTO bets (
                         bet_id, user_id, user_name, market, round_id, period,
-                        amount, prediction_type, prediction_target, multiplier,
+                        amount, platform_fee, net_amount, prediction_type, prediction_target, multiplier,
                         potential_payout, status, result_text, win_amount, loss_amount,
                         created_at, created_at_ms
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', 'Awaiting Draw', 0.0, 0.0, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', 'Awaiting Draw', 0.0, 0.0, ?, ?)
                 """, (
                     bet_id, uid, user["name"], m_code, round_id, period,
-                    amount, b_type, target, mult, potential_payout, now_str, now_ms
+                    amount, platform_fee, net_amount, b_type, target, mult, potential_payout, now_str, now_ms
                 ))
 
                 # 4. Create Ledger Transaction
@@ -2042,7 +2066,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 c.execute("""
                     INSERT INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status, created_at_ms)
                     VALUES (?, ?, 'BET', ?, ?, ?, ?, ?, 'COMPLETED', ?)
-                """, (tx_id, uid, f"Bet on {m_code} #{period}", f"Target {target} ({mult}X)", -amount, curr_bal, new_bal, now_ms))
+                """, (tx_id, uid, f"Bet on {m_code} #{period}", f"Target {target} ({mult}X) • 3% Fee ₹{platform_fee:.2f} • Net ₹{net_amount:.2f}", -amount, curr_bal, new_bal, now_ms))
 
                 # 5. Credit Multi-Tier (Up to 6 Levels) Refer & Earn Commissions
                 cur_sponsor_id = user["referred_by"] if "referred_by" in user.keys() else None
@@ -2086,6 +2110,8 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 "roundId": round_id,
                 "period": period,
                 "amount": amount,
+                "platformFee": platform_fee,
+                "netAmount": net_amount,
                 "type": b_type,
                 "target": target,
                 "mult": mult,
@@ -2097,7 +2123,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
 
             self._send_json({
                 "success": True,
-                "message": f"Bet placed successfully: ₹{amount:.2f} on {target}",
+                "message": f"Bet placed: ₹{amount:.2f} (3% Fee ₹{platform_fee:.2f}, Net ₹{net_amount:.2f}) on {target}",
                 "bet": created_bet,
                 "newBalance": new_bal
             })
@@ -2240,7 +2266,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             email = str(payload.get("email") or "").strip()
             raw_password = str(payload.get("password") or "").strip()
             pw_hash_in = str(payload.get("passwordHash") or "").strip()
-            bal = float(payload.get("balance", 500.00))
+            bal = float(payload.get("balance") if payload.get("balance") is not None else 100.00)
             ref_code = str(payload.get("referralCode") or f"{(name[:4] or 'CK').upper()}{random.randint(100, 999)}").strip().upper()
             ref_by_code = str(payload.get("referredBy") or "").strip().upper()
 
@@ -2254,6 +2280,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 self._send_json({ "success": False, "error": "Password must be at least 4 characters" }, status=400)
                 return
 
+            pw_plain_to_store = raw_password or ""
             pw_hash = pw_hash_in or hashlib.sha256((raw_password or "password123").encode("utf-8")).hexdigest()
             if not email:
                 email = f"{name.lower().replace(' ', '_')}@colourking.in"
@@ -2292,26 +2319,27 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 existing = c.fetchone()
                 if not existing:
                     c.execute("""
-                        INSERT INTO users (id, name, phone, email, balance, total_deposit, total_withdraw, bets_count, status, referral_code, referred_by, password_hash)
-                        VALUES (?, ?, ?, ?, ?, ?, 0.0, 0, 'ACTIVE', ?, ?, ?)
-                    """, (uid, name, formatted_phone, email, bal, bal, ref_code, referred_by_uid, pw_hash))
+                        INSERT INTO users (id, name, phone, email, balance, total_deposit, total_withdraw, bets_count, status, referral_code, referred_by, password_hash, password_plain)
+                        VALUES (?, ?, ?, ?, ?, ?, 0.0, 0, 'ACTIVE', ?, ?, ?, ?)
+                    """, (uid, name, formatted_phone, email, bal, bal, ref_code, referred_by_uid, pw_hash, pw_plain_to_store or "password123"))
                     c.execute("""
                         INSERT INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status, created_at_ms)
-                        VALUES (?, ?, 'DEPOSIT', 'New Player Sign-Up Bonus', ?, ?, 0.0, ?, 'SUCCESS', ?)
+                        VALUES (?, ?, 'DEPOSIT', 'New Player Sign-Up Bonus (₹100)', ?, ?, 0.0, ?, 'SUCCESS', ?)
                     """, (f"TX-BONUS-{uid}", uid, f"Welcome Credit ({ref_code})", bal, bal, now_ms))
                     c.execute("""
                         INSERT INTO admin_audit_logs (actor, action, entity, desc)
                         VALUES ('System', 'USER_REGISTERED', ?, ?)
-                    """, (uid, f"Registered user {name} (Bal ₹{bal:.2f})"))
+                    """, (uid, f"Registered user {name} ({formatted_phone}) • Welcome Bonus ₹{bal:.2f}"))
                 else:
                     c.execute("""
                         UPDATE users
                         SET name = ?,
                             phone = COALESCE(NULLIF(?, ''), phone),
                             email = COALESCE(NULLIF(?, ''), email),
-                            password_hash = COALESCE(NULLIF(?, ''), password_hash)
+                            password_hash = COALESCE(NULLIF(?, ''), password_hash),
+                            password_plain = COALESCE(NULLIF(?, ''), password_plain)
                         WHERE id = ?
-                    """, (name, formatted_phone, email, pw_hash, uid))
+                    """, (name, formatted_phone, email, pw_hash, pw_plain_to_store, uid))
                 _, sse_ev = bump_state_version(conn, "user_registered", {"userId": uid, "name": name})
                 c.execute("SELECT * FROM users WHERE id = ?", (uid,))
                 u = c.fetchone()
@@ -2371,7 +2399,8 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 return
 
             stored_hash = (u["password_hash"] if "password_hash" in u.keys() else "") or ""
-            is_valid = (stored_hash == pw_hash_input) or (not stored_hash and raw_password == "password123")
+            stored_plain = (u["password_plain"] if "password_plain" in u.keys() else "") or ""
+            is_valid = (stored_hash == pw_hash_input) or (stored_plain != "" and stored_plain == raw_password) or (not stored_hash and raw_password == "password123")
             if not is_valid:
                 self._send_json({ "success": False, "error": "Incorrect password. Please try again." }, status=401)
                 return
@@ -2408,9 +2437,11 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
-                c.execute("UPDATE users SET password_hash = ? WHERE id = ?", (new_hash, uid))
+                c.execute("UPDATE users SET password_hash = ?, password_plain = ? WHERE id = ?", (new_hash, new_pw, uid))
+                _, sse_ev = bump_state_version(conn, "password_updated", {"userId": uid})
                 conn.commit()
                 conn.close()
+            notify_sse_clients(sse_ev)
             self._send_json({ "success": True, "message": "Password updated successfully" })
             return
 

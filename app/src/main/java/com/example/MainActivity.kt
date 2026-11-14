@@ -1,5 +1,6 @@
 package com.example
 
+import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -42,26 +43,56 @@ enum class AppNavDestination(val label: String, val icon: ImageVector) {
 
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
+    private val deepLinkReferralCode = mutableStateOf<String?>(null)
+
+    private fun extractReferralCode(incomingIntent: Intent?) {
+        val uri = incomingIntent?.data ?: return
+        val refParam = (uri.getQueryParameter("ref")
+            ?: uri.getQueryParameter("invite")
+            ?: uri.getQueryParameter("code"))
+            ?.trim()
+            ?.uppercase()
+            ?.takeIf { it.isNotBlank() }
+        if (refParam != null) {
+            deepLinkReferralCode.value = refParam
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         enableEdgeToEdge()
+        extractReferralCode(intent)
 
         setContent {
             MyApplicationTheme {
-                MainAppScaffold(viewModel = viewModel)
+                MainAppScaffold(
+                    viewModel = viewModel,
+                    initialReferralCode = deepLinkReferralCode.value
+                )
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        extractReferralCode(intent)
     }
 }
 
 @Composable
-fun MainAppScaffold(viewModel: MainViewModel) {
+fun MainAppScaffold(
+    viewModel: MainViewModel,
+    initialReferralCode: String? = null
+) {
     val isLoggedIn by viewModel.isLoggedIn.collectAsState()
 
     if (!isLoggedIn) {
-        AuthScreen(viewModel = viewModel)
+        AuthScreen(
+            viewModel = viewModel,
+            initialReferralCode = initialReferralCode
+        )
         return
     }
 

@@ -36,9 +36,13 @@ import com.example.ui.theme.*
 @Composable
 fun AuthScreen(
     viewModel: MainViewModel,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    initialReferralCode: String? = null
 ) {
-    var selectedTab by remember { mutableStateOf(0) } // 0: Login, 1: Register
+    val lockedRefCode = remember(initialReferralCode) {
+        initialReferralCode?.trim()?.uppercase()?.takeIf { it.isNotBlank() }
+    }
+    var selectedTab by remember { mutableStateOf(if (lockedRefCode != null) 1 else 0) } // 0: Login, 1: Register
     val authLoading by viewModel.authLoading.collectAsState()
 
     // Login Form State
@@ -53,10 +57,18 @@ fun AuthScreen(
     var regEmail by remember { mutableStateOf("") }
     var regPassword by remember { mutableStateOf("") }
     var regConfirmPassword by remember { mutableStateOf("") }
-    var regReferralCode by remember { mutableStateOf("") }
+    var regReferralCode by remember { mutableStateOf(lockedRefCode ?: "") }
     var regPasswordVisible by remember { mutableStateOf(false) }
     var regAgreeTerms by remember { mutableStateOf(true) }
     var regError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(lockedRefCode) {
+        if (lockedRefCode != null) {
+            selectedTab = 1
+            regReferralCode = lockedRefCode
+            regError = null
+        }
+    }
 
     Box(
         modifier = modifier
@@ -129,7 +141,7 @@ fun AuthScreen(
                         Spacer(modifier = Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "NEW PLAYER BONUS ₹500.00",
+                                text = "NEW PLAYER BONUS ₹100.00",
                                 color = GoldAccent,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Black
@@ -376,7 +388,7 @@ fun AuthScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "Register now & get instant ₹500 starter wallet credit",
+                                text = "Register now & get instant ₹100 starter wallet credit",
                                 color = TextMuted,
                                 fontSize = 11.sp
                             )
@@ -545,22 +557,49 @@ fun AuthScreen(
 
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            // Referral Code (Optional)
+                            // Referral Code (Locked if opened from referral link)
+                            val isReferralLocked = lockedRefCode != null
                             OutlinedTextField(
-                                value = regReferralCode,
+                                value = if (isReferralLocked) lockedRefCode!! else regReferralCode,
                                 onValueChange = {
-                                    regReferralCode = it.uppercase()
-                                    regError = null
+                                    if (!isReferralLocked) {
+                                        regReferralCode = it.uppercase()
+                                        regError = null
+                                    }
                                 },
-                                label = { Text("Referral / Invite Code (Optional)") },
+                                readOnly = isReferralLocked,
+                                label = {
+                                    Text(
+                                        if (isReferralLocked) "Referral / Invite Code (Locked)"
+                                        else "Referral / Invite Code (Optional)"
+                                    )
+                                },
                                 placeholder = { Text("e.g. REF_L1 or APEXROOT") },
                                 leadingIcon = {
                                     Icon(
-                                        imageVector = Icons.Default.Groups,
+                                        imageVector = if (isReferralLocked) Icons.Default.Lock else Icons.Default.Groups,
                                         contentDescription = null,
-                                        tint = NeonViolet
+                                        tint = if (isReferralLocked) GoldAccent else NeonViolet
                                     )
                                 },
+                                trailingIcon = if (isReferralLocked) {
+                                    {
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = GoldAccent.copy(alpha = 0.2f),
+                                            border = borderStroke(1.dp, GoldAccent),
+                                            modifier = Modifier.padding(end = 8.dp)
+                                        ) {
+                                            Text(
+                                                text = "🔒 LOCKED",
+                                                color = GoldAccent,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Black,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                            )
+                                        }
+                                    }
+                                } else null,
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(
                                     keyboardType = KeyboardType.Text,
@@ -568,8 +607,19 @@ fun AuthScreen(
                                 ),
                                 colors = authTextFieldColors(),
                                 shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("reg_referral_input")
                             )
+                            if (isReferralLocked) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Invited via referral link — sponsor code is locked and cannot be modified.",
+                                    color = GoldAccent,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
 
                             Spacer(modifier = Modifier.height(10.dp))
 
@@ -637,7 +687,7 @@ fun AuthScreen(
                                         phone = regPhone,
                                         email = regEmail,
                                         password = regPassword,
-                                        referralCode = regReferralCode.ifBlank { null }
+                                        referralCode = (lockedRefCode ?: regReferralCode).ifBlank { null }
                                     ) { success, err ->
                                         if (!success) regError = err
                                     }
@@ -663,7 +713,7 @@ fun AuthScreen(
                                     Text("Registering Account...", color = ObsidianBg, fontWeight = FontWeight.Bold)
                                 } else {
                                     Text(
-                                        text = "REGISTER & CLAIM ₹500 BONUS",
+                                        text = "REGISTER & CLAIM ₹100 BONUS",
                                         color = ObsidianBg,
                                         fontWeight = FontWeight.Black,
                                         fontSize = 13.sp,

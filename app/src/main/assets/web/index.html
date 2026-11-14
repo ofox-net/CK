@@ -518,34 +518,226 @@
     .num-btn .digit { font-size: 18px; line-height: 1; }
     .num-btn .mult { font-size: 9px; opacity: 0.85; }
 
-    /* Active Placed Bets List & History Slips */
+    /* Disabled / Locked Betting Controls */
+    .bet-control-locked {
+      opacity: 0.42 !important;
+      pointer-events: none !important;
+      filter: grayscale(0.5);
+      cursor: not-allowed !important;
+    }
+    .locked-pad-banner {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: linear-gradient(90deg, rgba(255,23,68,0.18), rgba(255,145,0,0.18));
+      border: 1px solid rgba(255,23,68,0.45);
+      color: #FF8A80;
+      padding: 8px 12px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.3px;
+      text-align: center;
+    }
+    .locked-pad-banner.active {
+      display: flex;
+    }
+
+    /* 5-Second Bet Lock / Bet Open Animated Overlay Banner */
+    @keyframes phaseBannerSlideIn {
+      0% { opacity: 0; transform: translate(-50%, -22px) scale(0.92); }
+      18% { opacity: 1; transform: translate(-50%, 0) scale(1.02); }
+      100% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+    }
+    @keyframes phaseProgressBar {
+      from { width: 100%; }
+      to { width: 0%; }
+    }
+    .bet-phase-banner {
+      position: fixed;
+      top: 68px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: calc(100% - 28px);
+      max-width: 440px;
+      z-index: 9500;
+      pointer-events: none;
+      border-radius: 14px;
+      overflow: hidden;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65);
+      animation: phaseBannerSlideIn 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+    .bet-phase-banner.phase-lock {
+      background: linear-gradient(135deg, rgba(44, 12, 22, 0.96), rgba(24, 10, 18, 0.98));
+      border: 1.5px solid #FF1744;
+      box-shadow: 0 0 28px rgba(255, 23, 68, 0.45), 0 12px 30px rgba(0, 0, 0, 0.7);
+    }
+    .bet-phase-banner.phase-open {
+      background: linear-gradient(135deg, rgba(8, 38, 26, 0.96), rgba(10, 22, 20, 0.98));
+      border: 1.5px solid #00E676;
+      box-shadow: 0 0 28px rgba(0, 230, 118, 0.45), 0 12px 30px rgba(0, 0, 0, 0.7);
+    }
+    .bet-phase-inner {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+    }
+    .bet-phase-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+    .phase-lock .bet-phase-icon {
+      background: rgba(255, 23, 68, 0.22);
+      border: 1px solid rgba(255, 23, 68, 0.5);
+    }
+    .phase-open .bet-phase-icon {
+      background: rgba(0, 230, 118, 0.22);
+      border: 1px solid rgba(0, 230, 118, 0.5);
+    }
+    .bet-phase-title {
+      font-size: 13px;
+      font-weight: 900;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    .phase-lock .bet-phase-title { color: #FF5252; }
+    .phase-open .bet-phase-title { color: #00E676; }
+    .bet-phase-sub {
+      font-size: 11px;
+      color: #E2E8F0;
+      margin-top: 2px;
+      font-weight: 600;
+    }
+    .bet-phase-progress {
+      height: 3px;
+      width: 100%;
+      background: rgba(255, 255, 255, 0.12);
+    }
+    .bet-phase-progress-fill {
+      height: 100%;
+      animation: phaseProgressBar 5s linear forwards;
+    }
+    .phase-lock .bet-phase-progress-fill { background: linear-gradient(90deg, #FF1744, #FF9100); }
+    .phase-open .bet-phase-progress-fill { background: linear-gradient(90deg, #00E676, #FFD700); }
+
+    /* Active Placed Bets List & Premium Mobile-First History Slips */
     .bets-list {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 10px;
     }
     .bet-item {
-      background: var(--card-highlight);
-      border-radius: 10px;
-      padding: 10px 12px;
+      background: linear-gradient(145deg, #17223B, #10182B);
+      border-radius: 13px;
+      padding: 11px 12px;
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      border-left: 3px solid var(--gold);
+      flex-direction: column;
+      gap: 8px;
+      border: 1px solid rgba(255, 215, 0, 0.22);
+      border-left: 4px solid var(--gold);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.28);
+      box-sizing: border-box;
+      width: 100%;
     }
     .bet-slip-card {
-      background: var(--card-highlight);
-      border-radius: 12px;
+      background: linear-gradient(145deg, #162038, #0F1627);
+      border-radius: 14px;
       padding: 12px;
       display: flex;
       flex-direction: column;
-      gap: 6px;
-      border: 1px solid var(--border);
+      gap: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+      box-sizing: border-box;
+      width: 100%;
+      overflow: hidden;
     }
-    .bet-slip-card.status-won { border-left: 4px solid var(--green); }
-    .bet-slip-card.status-lost { border-left: 4px solid var(--red); }
-    .bet-slip-card.status-wait { border-left: 4px solid var(--gold); }
-    .bet-slip-card.status-refunded { border-left: 4px solid var(--cyan); }
+    .bet-slip-card.status-won { border-color: rgba(0,230,118,0.28); border-left: 4px solid var(--green); }
+    .bet-slip-card.status-lost { border-color: rgba(255,23,68,0.24); border-left: 4px solid var(--red); }
+    .bet-slip-card.status-wait { border-color: rgba(255,215,0,0.26); border-left: 4px solid var(--gold); }
+    .bet-slip-card.status-locked { border-color: rgba(255,145,0,0.28); border-left: 4px solid #FF9100; }
+    .bet-slip-card.status-refunded { border-color: rgba(0,229,255,0.26); border-left: 4px solid var(--cyan); }
+    .bet-slip-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .bet-slip-title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      flex-wrap: wrap;
+    }
+    .bet-slip-market-pill {
+      font-size: 10px;
+      font-weight: 900;
+      padding: 2px 7px;
+      border-radius: 6px;
+      background: rgba(255,215,0,0.12);
+      color: var(--gold);
+      border: 1px solid rgba(255,215,0,0.25);
+      white-space: nowrap;
+    }
+    .bet-slip-period {
+      font-size: 11px;
+      font-weight: 700;
+      color: #CBD5E1;
+      font-family: monospace;
+      white-space: nowrap;
+    }
+    .bet-slip-metrics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+      background: rgba(7, 11, 20, 0.55);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 10px;
+      padding: 8px;
+    }
+    .bet-slip-metric {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+    .bet-slip-metric-label {
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .bet-slip-metric-val {
+      font-size: 12px;
+      font-weight: 800;
+      color: #FFF;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .bet-slip-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      font-size: 10px;
+      color: var(--text-muted);
+      border-top: 1px solid rgba(255,255,255,0.06);
+      padding-top: 6px;
+    }
 
     /* Filter Chips Row */
     .filter-chips-row {
@@ -1130,6 +1322,20 @@
     <!-- Notification Toast -->
     <div class="toast" id="toastMessage"></div>
 
+    <!-- 5-Second Bet Lock / Bet Open Animated Overlay Banner -->
+    <div id="betPhaseBanner" class="bet-phase-banner" style="display:none;">
+      <div class="bet-phase-inner">
+        <div class="bet-phase-icon" id="betPhaseIcon">🔒</div>
+        <div style="flex:1; min-width:0;">
+          <div class="bet-phase-title" id="betPhaseTitle">BETTING LOCKED</div>
+          <div class="bet-phase-sub" id="betPhaseSub">30s Draw Countdown Started • All Bet Buttons Disabled</div>
+        </div>
+      </div>
+      <div class="bet-phase-progress">
+        <div class="bet-phase-progress-fill" id="betPhaseProgressFill"></div>
+      </div>
+    </div>
+
     <!-- MAIN BODY CONTENT -->
     <main>
       
@@ -1225,6 +1431,11 @@
           <svg class="svg-trend-chart" id="trendChartSvg" viewBox="0 0 300 100">
             <!-- Drawn dynamically via renderTrendChart() -->
           </svg>
+        </div>
+
+        <!-- Locked Notice Banner (Visible During 30s Draw Countdown) -->
+        <div id="bettingLockedNotice" class="locked-pad-banner">
+          🔒 BETTING LOCKED — All betting buttons disabled until result draw completes
         </div>
 
         <!-- Color Selection Pads -->
@@ -1856,12 +2067,20 @@
       <!-- Calculation Summary Box (Obsidian Background) -->
       <div style="background:#0a0d14; border:1px solid #2a3447; border-radius:12px; padding:12px; display:flex; flex-direction:column; gap:6px;">
         <div style="display:flex; justify-content:space-between; font-size:12px;">
-          <span style="color:var(--text-muted);">Total Bet Amount</span>
+          <span style="color:var(--text-muted);">Total Bet Paid</span>
           <strong id="betModalAmountDisplay" style="color:var(--gold); font-size:14px; font-weight:800;">₹100.00</strong>
         </div>
+        <div style="display:flex; justify-content:space-between; font-size:11px;">
+          <span style="color:#FF9100;">Platform Fee (3%)</span>
+          <strong id="betModalFeeDisplay" style="color:#FF9100; font-weight:800;">-₹3.00</strong>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:12px; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:5px;">
+          <span style="color:var(--cyan);">Net Active Bet</span>
+          <strong id="betModalNetAmountDisplay" style="color:var(--cyan); font-weight:800;">₹97.00</strong>
+        </div>
         <div style="display:flex; justify-content:space-between; font-size:12px;">
-          <span style="color:var(--text-muted);">Potential Win Payout</span>
-          <strong id="betModalPotentialWin" style="color:var(--green); font-size:13px; font-weight:800;">₹200.00</strong>
+          <span style="color:var(--text-muted);">Potential Win Payout (X)</span>
+          <strong id="betModalPotentialWin" style="color:var(--green); font-size:13px; font-weight:800;">₹194.00</strong>
         </div>
         <div style="display:flex; justify-content:space-between; font-size:12px;">
           <span style="color:var(--text-muted);">Available Balance</span>
@@ -2164,7 +2383,7 @@
       <div style="width:100%; margin-top:16px; background:var(--card-highlight); border:1px solid rgba(255,215,0,0.45); border-radius:12px; padding:10px 14px; display:flex; align-items:center; gap:10px;">
         <span style="font-size:20px;">🎁</span>
         <div style="flex:1;">
-          <div style="color:var(--gold); font-size:12px; font-weight:900;">NEW PLAYER BONUS ₹500.00</div>
+          <div style="color:var(--gold); font-size:12px; font-weight:900;">NEW PLAYER BONUS ₹100.00</div>
           <div style="color:var(--text-muted); font-size:10px; margin-top:1px;">Instant wallet credit on registration • 100% SHA-256 Verifiable</div>
         </div>
       </div>
@@ -2210,7 +2429,7 @@
       <div id="authRegForm" style="width:100%; margin-top:16px; background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:18px; display:none; flex-direction:column; gap:10px;">
         <div>
           <div style="font-size:16px; font-weight:800; color:#FFF;">Create New Player Account</div>
-          <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Register now &amp; get instant ₹500 starter wallet credit</div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Register now &amp; get instant ₹100 starter wallet credit</div>
         </div>
 
         <div style="display:flex; align-items:center; gap:10px; background:var(--bg); border:1px solid var(--border); border-radius:12px; padding:10px 12px;">
@@ -2240,9 +2459,10 @@
           <input type="password" id="regConfirmPasswordInput" placeholder="Confirm Password *" autocomplete="new-password" style="flex:1; background:transparent; border:none; outline:none; color:#FFF; font-size:13px;" />
         </div>
 
-        <div style="display:flex; align-items:center; gap:10px; background:var(--bg); border:1px solid var(--border); border-radius:12px; padding:10px 12px;">
+        <div id="regRefInputWrap" style="display:flex; align-items:center; gap:10px; background:var(--bg); border:1px solid var(--border); border-radius:12px; padding:10px 12px;">
           <span style="color:#D500F9; font-size:15px;">👥</span>
-          <input type="text" id="regRefInput" placeholder="Referral / Invite Code (Optional)" oninput="this.value=this.value.toUpperCase()" style="flex:1; background:transparent; border:none; outline:none; color:var(--gold); font-weight:700; font-size:13px;" />
+          <input type="text" id="regRefInput" placeholder="Referral / Invite Code (Optional)" oninput="if(!window.lockedReferralCode)this.value=this.value.toUpperCase(); else this.value=window.lockedReferralCode;" style="flex:1; background:transparent; border:none; outline:none; color:var(--gold); font-weight:700; font-size:13px;" />
+          <span id="regRefLockBadge" style="display:none; font-size:9px; font-weight:900; color:#00E676; background:rgba(0,230,118,0.14); border:1px solid rgba(0,230,118,0.35); padding:2px 6px; border-radius:6px; white-space:nowrap;">🔒 LOCKED</span>
         </div>
 
         <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer; margin-top:2px;">
@@ -2253,7 +2473,7 @@
         <div id="regErrorBox" style="display:none; background:rgba(255,23,68,0.16); border:1px solid rgba(255,23,68,0.45); color:#FF6B81; border-radius:8px; padding:8px 10px; font-size:11px; font-weight:700;"></div>
 
         <button id="registerSubmitBtn" class="btn-primary" onclick="submitRegisterUser()" style="margin-top:4px; height:46px; font-size:13px; font-weight:900; letter-spacing:0.6px;">
-          REGISTER &amp; CLAIM ₹500 BONUS
+          REGISTER &amp; CLAIM ₹100 BONUS
         </button>
 
         <div style="text-align:center; font-size:12px; color:var(--text-muted); margin-top:4px;">
@@ -2658,21 +2878,96 @@
           gain.connect(ctx.destination);
           osc.start(now);
           osc.stop(now + 0.06);
-        } else if (type === 'win') {
+        } else if (type === 'win' || type === 'winFanfare') {
           [523.25, 659.25, 783.99, 1046.50].forEach((freq, idx) => {
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
             osc.type = 'triangle';
             osc.frequency.setValueAtTime(freq, now + (idx * 0.08));
-            gain.gain.setValueAtTime(0.2, now + (idx * 0.08));
-            gain.gain.linearRampToValueAtTime(0.01, now + (idx * 0.08) + 0.2);
+            gain.gain.setValueAtTime(0.22, now + (idx * 0.08));
+            gain.gain.linearRampToValueAtTime(0.01, now + (idx * 0.08) + 0.22);
             osc.connect(gain);
             gain.connect(ctx.destination);
             osc.start(now + (idx * 0.08));
-            osc.stop(now + (idx * 0.08) + 0.22);
+            osc.stop(now + (idx * 0.08) + 0.24);
+          });
+        } else if (type === 'betLock') {
+          [660, 440, 220].forEach((freq, idx) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = idx === 2 ? 'sawtooth' : 'square';
+            osc.frequency.setValueAtTime(freq, now + (idx * 0.14));
+            gain.gain.setValueAtTime(0.22, now + (idx * 0.14));
+            gain.gain.exponentialRampToValueAtTime(0.01, now + (idx * 0.14) + 0.18);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now + (idx * 0.14));
+            osc.stop(now + (idx * 0.14) + 0.19);
+          });
+        } else if (type === 'betOpen') {
+          [440, 554.37, 659.25, 880].forEach((freq, idx) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, now + (idx * 0.09));
+            gain.gain.setValueAtTime(0.24, now + (idx * 0.09));
+            gain.gain.exponentialRampToValueAtTime(0.01, now + (idx * 0.09) + 0.22);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now + (idx * 0.09));
+            osc.stop(now + (idx * 0.09) + 0.24);
           });
         }
       } catch (e) {}
+    }
+
+    let betPhaseBannerTimer = null;
+    function triggerBetPhaseBanner(isLocked) {
+      const banner = document.getElementById('betPhaseBanner');
+      const icon = document.getElementById('betPhaseIcon');
+      const title = document.getElementById('betPhaseTitle');
+      const sub = document.getElementById('betPhaseSub');
+      const fill = document.getElementById('betPhaseProgressFill');
+      if (!banner) return;
+
+      if (betPhaseBannerTimer) clearTimeout(betPhaseBannerTimer);
+      banner.style.display = 'none';
+      void banner.offsetWidth; // Force reflow so 5s animation restarts cleanly
+
+      banner.className = `bet-phase-banner ${isLocked ? 'phase-lock' : 'phase-open'}`;
+      if (icon) icon.innerText = isLocked ? '🔒' : '🟢';
+      if (title) title.innerText = isLocked ? 'BETTING LOCKED — 30s DRAW' : 'BETTING OPEN — RESULT DECLARED';
+      if (sub) {
+        sub.innerText = isLocked
+          ? 'All betting buttons are disabled until the draw finishes.'
+          : 'New round started! All betting buttons are now active.';
+      }
+      if (fill) {
+        fill.style.animation = 'none';
+        void fill.offsetWidth;
+        fill.style.animation = 'phaseProgressBar 5s linear forwards';
+      }
+      banner.style.display = 'block';
+      playSound(isLocked ? 'betLock' : 'betOpen');
+
+      betPhaseBannerTimer = setTimeout(() => {
+        banner.style.display = 'none';
+      }, 5000);
+    }
+
+    function setBettingControlsDisabled(locked) {
+      document.querySelectorAll('.color-btn, .bs-btn, .num-btn').forEach(btn => {
+        btn.disabled = !!locked;
+        btn.classList.toggle('bet-control-locked', !!locked);
+      });
+      const notice = document.getElementById('bettingLockedNotice');
+      if (notice) notice.classList.toggle('active', !!locked);
+      if (locked) {
+        const bm = document.getElementById('betModal');
+        if (bm && bm.classList.contains('active')) {
+          closeModal('betModal');
+        }
+      }
     }
 
     function previewSound(type) {
@@ -2755,6 +3050,7 @@
       const chartTitle = document.getElementById('trendChartMarketName');
       if (chartTitle) chartTitle.innerText = `${mInfo.emoji} ${mInfo.name} MARKET TREND`;
 
+      setBettingControlsDisabled(marketStates[mKey].isBettingLocked);
       updateMarketUI();
       renderTrendChart();
       renderHistoryTable();
@@ -3482,31 +3778,50 @@
         }
 
         const betAmt = Number(slip.amount || 0);
+        const feeAmt = typeof slip.platformFee === 'number' ? Number(slip.platformFee) : +(betAmt * 0.03).toFixed(2);
+        const netAmt = typeof slip.netAmount === 'number' && Number(slip.netAmount) > 0 ? Number(slip.netAmount) : +(betAmt - feeAmt).toFixed(2);
         const winAmt = Number(slip.winAmount || 0);
+        const potAmt = Number(slip.potentialPayout || +(netAmt * Number(slip.mult || 2)).toFixed(2));
         const netSlipPL = isWon ? (winAmt - betAmt) : (isLost ? -betAmt : 0);
         const plTag = isWon
-          ? `<span style="color:var(--green); font-weight:800; font-size:11px;">(P&L +₹${netSlipPL.toFixed(2)} • Paid ₹${winAmt.toFixed(2)})</span>`
+          ? `<span style="color:var(--green); font-weight:900;">+₹${netSlipPL.toFixed(2)} (Won ₹${winAmt.toFixed(2)})</span>`
           : (isLost
-            ? `<span style="color:var(--red); font-weight:800; font-size:11px;">(Loss -₹${betAmt.toFixed(2)})</span>`
-            : (isCancelled ? `<span style="color:var(--cyan); font-weight:800; font-size:11px;">(Refunded +₹${betAmt.toFixed(2)})</span>` : ''));
+            ? `<span style="color:var(--red); font-weight:900;">Loss -₹${betAmt.toFixed(2)}</span>`
+            : (isCancelled
+              ? `<span style="color:var(--cyan); font-weight:900;">Refunded ₹${betAmt.toFixed(2)}</span>`
+              : `<span style="color:var(--green); font-weight:800;">Est. ₹${potAmt.toFixed(2)}</span>`));
 
         return `
           <div class="bet-slip-card ${statusClass}">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <div>
-                <strong style="color:var(--text); font-size:13px;">${slip.marketName || (slip.marketId + ' MARKET')}</strong>
-                <span style="font-size:10px; color:var(--text-muted); font-family:monospace; margin-left:6px;">#${slip.period}</span>
-                <span style="font-size:9px; color:var(--text-muted); margin-left:4px;">(${slip.id})</span>
+            <div class="bet-slip-top">
+              <div class="bet-slip-title-wrap">
+                <span class="bet-slip-market-pill">${slip.marketName || (slip.marketId + ' MARKET')}</span>
+                <span class="bet-slip-period">#${slip.period}</span>
               </div>
-              <span class="badge-pill" style="background:${badgeBg}; color:${statusColor}; font-weight:900; font-size:11px; padding:3px 8px; border-radius:12px;">${status}</span>
+              <span class="badge-pill" style="background:${badgeBg}; color:${statusColor}; font-weight:900; font-size:10px; padding:3px 8px; border-radius:12px; white-space:nowrap;">${status}</span>
             </div>
-            <div style="display:flex; justify-content:space-between; font-size:12px; margin-top:4px; gap:6px; flex-wrap:wrap;">
-              <span>Target: <strong style="color:var(--gold);">${slip.target}</strong> (${slip.mult}X)</span>
-              <span>Stake: <strong style="color:#FFF;">₹${betAmt.toFixed(2)}</strong> ${plTag}</span>
+
+            <div class="bet-slip-metrics">
+              <div class="bet-slip-metric">
+                <span class="bet-slip-metric-label">Target (${slip.mult}X)</span>
+                <span class="bet-slip-metric-val" style="color:var(--gold);">${slip.target}</span>
+              </div>
+              <div class="bet-slip-metric">
+                <span class="bet-slip-metric-label">Paid / Fee 3%</span>
+                <span class="bet-slip-metric-val">₹${betAmt.toFixed(0)} <span style="font-size:10px; color:#FF9100;">(-₹${feeAmt.toFixed(2)})</span></span>
+              </div>
+              <div class="bet-slip-metric" style="text-align:right;">
+                <span class="bet-slip-metric-label">Net Stake</span>
+                <span class="bet-slip-metric-val" style="color:var(--cyan);">₹${netAmt.toFixed(2)}</span>
+              </div>
             </div>
-            <div style="display:flex; justify-content:space-between; font-size:10px; color:var(--text-muted); border-top:1px solid rgba(255,255,255,0.05); padding-top:4px; margin-top:4px;">
-              <span>🕒 Placed: ${slip.time || 'Just now'}</span>
-              <span style="font-weight:700; color:${statusColor};">🎲 Result: ${isCancelled ? 'Cancelled & Refunded' : (slip.result || (isPending ? 'Awaiting Draw' : (isLocked ? 'Locked (Drawing)' : 'Completed')))}</span>
+
+            <div class="bet-slip-footer">
+              <span>🕒 ${slip.time || 'Just now'} • ${slip.id}</span>
+              <div>${plTag}</div>
+            </div>
+            <div style="font-size:10px; font-weight:700; color:${statusColor}; display:flex; align-items:center; justify-content:space-between; gap:6px;">
+              <span>🎲 ${isCancelled ? 'Cancelled & Refunded' : (slip.result || (isPending ? 'Awaiting Draw' : (isLocked ? 'Locked (Drawing)' : 'Completed')))}</span>
             </div>
           </div>
         `;
@@ -3530,22 +3845,39 @@
         const isLocked = st.isBettingLocked || b.status === 'LOCKED';
         const bStatus = isLocked ? 'LOCKED' : (b.status || 'PENDING');
         const badgeColor = isLocked ? '#FF9100' : 'var(--gold)';
+        const grossAmt = Number(b.amount || 0);
+        const feeAmt = typeof b.platformFee === 'number' ? Number(b.platformFee) : +(grossAmt * 0.03).toFixed(2);
+        const netAmt = typeof b.netAmount === 'number' && Number(b.netAmount) > 0 ? Number(b.netAmount) : +(grossAmt - feeAmt).toFixed(2);
+        const potWin = Number(b.potentialPayout || +(netAmt * Number(b.mult || 2)).toFixed(2));
 
         return `
         <div class="bet-item">
-          <div>
-            <div style="display:flex; align-items:center; gap:6px;">
-              <span style="font-size:13px; font-weight:800; color:#FFF;">${b.target} (${b.mult}X)</span>
-              <span style="font-size:9px; font-weight:800; padding:2px 6px; border-radius:8px; background:rgba(255,255,255,0.08); color:${badgeColor};">${bStatus}</span>
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+            <div style="display:flex; align-items:center; gap:6px; min-width:0; flex-wrap:wrap;">
+              <span style="font-size:13px; font-weight:900; color:#FFF;">${b.target} (${b.mult}X)</span>
+              <span style="font-size:9px; font-weight:800; padding:2px 7px; border-radius:8px; background:rgba(255,255,255,0.08); color:${badgeColor};">${bStatus}</span>
             </div>
-            <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">ID: ${b.id} • Period #${st.currentPeriod} • ${b.time || 'Placed'}</div>
+            ${!isLocked
+              ? `<button class="btn-secondary" style="padding:5px 10px; font-size:10px; color:var(--red); border-color:rgba(255,23,68,0.4); white-space:nowrap;" onclick="cancelActiveBet(${idx})">✕ Refund</button>`
+              : `<span style="font-size:10px; font-weight:800; color:#FF9100; background:rgba(255,145,0,0.14); padding:3px 8px; border-radius:8px; white-space:nowrap;">🔒 Locked</span>`}
           </div>
-          <div style="display:flex; align-items:center; gap:8px;">
-            <div style="text-align:right;">
-              <strong style="color:var(--gold); font-size:14px;">₹${Number(b.amount).toFixed(2)}</strong>
-              <div style="font-size:10px; color:var(--green);">Win: ₹${(Number(b.amount) * Number(b.mult)).toFixed(2)}</div>
+          <div class="bet-slip-metrics">
+            <div class="bet-slip-metric">
+              <span class="bet-slip-metric-label">Paid</span>
+              <span class="bet-slip-metric-val" style="color:var(--gold);">₹${grossAmt.toFixed(2)}</span>
             </div>
-            ${!isLocked ? `<button class="btn-secondary" style="padding:4px 8px; font-size:10px; color:var(--red);" onclick="cancelActiveBet(${idx})">✕ Refund</button>` : `<span style="font-size:10px; color:var(--text-muted);">Locked</span>`}
+            <div class="bet-slip-metric">
+              <span class="bet-slip-metric-label">3% Fee / Net</span>
+              <span class="bet-slip-metric-val" style="color:var(--cyan);">₹${netAmt.toFixed(2)} <span style="font-size:9px; color:#FF9100;">(-₹${feeAmt.toFixed(2)})</span></span>
+            </div>
+            <div class="bet-slip-metric" style="text-align:right;">
+              <span class="bet-slip-metric-label">Win (${b.mult}X)</span>
+              <span class="bet-slip-metric-val" style="color:var(--green);">₹${potWin.toFixed(2)}</span>
+            </div>
+          </div>
+          <div style="font-size:10px; color:var(--text-muted); display:flex; justify-content:space-between;">
+            <span>Period #${st.currentPeriod}</span>
+            <span>${b.id}</span>
           </div>
         </div>
       `;
@@ -3795,10 +4127,18 @@
 
     function updateBetModalCalculations() {
       const total = pendingBet.chip * pendingBet.qty;
-      const win = total * pendingBet.mult;
+      const fee = Math.round(total * 3) / 100;
+      const netAmount = +(total - fee).toFixed(2);
+      const win = +(netAmount * pendingBet.mult).toFixed(2);
+      const st = marketStates[currentMarketId];
+      const isLocked = !!(st && (st.isBettingLocked || st.secondsLeft <= 30));
       const hasSufficient = userBalance >= total;
 
       document.getElementById('betModalAmountDisplay').innerText = `₹${total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const feeEl = document.getElementById('betModalFeeDisplay');
+      if (feeEl) feeEl.innerText = `-₹${fee.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const netEl = document.getElementById('betModalNetAmountDisplay');
+      if (netEl) netEl.innerText = `₹${netAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
       document.getElementById('betModalPotentialWin').innerText = `₹${win.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
       const balElem = document.getElementById('betModalAvailableBalance');
@@ -3814,10 +4154,12 @@
 
       const confirmBtn = document.getElementById('betModalConfirmBtn');
       if (confirmBtn) {
-        confirmBtn.innerText = `Confirm Bet ₹${total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        confirmBtn.disabled = !hasSufficient;
-        confirmBtn.style.opacity = hasSufficient ? '1' : '0.5';
-        confirmBtn.style.cursor = hasSufficient ? 'pointer' : 'not-allowed';
+        confirmBtn.innerText = isLocked
+          ? '🔒 Betting Locked'
+          : `Confirm Bet ₹${total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        confirmBtn.disabled = !hasSufficient || isLocked;
+        confirmBtn.style.opacity = (hasSufficient && !isLocked) ? '1' : '0.45';
+        confirmBtn.style.cursor = (hasSufficient && !isLocked) ? 'pointer' : 'not-allowed';
       }
     }
 
@@ -3934,6 +4276,7 @@
         const btype = String(slip.type || 'COLOR').toUpperCase();
         const target = String(slip.target || '').toUpperCase();
         const amt = Number(slip.amount || 0);
+        const stakeBase = Number(slip.netAmount || 0) > 0 ? Number(slip.netAmount) : +(amt - Math.round(amt * 3) / 100).toFixed(2);
         let actualMult = Number(slip.mult || 2.0);
         let won = false;
         if (btype === 'BIG_SMALL') {
@@ -3952,7 +4295,7 @@
           won = true; actualMult = 9.0;
         }
         if (won) {
-          const winAmt = Math.round(amt * actualMult * 100) / 100;
+          const winAmt = Math.round(stakeBase * actualMult * 100) / 100;
           slip.status = 'WON';
           slip.winAmount = winAmt;
           slip.lossAmount = 0;
@@ -4331,8 +4674,13 @@
       if (circle) circle.classList.toggle('danger', st.isBettingLocked);
 
       if (typeof st._lastRenderedLockState === 'undefined' || st._lastRenderedLockState !== st.isBettingLocked) {
+        const wasPreviouslyKnown = (typeof st._lastRenderedLockState !== 'undefined');
         st._lastRenderedLockState = st.isBettingLocked;
+        setBettingControlsDisabled(st.isBettingLocked);
         renderActiveBets();
+        if (wasPreviouslyKnown) {
+          triggerBetPhaseBanner(st.isBettingLocked);
+        }
       }
 
       // Display Clear Statuses: BETTING OPEN, BETTING LOCKED, WAITING FOR RESULT
@@ -4957,11 +5305,18 @@
     function shareReferralLink() {
       const code = getActiveReferralCode();
       if (!code) { showToast('⚠️ Please login first to share your referral link.'); openAuthModal(0); return; }
-      const link = window.location.origin + '/?ref=' + encodeURIComponent(code);
+      const baseOrigin = (window.location.protocol === 'file:' || !window.location.origin || window.location.origin === 'null')
+        ? 'https://ais-pre-zgi6cruhcpqtgg5frvcozc-221262354191.asia-southeast1.run.app'
+        : window.location.origin;
+      const link = baseOrigin + '/?ref=' + encodeURIComponent(code);
       if (navigator.share) {
-        navigator.share({ title: 'Join Colour King', text: 'Play Color Prediction and Casino with me!', url: link });
-      } else {
+        navigator.share({ title: 'Join Colour King', text: 'Register with my invite link & get ₹100 Bonus!', url: link }).catch(() => {
+          navigator.clipboard && navigator.clipboard.writeText(link);
+        });
+      } else if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(link).then(() => { showToast('📋 Invite link copied to clipboard!'); });
+      } else {
+        showToast('Invite link: ' + link);
       }
     }
 
@@ -5328,8 +5683,27 @@
       openAuthModal(0);
     }
 
+    window.lockedReferralCode = (new URLSearchParams(window.location.search).get('ref') || '').trim().toUpperCase();
+
+    function applyLockedReferralCode(code) {
+      const clean = String(code || window.lockedReferralCode || '').trim().toUpperCase();
+      if (!clean) return;
+      window.lockedReferralCode = clean;
+      const refInput = document.getElementById('regRefInput');
+      const lockBadge = document.getElementById('regRefLockBadge');
+      const wrap = document.getElementById('regRefInputWrap');
+      if (refInput) {
+        refInput.value = clean;
+        refInput.readOnly = true;
+      }
+      if (lockBadge) lockBadge.style.display = 'inline-block';
+      if (wrap) wrap.style.borderColor = 'rgba(0,230,118,0.45)';
+    }
+
     function openAuthModal(defaultTab = 0) {
-      setAuthTab(defaultTab);
+      const targetTab = (window.lockedReferralCode && defaultTab === 0 && (!currentUserId || currentUserId === 'Guest')) ? 1 : defaultTab;
+      setAuthTab(targetTab);
+      if (window.lockedReferralCode) applyLockedReferralCode(window.lockedReferralCode);
       const closeBtn = document.getElementById('authCloseBtn');
       if (closeBtn) {
         closeBtn.style.display = (currentUserId && currentUserId !== 'Guest') ? 'block' : 'none';
@@ -5454,7 +5828,7 @@
       const email = (document.getElementById('regEmailInput')?.value || '').trim();
       const password = (document.getElementById('regPasswordInput')?.value || '').trim();
       const confirmPw = (document.getElementById('regConfirmPasswordInput')?.value || '').trim();
-      const refCodeInput = (document.getElementById('regRefInput')?.value || '').trim();
+      const refCodeInput = window.lockedReferralCode || (document.getElementById('regRefInput')?.value || '').trim().toUpperCase();
       const agreeTerms = document.getElementById('regAgreeTerms')?.checked;
 
       showAuthError('regErrorBox', '');
@@ -5488,7 +5862,7 @@
         name: name,
         phone: '+91' + phone,
         email: email || `${name.toLowerCase().replace(/\s+/g, '_')}@colourking.in`,
-        balance: 500.00,
+        balance: 100.00,
         status: 'ACTIVE'
       };
 
@@ -5504,7 +5878,7 @@
               phone: '+91' + phone,
               email: email,
               password: password,
-              balance: 500.00,
+              balance: 100.00,
               referredBy: refCodeInput
             })
           });
@@ -5522,12 +5896,12 @@
       } catch (e) {
         showAuthError('regErrorBox', 'Registration sync error. Please retry.');
       } finally {
-        if (btn) { btn.disabled = false; btn.innerText = 'REGISTER & CLAIM ₹500 BONUS'; }
+        if (btn) { btn.disabled = false; btn.innerText = 'REGISTER & CLAIM ₹100 BONUS'; }
       }
     }
 
     async function restoreSessionFromServerAndStorage(forceOpenAuthIfMissing = false) {
-      if (hasBackendConnection()) {
+      if (!window.lockedReferralCode && hasBackendConnection()) {
         try {
           const query = (currentUserId && currentUserId !== 'Guest')
             ? `?userId=${encodeURIComponent(currentUserId)}&t=${Date.now()}`
@@ -5543,7 +5917,7 @@
         } catch (e) {}
       }
 
-      if (currentUserId && currentUserId !== 'Guest' && !forceOpenAuthIfMissing) {
+      if (!window.lockedReferralCode && currentUserId && currentUserId !== 'Guest' && !forceOpenAuthIfMissing) {
         loadSavedBetSlipsForCurrentUser();
         updateProfileIdentityUI(currentUserId, currentUserName, currentUserEmail || currentUserPhone || '');
         updateBalanceUI();
@@ -5572,7 +5946,7 @@
       updateProfileIdentityUI(null, 'Guest', '');
       updateBalanceUI();
       setTimeout(() => {
-        openAuthModal(0);
+        openAuthModal(window.lockedReferralCode ? 1 : 0);
       }, 120);
     }
 
@@ -5591,6 +5965,11 @@
       renderWalletLedger();
       renderAffiliateTeam();
 
+      if (window.lockedReferralCode) {
+        applyLockedReferralCode(window.lockedReferralCode);
+        showToast(`Referral link applied & locked: ${window.lockedReferralCode}`);
+      }
+
       restoreSessionFromServerAndStorage();
 
       setInterval(() => syncAdminStateRealtime(false), 3000);
@@ -5601,14 +5980,6 @@
         }
       }, 4000);
       startEngineLoop();
-
-      // Check URL for referral parameter
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('ref')) {
-        const refInput = document.getElementById('regRefInput');
-        if (refInput) refInput.value = params.get('ref');
-        showToast(`Referral binding detected: ${params.get('ref')}`);
-      }
     });
   </script>
 </body>

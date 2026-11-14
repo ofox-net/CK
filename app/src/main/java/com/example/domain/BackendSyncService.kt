@@ -94,6 +94,8 @@ data class ServerBetItem(
     val roundId: String,
     val period: String,
     val amountRupees: Double,
+    val platformFeeRupees: Double = 0.0,
+    val netAmountRupees: Double = 0.0,
     val type: String,
     val target: String,
     val mult: Double,
@@ -679,13 +681,22 @@ class BackendSyncService(
                 val hist = root.optJSONArray("betHistory") ?: JSONArray()
                 for (i in 0 until hist.length()) {
                     val b = hist.optJSONObject(i) ?: continue
+                    val grossAmt = b.optDouble("amount", 0.0)
+                    val parsedFee = b.optDouble("platformFee", -1.0).let {
+                        if (it >= 0.0) it else kotlin.math.round(grossAmt * 3.0) / 100.0
+                    }
+                    val parsedNet = b.optDouble("netAmount", -1.0).let {
+                        if (it > 0.0) it else kotlin.math.max(0.0, kotlin.math.round((grossAmt - parsedFee) * 100.0) / 100.0)
+                    }
                     out.add(
                         ServerBetItem(
                             id = b.optString("id"),
                             marketId = b.optString("marketId", "MIAMI"),
                             roundId = b.optString("roundId", ""),
                             period = b.optString("period", ""),
-                            amountRupees = b.optDouble("amount", 0.0),
+                            amountRupees = grossAmt,
+                            platformFeeRupees = parsedFee,
+                            netAmountRupees = parsedNet,
                             type = b.optString("type", "COLOR"),
                             target = b.optString("target", ""),
                             mult = b.optDouble("mult", 2.0),
@@ -829,7 +840,7 @@ class BackendSyncService(
         username: String,
         phone: String,
         email: String,
-        balanceRupees: Double = 500.0,
+        balanceRupees: Double = 100.0,
         referredBy: String? = null,
         password: String? = null
     ): Boolean = withContext(Dispatchers.IO) {

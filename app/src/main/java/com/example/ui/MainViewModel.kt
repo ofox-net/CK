@@ -1,14 +1,19 @@
 package com.example.ui
 
 import android.app.Application
+import android.media.AudioManager
+import android.media.ToneGenerator
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.AppDatabase
 import com.example.data.model.*
 import com.example.domain.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.UUID
+import kotlin.math.roundToLong
 
 data class UiNotification(
     val id: String = UUID.randomUUID().toString(),
@@ -135,6 +140,35 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         } catch (e: Exception) {
             android.util.Log.w("MainViewModel", "Could not play sound $soundFileName: ${e.message}")
+        }
+    }
+
+    fun playBetPhaseSound(isLocked: Boolean) {
+        if (!_isSoundEnabled.value) return
+        viewModelScope.launch(Dispatchers.Default) {
+            var toneGen: ToneGenerator? = null
+            try {
+                toneGen = ToneGenerator(AudioManager.STREAM_MUSIC, 88)
+                if (isLocked) {
+                    // Distinct descending double-tone lock alert
+                    toneGen.startTone(ToneGenerator.TONE_PROP_BEEP2, 220)
+                    delay(260L)
+                    toneGen.startTone(ToneGenerator.TONE_SUP_ERROR, 260)
+                    delay(300L)
+                } else {
+                    // Distinct ascending open chime
+                    toneGen.startTone(ToneGenerator.TONE_PROP_ACK, 180)
+                    delay(200L)
+                    toneGen.startTone(ToneGenerator.TONE_PROP_BEEP, 220)
+                    delay(260L)
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("MainViewModel", "ToneGenerator phase sound failed: ${e.message}")
+            } finally {
+                try {
+                    toneGen?.release()
+                } catch (_: Exception) {}
+            }
         }
     }
 
@@ -580,13 +614,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     "LOCKED", "PENDING" -> BetStatus.ACCEPTED.name
                     else -> BetStatus.ACCEPTED.name
                 }
+                val amtCents = backendSyncService.rupeesToCents(sb.amountRupees)
+                val feeCents = backendSyncService.rupeesToCents(sb.platformFeeRupees)
+                val netCents = backendSyncService.rupeesToCents(sb.netAmountRupees)
                 val existingByKey = betDao.getBetByIdempotencyKey(key)
                 if (existingByKey != null) {
                     val payoutCents = backendSyncService.rupeesToCents(sb.winAmountRupees)
-                    if (existingByKey.status != mappedStatus || existingByKey.actualPayout != payoutCents) {
+                    if (existingByKey.status != mappedStatus || existingByKey.actualPayout != payoutCents ||
+                        (existingByKey.platformFeeCents == 0L && feeCents > 0L)
+                    ) {
                         betDao.updateBet(
                             existingByKey.copy(
                                 status = mappedStatus,
+                                platformFeeCents = if (feeCents > 0L) feeCents else existingByKey.platformFeeCents,
+                                netAmountCents = if (netCents > 0L) netCents else existingByKey.netAmountCents,
                                 actualPayout = payoutCents,
                                 settledAt = if (mappedStatus in listOf("WON", "LOST", "REFUNDED")) System.currentTimeMillis() else null
                             )
@@ -600,13 +641,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             betDao.updateBet(
                                 localMatch.copy(
                                     status = mappedStatus,
+                                    platformFeeCents = if (feeCents > 0L) feeCents else localMatch.platformFeeCents,
+                                    netAmountCents = if (netCents > 0L) netCents else localMatch.netAmountCents,
                                     actualPayout = payoutCents,
                                     settledAt = if (mappedStatus in listOf("WON", "LOST", "REFUNDED")) System.currentTimeMillis() else null
                                 )
                             )
                         }
                     } else {
-                        val amtCents = backendSyncService.rupeesToCents(sb.amountRupees)
                         try {
                             betDao.insertBet(
                                 BetEntity(
@@ -622,6 +664,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                     },
                                     selection = sb.target,
                                     amount = amtCents,
+                                    platformFeeCents = feeCents,
+                                    netAmountCents = netCents,
                                     multiplier = sb.mult,
                                     potentialPayout = backendSyncService.rupeesToCents(sb.potentialPayoutRupees),
                                     actualPayout = backendSyncService.rupeesToCents(sb.winAmountRupees),
@@ -714,8 +758,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val tenantId = _activeTenantId.value
 
-                val withCountry = if (!cleanId.startsWith("+91") && cleanId.length == 10 && cleanId.all { it.isDigit() }) "+91$cleanId" else cleanId
-                val withoutCountry = if (cleanId.startsWith("+91")) cleanId.removePrefix("+91") else cleanId
+                val cleanDigits = cleanId.filter { it.isDigit() }
+                val norm10 = if (cleanDigits.length >= 10) cleanDigits.takeLast(10) else cleanDigits
+                val withCountry = if (!cleanId.startsWith("+91") && cleanDigits.length == 10) "+91$cleanDigits" else cleanId
+                val withoutCountry = if (norm10.length == 10) norm10 else cleanId.removePrefix("+91").trim()
 
                 // 1. Search in DB for user by username, phone, or email
                 var user = database.userDao().findUserByIdentifier(tenantId, cleanId)
@@ -726,15 +772,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     user = database.userDao().findUserByIdentifier(tenantId, withoutCountry)
                 }
 
-                // If not found in current tenant, check all users
+                // If not found in current tenant or normalized mobile suffix differs, check all users
                 if (user == null) {
                     val all = _allUsers.value
-                    user = all.firstOrNull { 
-                        it.username.equals(cleanId, ignoreCase = true) || 
-                        it.phone == cleanId || 
-                        it.phone == withCountry ||
-                        it.phone.removePrefix("+91").trim() == withoutCountry ||
-                        it.email.equals(cleanId, ignoreCase = true)
+                    user = all.firstOrNull { u ->
+                        val uDigits = u.phone.filter { it.isDigit() }.takeLast(10)
+                        u.username.equals(cleanId, ignoreCase = true) ||
+                            u.phone == cleanId ||
+                            u.phone == withCountry ||
+                            (norm10.length == 10 && uDigits == norm10) ||
+                            u.email.equals(cleanId, ignoreCase = true)
                     }
                 }
 
@@ -871,8 +918,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
 
-                // 2. Check duplicate phone
+                // 2. Check duplicate phone (normalized 10-digit suffix)
+                val cleanPhoneDigits = cleanPhone.filter { it.isDigit() }.takeLast(10)
                 val existingPhone = database.userDao().getUserByPhone(tenantId, cleanPhone)
+                    ?: _allUsers.value.firstOrNull {
+                        val d = it.phone.filter { ch -> ch.isDigit() }.takeLast(10)
+                        cleanPhoneDigits.length == 10 && d == cleanPhoneDigits
+                    }
                 if (existingPhone != null) {
                     onResult(false, "Mobile number already registered. Please login.")
                     return@launch
@@ -904,8 +956,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 database.userDao().insertUser(newUser)
 
-                // 4. Create Starter Wallet with ₹500 welcome credit (50000 cents)
-                val starterBonusCents = 50000L // ₹500.00
+                // 4. Create Starter Wallet with ₹100 welcome bonus (10000 cents)
+                val starterBonusCents = 10000L // ₹100.00
                 val walletId = "wallet_$newUserId"
                 val newWallet = WalletEntity(
                     id = walletId,
@@ -931,7 +983,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     balanceAfter = starterBonusCents,
                     referenceType = "SIGNUP_BONUS",
                     referenceId = newUserId,
-                    metadataJson = "{\"bonus\":\"welcome_500\"}",
+                    metadataJson = "{\"bonus\":\"welcome_100\"}",
                     idempotencyKey = "signup_bonus_$newUserId"
                 )
                 database.ledgerDao().insertLedger(ledger)
@@ -970,7 +1022,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     backendSyncService.forceSyncNow()
                 }
 
-                postNotification("🎉 Welcome $cleanUser! ₹500 welcome bonus credited to your wallet!", true)
+                postNotification("🎉 Welcome $cleanUser! ₹100 welcome bonus credited to your wallet!", true)
                 onResult(true, null)
             } catch (e: Exception) {
                 onResult(false, e.message ?: "Registration failed")
@@ -1045,7 +1097,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             else -> cfg.redMultiplier
                         }
                     }
-                    val potentialPayout = (amountCents * multiplier).toLong()
+                    val platformFeeCents = (amountCents * 3L) / 100L
+                    val netAmountCents = amountCents - platformFeeCents
+                    val potentialPayout = (netAmountCents * multiplier).roundToLong()
 
                     val currentMarket = _selectedMarket.value
                     val bet = BetEntity(
@@ -1057,6 +1111,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         betType = betType.name,
                         selection = selection,
                         amount = amountCents,
+                        platformFeeCents = platformFeeCents,
+                        netAmountCents = netAmountCents,
                         multiplier = multiplier,
                         potentialPayout = potentialPayout,
                         status = BetStatus.ACCEPTED.name,
@@ -1121,7 +1177,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             else -> cfg.redMultiplier
                         }
                     }
-                    val potentialPayout = (amountCents * multiplier).toLong()
+                    val platformFeeCents = (amountCents * 3L) / 100L
+                    val netAmountCents = amountCents - platformFeeCents
+                    val potentialPayout = (netAmountCents * multiplier).roundToLong()
 
                     val currentMarket = _selectedMarket.value
                     val bet = BetEntity(
@@ -1133,6 +1191,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         betType = betType.name,
                         selection = selection,
                         amount = amountCents,
+                        platformFeeCents = platformFeeCents,
+                        netAmountCents = netAmountCents,
                         multiplier = multiplier,
                         potentialPayout = potentialPayout,
                         status = BetStatus.ACCEPTED.name,
