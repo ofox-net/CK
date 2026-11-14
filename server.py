@@ -48,13 +48,22 @@ DEFAULT_BANK_CONFIG = {
     "instructions": "1. Scan QR code or pay to the UPI ID above.\n2. Enter the 12-digit UTR reference number in the app.\n3. Balance will be approved and credited within 2 minutes."
 }
 
+REFERRAL_TIER_RATES = [
+    (1, 0.0100),
+    (2, 0.0075),
+    (3, 0.0060),
+    (4, 0.0050),
+    (5, 0.0030),
+    (6, 0.0020),
+]
+
 DEFAULT_USERS = [
-    { "id": "USR-1001", "name": "Rahul_Player", "phone": "+91 98765 43210", "email": "rahul@gmail.com", "balance": 50200.00, "totalDeposit": 75000.00, "totalWithdraw": 28000.00, "betsCount": 142, "status": "ACTIVE" },
-    { "id": "USR-1002", "name": "Aman_Trader", "phone": "+91 98221 11223", "email": "aman.trade@yahoo.com", "balance": 14500.00, "totalDeposit": 25000.00, "totalWithdraw": 11000.00, "betsCount": 68, "status": "ACTIVE" },
-    { "id": "USR-1003", "name": "Priya_VIP", "phone": "+91 97110 99887", "email": "priya_queen@outlook.com", "balance": 125000.00, "totalDeposit": 200000.00, "totalWithdraw": 95000.00, "betsCount": 310, "status": "ACTIVE" },
-    { "id": "USR-1004", "name": "Vikram_99", "phone": "+91 96554 33221", "email": "vikram99@gmail.com", "balance": 3200.00, "totalDeposit": 10000.00, "totalWithdraw": 6000.00, "betsCount": 45, "status": "ACTIVE" },
-    { "id": "USR-1005", "name": "Suspicious_Bot1", "phone": "+91 91234 56789", "email": "bot_arb@mail.ru", "balance": 0.00, "totalDeposit": 5000.00, "totalWithdraw": 0.00, "betsCount": 8, "status": "BLOCKED" },
-    { "id": "USR-1006", "name": "Karan_Pro", "phone": "+91 99887 76655", "email": "karan_pro@gmail.com", "balance": 38400.00, "totalDeposit": 60000.00, "totalWithdraw": 24000.00, "betsCount": 94, "status": "ACTIVE" }
+    { "id": "USR-1001", "name": "Rahul_Player", "phone": "+91 98765 43210", "email": "rahul@gmail.com", "balance": 50200.00, "totalDeposit": 75000.00, "totalWithdraw": 28000.00, "betsCount": 142, "status": "ACTIVE", "referralCode": "RAHUL777" },
+    { "id": "USR-1002", "name": "Aman_Trader", "phone": "+91 98221 11223", "email": "aman.trade@yahoo.com", "balance": 14500.00, "totalDeposit": 25000.00, "totalWithdraw": 11000.00, "betsCount": 68, "status": "ACTIVE", "referralCode": "AMAN777" },
+    { "id": "USR-1003", "name": "Priya_VIP", "phone": "+91 97110 99887", "email": "priya_queen@outlook.com", "balance": 125000.00, "totalDeposit": 200000.00, "totalWithdraw": 95000.00, "betsCount": 310, "status": "ACTIVE", "referralCode": "PRIYA777" },
+    { "id": "USR-1004", "name": "Vikram_99", "phone": "+91 96554 33221", "email": "vikram99@gmail.com", "balance": 3200.00, "totalDeposit": 10000.00, "totalWithdraw": 6000.00, "betsCount": 45, "status": "ACTIVE", "referralCode": "VIKRAM777" },
+    { "id": "USR-1005", "name": "Suspicious_Bot1", "phone": "+91 91234 56789", "email": "bot_arb@mail.ru", "balance": 0.00, "totalDeposit": 5000.00, "totalWithdraw": 0.00, "betsCount": 8, "status": "BLOCKED", "referralCode": "BOT777" },
+    { "id": "USR-1006", "name": "Karan_Pro", "phone": "+91 99887 76655", "email": "karan_pro@gmail.com", "balance": 38400.00, "totalDeposit": 60000.00, "totalWithdraw": 24000.00, "betsCount": 94, "status": "ACTIVE", "referralCode": "KARAN777" }
 ]
 
 def get_db():
@@ -120,7 +129,7 @@ def init_database():
                 name TEXT NOT NULL,
                 phone TEXT,
                 email TEXT,
-                balance REAL NOT NULL DEFAULT 50200.00,
+                balance REAL NOT NULL DEFAULT 0.00,
                 total_deposit REAL NOT NULL DEFAULT 0.00,
                 total_withdraw REAL NOT NULL DEFAULT 0.00,
                 bets_count INTEGER NOT NULL DEFAULT 0,
@@ -282,10 +291,17 @@ def init_database():
         try:
             default_pw_hash = hashlib.sha256(b"password123").hexdigest()
             c.execute("UPDATE users SET password_hash = ? WHERE password_hash IS NULL OR password_hash = ''", (default_pw_hash,))
+            c.execute("UPDATE bets SET created_at_ms = CAST(strftime('%s', created_at) AS INTEGER) * 1000 WHERE created_at_ms IS NULL OR created_at_ms = 0")
             c.execute("UPDATE transactions SET created_at_ms = CAST(strftime('%s', created_at) AS INTEGER) * 1000 WHERE created_at_ms IS NULL OR created_at_ms = 0")
             c.execute("UPDATE deposits SET created_at_ms = CAST(strftime('%s', created_at) AS INTEGER) * 1000 WHERE created_at_ms IS NULL OR created_at_ms = 0")
             c.execute("UPDATE withdrawals SET created_at_ms = CAST(strftime('%s', created_at) AS INTEGER) * 1000 WHERE created_at_ms IS NULL OR created_at_ms = 0")
-            c.execute("UPDATE users SET referral_code = 'RAHUL777' WHERE id = 'USR-1001' AND (referral_code IS NULL OR referral_code = '')")
+            for du in DEFAULT_USERS:
+                c.execute("UPDATE users SET referral_code = ? WHERE id = ? AND (referral_code IS NULL OR referral_code = '')", (du["referralCode"], du["id"]))
+            c.execute("SELECT id, name FROM users WHERE referral_code IS NULL OR referral_code = ''")
+            for row_u in c.fetchall():
+                prefix = "".join(ch for ch in str(row_u["name"] or "CK").upper() if ch.isalnum())[:4] or "CK"
+                suffix = "".join(ch for ch in str(row_u["id"]).upper() if ch.isalnum())[-4:] or "777"
+                c.execute("UPDATE users SET referral_code = ? WHERE id = ?", (f"{prefix}{suffix}", row_u["id"]))
         except Exception:
             pass
         c.execute("CREATE INDEX IF NOT EXISTS idx_tx_user_ms ON transactions (user_id, created_at_ms DESC)")
@@ -304,11 +320,12 @@ def init_database():
         # Seed default users if empty
         c.execute("SELECT COUNT(*) FROM users")
         if c.fetchone()[0] == 0:
+            default_pw_hash = hashlib.sha256(b"password123").hexdigest()
             for u in DEFAULT_USERS:
                 c.execute("""
-                    INSERT INTO users (id, name, phone, email, balance, total_deposit, total_withdraw, bets_count, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (u["id"], u["name"], u.get("phone"), u.get("email"), u["balance"], u["totalDeposit"], u["totalWithdraw"], u["betsCount"], u["status"]))
+                    INSERT INTO users (id, name, phone, email, balance, total_deposit, total_withdraw, bets_count, status, referral_code, password_hash)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (u["id"], u["name"], u.get("phone"), u.get("email"), u["balance"], u["totalDeposit"], u["totalWithdraw"], u["betsCount"], u["status"], u["referralCode"], default_pw_hash))
 
         # Seed default deposits/withdrawals if empty
         c.execute("SELECT COUNT(*) FROM deposits")
@@ -1034,9 +1051,146 @@ def export_statement_csv(stmt):
 
     return buf.getvalue()
 
+def build_user_affiliates(conn, uid):
+    c = conn.cursor()
+    c.execute("SELECT * FROM users WHERE id = ?", (uid,))
+    root_u = c.fetchone()
+    if not root_u:
+        return None
+
+    ref_code = (root_u["referral_code"] if "referral_code" in root_u.keys() and root_u["referral_code"] else uid[-6:].upper())
+
+    # BFS up to 6 subordinate tiers
+    members = []
+    visited = {uid}
+    frontier = [uid]
+    for tier in range(1, 7):
+        if not frontier:
+            break
+        placeholders = ",".join("?" for _ in frontier)
+        c.execute(f"SELECT id, name, total_deposit, status, created_at FROM users WHERE referred_by IN ({placeholders})", tuple(frontier))
+        children = c.fetchall()
+        next_frontier = []
+        for ch in children:
+            cid = ch["id"]
+            if cid in visited:
+                continue
+            visited.add(cid)
+            next_frontier.append(cid)
+            c.execute("""
+                SELECT COALESCE(SUM(amount), 0.0) FROM bets
+                WHERE user_id = ? AND status NOT IN ('CANCELLED', 'REFUNDED')
+            """, (cid,))
+            ch_turnover = float(c.fetchone()[0] or 0.0)
+            c.execute("""
+                SELECT COALESCE(SUM(commission_amount), 0.0) FROM referral_commissions
+                WHERE beneficiary_user_id = ? AND source_user_id = ? AND status != 'REVERSED'
+            """, (uid, cid))
+            ch_comm = float(c.fetchone()[0] or 0.0)
+            members.append({
+                "id": cid,
+                "name": ch["name"],
+                "tier": tier,
+                "tierLabel": f"Tier {tier} (Direct)" if tier == 1 else f"Tier {tier}",
+                "joined": str(ch["created_at"] or "")[:10],
+                "totalDeposit": round(float(ch["total_deposit"] or 0.0), 2),
+                "turnover": round(ch_turnover, 2),
+                "commission": round(ch_comm, 2),
+                "status": ch["status"] or "ACTIVE"
+            })
+        frontier = next_frontier
+
+    c.execute("""
+        SELECT COALESCE(SUM(commission_amount), 0.0) FROM referral_commissions
+        WHERE beneficiary_user_id = ? AND status != 'REVERSED'
+    """, (uid,))
+    lifetime_comm = float(c.fetchone()[0] or 0.0)
+
+    # Today's commission based on IST calendar day
+    ist_now = get_ist_now()
+    ist_midnight = ist_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start_ms = int(ist_midnight.timestamp() * 1000)
+    c.execute("""
+        SELECT COALESCE(SUM(commission_amount), 0.0) FROM referral_commissions
+        WHERE beneficiary_user_id = ? AND created_at_ms >= ? AND status != 'REVERSED'
+    """, (uid, today_start_ms))
+    today_comm = float(c.fetchone()[0] or 0.0)
+
+    network_turnover = round(sum(m["turnover"] for m in members), 2)
+    if network_turnover <= 0:
+        c.execute("""
+            SELECT COALESCE(SUM(eligible_amount), 0.0) FROM referral_commissions
+            WHERE beneficiary_user_id = ? AND status != 'REVERSED'
+        """, (uid,))
+        network_turnover = round(float(c.fetchone()[0] or 0.0), 2)
+
+    c.execute("""
+        SELECT * FROM referral_commissions
+        WHERE beneficiary_user_id = ? AND status != 'REVERSED'
+        ORDER BY created_at_ms DESC LIMIT 100
+    """, (uid,))
+    recent_commissions = [{
+        "id": r["id"],
+        "sourceUserId": r["source_user_id"],
+        "sourceUserName": r["source_user_name"] or r["source_user_id"],
+        "sourceBetId": r["source_bet_id"] or "",
+        "level": int(r["level"] or 1),
+        "rate": float(r["rate"] or 0.01),
+        "eligibleAmount": round(float(r["eligible_amount"] or 0.0), 2),
+        "commissionAmount": round(float(r["commission_amount"] or 0.0), 2),
+        "status": r["status"] or "SETTLED",
+        "createdAt": r["created_at"] or "",
+        "createdAtMs": int(r["created_at_ms"] or 0)
+    } for r in c.fetchall()]
+
+    return {
+        "userId": uid,
+        "userName": root_u["name"],
+        "referralCode": ref_code,
+        "lifetimeCommission": round(lifetime_comm, 2),
+        "todayCommission": round(today_comm, 2),
+        "networkTurnover": network_turnover,
+        "teamCount": len(members),
+        "directCount": sum(1 for m in members if m["tier"] == 1),
+        "members": members,
+        "recentCommissions": recent_commissions
+    }
+
 class AppHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=DIRECTORY, **kwargs)
+
+    def _get_cookie_uid(self):
+        cookie_hdr = self.headers.get("Cookie", "")
+        if not cookie_hdr:
+            return None
+        for part in cookie_hdr.split(";"):
+            part = part.strip()
+            if part.startswith("ck_uid="):
+                val = urllib.parse.unquote(part[len("ck_uid="):].strip())
+                if val and val != "Guest":
+                    return val
+        return None
+
+    def _build_session_cookie(self, uid, max_age=2592000):
+        proto = (self.headers.get("X-Forwarded-Proto") or "").lower()
+        origin = (self.headers.get("Origin") or "").lower()
+        is_https = (proto == "https") or origin.startswith("https://")
+        encoded = urllib.parse.quote(str(uid or ""), safe="")
+        if is_https:
+            return f"ck_uid={encoded}; Path=/; Max-Age={max_age}; SameSite=None; Secure"
+        return f"ck_uid={encoded}; Path=/; Max-Age={max_age}; SameSite=Lax"
+
+    def _send_cors_headers(self):
+        origin = self.headers.get("Origin")
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Access-Control-Allow-Credentials", "true")
+            self.send_header("Vary", "Origin")
+        else:
+            self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
 
     def _send_csv(self, csv_text, filename):
         try:
@@ -1044,7 +1198,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/csv; charset=utf-8")
             self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
-            self.send_header("Access-Control-Allow-Origin", "*")
+            self._send_cors_headers()
             self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
@@ -1052,15 +1206,16 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             print(f"Error sending CSV response: {e}")
 
-    def _send_json(self, data, status=200):
+    def _send_json(self, data, status=200, cookies=None):
         try:
             body = json.dumps(data).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+            self._send_cors_headers()
             self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+            if cookies:
+                for ck in cookies:
+                    self.send_header("Set-Cookie", ck)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -1069,9 +1224,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_OPTIONS(self):
         self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+        self._send_cors_headers()
         self.end_headers()
 
     def do_GET(self):
@@ -1255,7 +1408,16 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
 
         # 4. User Bets (Active bets for round + Bet Slips History)
         if path == "/api/bets":
-            uid = qs.get("userId", ["USR-1001"])[0]
+            uid = (qs.get("userId", [None])[0] or self._get_cookie_uid() or "").strip()
+            if not uid or uid == "Guest":
+                self._send_json({
+                    "userId": None,
+                    "retentionDays": RETENTION_DAYS,
+                    "days": RETENTION_DAYS,
+                    "activeBets": [],
+                    "betHistory": []
+                })
+                return
             m_code = qs.get("market", [None])[0]
             if m_code:
                 m_code = m_code.upper()
@@ -1370,7 +1532,10 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
 
         # 4B. Full 90-Day Account Statement (Wallet, Bet P&L, Refer & Earn, Deposit, Withdrawal)
         if path == "/api/statement":
-            uid = qs.get("userId", ["USR-1001"])[0]
+            uid = (qs.get("userId", [None])[0] or self._get_cookie_uid() or "").strip()
+            if not uid or uid == "Guest":
+                self._send_json({ "success": False, "error": "Missing userId" }, status=400)
+                return
             try:
                 req_days = int(qs.get("days", [str(RETENTION_DAYS)])[0])
             except Exception:
@@ -1387,7 +1552,10 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
 
         # 4C. Downloadable Statement Export (CSV)
         if path == "/api/statement/export":
-            uid = qs.get("userId", ["USR-1001"])[0]
+            uid = (qs.get("userId", [None])[0] or self._get_cookie_uid() or "").strip()
+            if not uid or uid == "Guest":
+                self._send_json({ "success": False, "error": "Missing userId" }, status=400)
+                return
             try:
                 req_days = int(qs.get("days", [str(RETENTION_DAYS)])[0])
             except Exception:
@@ -1405,34 +1573,86 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             self._send_csv(csv_text, fname)
             return
 
-        # 5. User Profile & Balance
-        if path == "/api/user" or path == "/api/wallet":
-            uid = qs.get("id", qs.get("userId", ["USR-1001"]))[0]
+        # 4D. 6-Tier User Affiliate Stats & Downline Directory
+        if path == "/api/affiliates":
+            uid = (qs.get("userId", [None])[0] or self._get_cookie_uid() or "").strip()
+            if not uid or uid == "Guest":
+                self._send_json({ "success": False, "error": "Missing userId" }, status=400)
+                return
+            with db_lock:
+                conn = get_db()
+                aff = build_user_affiliates(conn, uid)
+                conn.close()
+            if not aff:
+                self._send_json({ "success": False, "error": "User not found", "notFound": True }, status=404)
+                return
+            self._send_json(aff)
+            return
+
+        # 4E. Cookie / Session Restore Endpoint
+        if path == "/api/session":
+            uid = (qs.get("userId", [None])[0] or self._get_cookie_uid() or "").strip()
+            if not uid or uid == "Guest":
+                self._send_json({ "authenticated": False, "user": None })
+                return
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
                 c.execute("SELECT * FROM users WHERE id = ?", (uid,))
                 u = c.fetchone()
-                if not u:
-                    name = qs.get("name", [uid])[0]
-                    c.execute("""
-                        INSERT INTO users (id, name, balance, total_deposit, total_withdraw, bets_count, status)
-                        VALUES (?, ?, 50200.00, 0.0, 0.0, 0, 'ACTIVE')
-                    """, (uid, name))
-                    conn.commit()
-                    c.execute("SELECT * FROM users WHERE id = ?", (uid,))
-                    u = c.fetchone()
                 conn.close()
+            if not u:
+                self._send_json({ "authenticated": False, "user": None }, cookies=[self._build_session_cookie("", max_age=0)])
+                return
+            self._send_json({
+                "authenticated": True,
+                "user": {
+                    "id": u["id"],
+                    "userId": u["id"],
+                    "name": u["name"],
+                    "phone": u["phone"] or "",
+                    "email": u["email"] or "",
+                    "balance": round(float(u["balance"] or 0.0), 2),
+                    "totalDeposit": round(float(u["total_deposit"] or 0.0), 2),
+                    "totalWithdraw": round(float(u["total_withdraw"] or 0.0), 2),
+                    "betsCount": int(u["bets_count"] or 0),
+                    "status": u["status"] or "ACTIVE",
+                    "referralCode": (u["referral_code"] if "referral_code" in u.keys() and u["referral_code"] else u["id"][-6:].upper()),
+                    "referredBy": (u["referred_by"] if "referred_by" in u.keys() else None)
+                }
+            })
+            return
+
+        # 5. User Profile & Balance (Strict SQLite Lookup — NEVER auto-create 50,200 ghost users)
+        if path == "/api/user" or path == "/api/wallet":
+            uid = (qs.get("id", qs.get("userId", [None]))[0] or self._get_cookie_uid() or "").strip()
+            if not uid or uid == "Guest":
+                self._send_json({ "success": False, "error": "Not authenticated", "notFound": True }, status=404)
+                return
+            with db_lock:
+                conn = get_db()
+                c = conn.cursor()
+                c.execute("SELECT * FROM users WHERE id = ?", (uid,))
+                u = c.fetchone()
+                conn.close()
+
+            if not u:
+                self._send_json({ "success": False, "error": "User not found", "notFound": True }, status=404)
+                return
 
             self._send_json({
                 "id": u["id"],
                 "userId": u["id"],
                 "name": u["name"],
-                "balance": u["balance"],
-                "totalDeposit": u["total_deposit"],
-                "totalWithdraw": u["total_withdraw"],
-                "betsCount": u["bets_count"],
-                "status": u["status"]
+                "phone": u["phone"] or "",
+                "email": u["email"] or "",
+                "balance": round(float(u["balance"] or 0.0), 2),
+                "totalDeposit": round(float(u["total_deposit"] or 0.0), 2),
+                "totalWithdraw": round(float(u["total_withdraw"] or 0.0), 2),
+                "betsCount": int(u["bets_count"] or 0),
+                "status": u["status"] or "ACTIVE",
+                "referralCode": (u["referral_code"] if "referral_code" in u.keys() and u["referral_code"] else u["id"][-6:].upper()),
+                "referredBy": (u["referred_by"] if "referred_by" in u.keys() else None)
             })
             return
 
@@ -1601,40 +1821,35 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     "time": r["created_at"] or ""
                 } for r in c.fetchall()]
 
-                # Build affiliate overview dynamically from SQLite users & referral_commissions
+                # Build 6-tier affiliate overview dynamically from SQLite users & referral_commissions
                 affiliates_list = []
                 for u in all_user_rows:
                     uid_cur = u["id"]
-                    c.execute("SELECT id, name, total_deposit, status, created_at FROM users WHERE referred_by = ?", (uid_cur,))
-                    directs = c.fetchall()
-                    c.execute("SELECT COALESCE(SUM(commission_amount), 0.0) FROM referral_commissions WHERE beneficiary_user_id = ? AND status != 'REVERSED'", (uid_cur,))
-                    tot_comm = float(c.fetchone()[0] or 0.0)
-                    day_ago_ms = now_ms - 86400000
-                    c.execute("SELECT COALESCE(SUM(commission_amount), 0.0) FROM referral_commissions WHERE beneficiary_user_id = ? AND created_at_ms >= ? AND status != 'REVERSED'", (uid_cur, day_ago_ms))
-                    recent_comm = float(c.fetchone()[0] or 0.0)
-                    members_arr = []
-                    for dm in directs:
-                        c.execute("SELECT COALESCE(SUM(commission_amount), 0.0) FROM referral_commissions WHERE beneficiary_user_id = ? AND source_user_id = ?", (uid_cur, dm["id"]))
-                        dm_comm = float(c.fetchone()[0] or 0.0)
-                        members_arr.append({
-                            "id": dm["id"],
-                            "name": dm["name"],
-                            "tier": "Tier 1 (Direct)",
-                            "joinDate": str(dm["created_at"] or "")[:10],
-                            "totalDeposit": round(float(dm["total_deposit"] or 0.0), 2),
-                            "commission": round(dm_comm, 2),
-                            "status": dm["status"] or "ACTIVE"
-                        })
+                    aff_data = build_user_affiliates(conn, uid_cur)
+                    if not aff_data:
+                        continue
+                    members_arr = [{
+                        "id": m["id"],
+                        "name": m["name"],
+                        "tier": m["tierLabel"],
+                        "joinDate": m["joined"],
+                        "totalDeposit": m["totalDeposit"],
+                        "turnover": m["turnover"],
+                        "commission": m["commission"],
+                        "status": m["status"]
+                    } for m in aff_data["members"]]
                     affiliates_list.append({
                         "userId": uid_cur,
                         "userName": u["name"],
                         "phone": u["phone"] or "",
-                        "refCode": (u["referral_code"] if "referral_code" in u.keys() and u["referral_code"] else uid_cur[-6:].upper()),
+                        "refCode": aff_data["referralCode"],
                         "referredBy": (u["referred_by"] if "referred_by" in u.keys() and u["referred_by"] else "OFFICIAL_PROMO"),
-                        "directMembersCount": len(directs),
-                        "teamMembersCount": len(directs),
-                        "totalEarnedCommission": round(tot_comm, 2),
-                        "yesterdayCommission": round(recent_comm, 2),
+                        "directMembersCount": aff_data["directCount"],
+                        "teamMembersCount": aff_data["teamCount"],
+                        "totalEarnedCommission": aff_data["lifetimeCommission"],
+                        "yesterdayCommission": aff_data["todayCommission"],
+                        "todayCommission": aff_data["todayCommission"],
+                        "networkTurnover": aff_data["networkTurnover"],
                         "members": members_arr
                     })
 
@@ -1747,7 +1962,10 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
         # 1. ATOMIC BET PLACEMENT WITH STRICT 30-SECOND LOCK REJECTION
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         if path == "/api/bets/place":
-            uid = str(payload.get("userId", "USR-1001")).strip()
+            uid = str(payload.get("userId") or self._get_cookie_uid() or "").strip()
+            if not uid or uid == "Guest":
+                self._send_json({ "success": False, "error": "Please login or register before placing a bet" }, status=401)
+                return
             m_code = str(payload.get("market", "MIAMI")).upper().strip()
             amount = float(payload.get("amount", 0.0))
             b_type = str(payload.get("type", "COLOR")).upper().strip()
@@ -1826,28 +2044,33 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     VALUES (?, ?, 'BET', ?, ?, ?, ?, ?, 'COMPLETED', ?)
                 """, (tx_id, uid, f"Bet on {m_code} #{period}", f"Target {target} ({mult}X)", -amount, curr_bal, new_bal, now_ms))
 
-                # 5. Credit Level-1 Refer & Earn Commission if user has sponsor
-                sponsor_id = user["referred_by"] if "referred_by" in user.keys() else None
-                if sponsor_id:
-                    c.execute("SELECT id, name, balance FROM users WHERE id = ?", (sponsor_id,))
+                # 5. Credit Multi-Tier (Up to 6 Levels) Refer & Earn Commissions
+                cur_sponsor_id = user["referred_by"] if "referred_by" in user.keys() else None
+                visited_sponsors = {uid}
+                for tier_lvl, comm_rate in REFERRAL_TIER_RATES:
+                    if not cur_sponsor_id or cur_sponsor_id in visited_sponsors:
+                        break
+                    visited_sponsors.add(cur_sponsor_id)
+                    c.execute("SELECT id, name, balance, referred_by FROM users WHERE id = ?", (cur_sponsor_id,))
                     sp = c.fetchone()
-                    if sp:
-                        comm_rate = 0.01
-                        comm_amt = round(amount * comm_rate, 2)
-                        if comm_amt > 0:
-                            sp_bal = float(sp["balance"])
-                            sp_new = round(sp_bal + comm_amt, 2)
-                            c.execute("UPDATE users SET balance = ? WHERE id = ?", (sp_new, sp["id"]))
-                            rc_id = f"REF-{int(now_ms)}-{random.randint(100, 999)}"
-                            c.execute("""
-                                INSERT INTO referral_commissions (id, beneficiary_user_id, source_user_id, source_user_name, source_bet_id, level, rate, eligible_amount, commission_amount, status, created_at_ms)
-                                VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, 'SETTLED', ?)
-                            """, (rc_id, sp["id"], uid, user["name"], bet_id, comm_rate, amount, comm_amt, now_ms))
-                            rtx_id = f"TX-REF-{int(now_ms)}-{random.randint(100, 999)}"
-                            c.execute("""
-                                INSERT INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status, created_at_ms)
-                                VALUES (?, ?, 'REFERRAL_COMMISSION', ?, ?, ?, ?, ?, 'COMPLETED', ?)
-                            """, (rtx_id, sp["id"], "Tier 1 Refer & Earn Reward", f"From {user['name']} ({m_code} Bet ₹{amount:.2f})", comm_amt, sp_bal, sp_new, now_ms))
+                    if not sp:
+                        break
+                    comm_amt = round(amount * comm_rate, 2)
+                    if comm_amt > 0:
+                        sp_bal = float(sp["balance"])
+                        sp_new = round(sp_bal + comm_amt, 2)
+                        c.execute("UPDATE users SET balance = ? WHERE id = ?", (sp_new, sp["id"]))
+                        rc_id = f"REF-L{tier_lvl}-{int(now_ms)}-{random.randint(100, 999)}"
+                        c.execute("""
+                            INSERT INTO referral_commissions (id, beneficiary_user_id, source_user_id, source_user_name, source_bet_id, level, rate, eligible_amount, commission_amount, status, created_at_ms)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'SETTLED', ?)
+                        """, (rc_id, sp["id"], uid, user["name"], bet_id, tier_lvl, comm_rate, amount, comm_amt, now_ms))
+                        rtx_id = f"TX-REF-L{tier_lvl}-{int(now_ms)}-{random.randint(100, 999)}"
+                        c.execute("""
+                            INSERT INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status, created_at_ms)
+                            VALUES (?, ?, 'REFERRAL_COMMISSION', ?, ?, ?, ?, ?, 'COMPLETED', ?)
+                        """, (rtx_id, sp["id"], f"Tier {tier_lvl} Refer & Earn ({comm_rate*100:.2f}%)", f"From {user['name']} ({m_code} Bet ₹{amount:.2f})", comm_amt, sp_bal, sp_new, now_ms))
+                    cur_sponsor_id = sp["referred_by"] if "referred_by" in sp.keys() else None
 
                 _, sse_ev = bump_state_version(conn, "bet_placed", {"userId": uid, "market": m_code, "period": period, "betId": bet_id})
                 conn.commit()
@@ -2055,10 +2278,15 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
 
                 referred_by_uid = None
                 if ref_by_code:
-                    c.execute("SELECT id FROM users WHERE UPPER(referral_code) = ? OR UPPER(id) = ?", (ref_by_code, ref_by_code))
+                    c.execute("SELECT id FROM users WHERE UPPER(referral_code) = ? OR UPPER(id) = ? OR LOWER(name) = LOWER(?)", (ref_by_code, ref_by_code, ref_by_code))
                     sp = c.fetchone()
-                    if sp:
+                    if sp and sp["id"] != uid:
                         referred_by_uid = sp["id"]
+
+                # Ensure unique referral_code
+                c.execute("SELECT id FROM users WHERE UPPER(referral_code) = ? AND id != ?", (ref_code, uid))
+                if c.fetchone():
+                    ref_code = f"{ref_code[:4]}{random.randint(1000, 9999)}"
 
                 c.execute("SELECT * FROM users WHERE id = ?", (uid,))
                 existing = c.fetchone()
@@ -2095,10 +2323,15 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 "success": True,
                 "user": {
                     "id": u["id"], "name": u["name"], "phone": u["phone"], "email": u["email"],
-                    "balance": u["balance"], "status": u["status"],
-                    "referralCode": u["referral_code"] if "referral_code" in u.keys() else ref_code
+                    "balance": round(float(u["balance"] or 0.0), 2),
+                    "totalDeposit": round(float(u["total_deposit"] or 0.0), 2),
+                    "totalWithdraw": round(float(u["total_withdraw"] or 0.0), 2),
+                    "betsCount": int(u["bets_count"] or 0),
+                    "status": u["status"],
+                    "referralCode": u["referral_code"] if "referral_code" in u.keys() and u["referral_code"] else ref_code,
+                    "referredBy": u["referred_by"] if "referred_by" in u.keys() else None
                 }
-            })
+            }, cookies=[self._build_session_cookie(u["id"])])
             return
 
         if path == "/api/users/login":
@@ -2150,11 +2383,19 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     "name": u["name"],
                     "phone": u["phone"],
                     "email": u["email"],
-                    "balance": u["balance"],
+                    "balance": round(float(u["balance"] or 0.0), 2),
+                    "totalDeposit": round(float(u["total_deposit"] or 0.0), 2),
+                    "totalWithdraw": round(float(u["total_withdraw"] or 0.0), 2),
+                    "betsCount": int(u["bets_count"] or 0),
                     "status": u["status"],
-                    "referralCode": u["referral_code"] if "referral_code" in u.keys() else ""
+                    "referralCode": u["referral_code"] if "referral_code" in u.keys() and u["referral_code"] else u["id"][-6:].upper(),
+                    "referredBy": u["referred_by"] if "referred_by" in u.keys() else None
                 }
-            })
+            }, cookies=[self._build_session_cookie(u["id"])])
+            return
+
+        if path == "/api/users/logout":
+            self._send_json({ "success": True }, cookies=[self._build_session_cookie("", max_age=0)])
             return
 
         if path == "/api/users/change-password":

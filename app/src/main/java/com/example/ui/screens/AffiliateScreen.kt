@@ -25,11 +25,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.MoneyUtils
 import com.example.data.model.ReferralCommissionEntity
+import com.example.domain.ServerAffiliateCommission
+import com.example.domain.ServerAffiliateMember
 import com.example.ui.MainViewModel
 import com.example.ui.components.borderStroke
 import com.example.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.roundToLong
 
 @Composable
 fun AffiliateScreen(
@@ -39,17 +42,29 @@ fun AffiliateScreen(
     val activeUser by viewModel.activeUser.collectAsState()
     val commissions by viewModel.userCommissions.collectAsState()
     val descendants by viewModel.userDescendants.collectAsState()
+    val serverAffiliateStats by viewModel.serverAffiliateStats.collectAsState()
     val context = LocalContext.current
 
-    val totalCommissionCents = commissions.sumOf { it.commissionAmount }
-    val todayCommissionCents = commissions.filter {
+    val totalCommissionCents = serverAffiliateStats?.let {
+        (it.lifetimeCommissionRupees * 100.0).roundToLong()
+    } ?: commissions.sumOf { it.commissionAmount }
+
+    val todayCommissionCents = serverAffiliateStats?.let {
+        (it.todayCommissionRupees * 100.0).roundToLong()
+    } ?: commissions.filter {
         val cal1 = Calendar.getInstance().apply { timeInMillis = it.createdAt }
         val cal2 = Calendar.getInstance()
         cal1.get(Calendar.DAY_OF_YEAR) == cal2.get(Calendar.DAY_OF_YEAR) &&
                 cal1.get(Calendar.YEAR) == cal2.get(Calendar.YEAR)
     }.sumOf { it.commissionAmount }
 
-    val totalTurnoverCents = commissions.sumOf { it.eligibleAmount }
+    val totalTurnoverCents = serverAffiliateStats?.let {
+        (it.networkTurnoverRupees * 100.0).roundToLong()
+    } ?: commissions.sumOf { it.eligibleAmount }
+
+    val subordinateCount = serverAffiliateStats?.teamCount ?: descendants.size
+    val serverMembers = serverAffiliateStats?.members.orEmpty()
+    val serverCommissions = serverAffiliateStats?.recentCommissions.orEmpty()
 
     val levelRates = listOf(
         1 to 0.0100,
@@ -75,7 +90,7 @@ fun AffiliateScreen(
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = "Earn automated commissions across 6 hierarchical tiers powered by closure-table lookups",
+                text = "Earn automated commissions across 6 hierarchical tiers backed by SQLite persistence",
                 color = TextSecondary,
                 fontSize = 12.sp
             )
@@ -121,7 +136,7 @@ fun AffiliateScreen(
                         )
                         MiniStat(
                             title = "Subordinates",
-                            value = "${descendants.size}",
+                            value = "$subordinateCount",
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -130,8 +145,10 @@ fun AffiliateScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Referral Link & Code
-            val referralCode = activeUser?.referralCode ?: "APEX777"
-            val referralLink = "https://apexplay.io/join?ref=$referralCode"
+            val referralCode = serverAffiliateStats?.referralCode?.takeIf { it.isNotBlank() }
+                ?: activeUser?.referralCode?.takeIf { it.isNotBlank() }
+                ?: "----"
+            val referralLink = if (referralCode != "----") "https://colourking.app/join?ref=$referralCode" else ""
 
             Surface(
                 shape = RoundedCornerShape(14.dp),
@@ -158,9 +175,13 @@ fun AffiliateScreen(
 
                         Button(
                             onClick = {
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                clipboard.setPrimaryClip(ClipData.newPlainText("Referral Link", referralLink))
-                                viewModel.postNotification("Referral link copied to clipboard!")
+                                if (referralLink.isNotBlank()) {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    clipboard.setPrimaryClip(ClipData.newPlainText("Referral Link", referralLink))
+                                    viewModel.postNotification("Referral link copied to clipboard!")
+                                } else {
+                                    viewModel.postNotification("Sign in to share your referral link!", false)
+                                }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = GoldAccent),
                             shape = RoundedCornerShape(8.dp),
@@ -183,7 +204,10 @@ fun AffiliateScreen(
                 fontSize = 15.sp
             )
             Spacer(modifier = Modifier.height(8.dp))
-            ReferralTreeVisualizer(activeUsername = activeUser?.username ?: "You")
+            ReferralTreeVisualizer(
+                activeUsername = activeUser?.username ?: serverAffiliateStats?.userName ?: "Guest",
+                members = serverMembers
+            )
             Spacer(modifier = Modifier.height(18.dp))
 
             // Commission Rate Matrix
@@ -194,12 +218,17 @@ fun AffiliateScreen(
                 fontSize = 15.sp
             )
             Spacer(modifier = Modifier.height(8.dp))
-            CommissionRateTable(levelRates = levelRates, commissions = commissions)
+            CommissionRateTable(
+                levelRates = levelRates,
+                commissions = commissions,
+                serverCommissions = serverCommissions
+            )
             Spacer(modifier = Modifier.height(18.dp))
 
             // Recent Commission Ledger
+            val displayCount = if (serverCommissions.isNotEmpty()) serverCommissions.size else commissions.size
             Text(
-                text = "Referral Commission Ledger (${commissions.size})",
+                text = "Referral Commission Ledger ($displayCount)",
                 color = TextPrimary,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp
@@ -207,7 +236,12 @@ fun AffiliateScreen(
             Spacer(modifier = Modifier.height(8.dp))
         }
 
-        if (commissions.isEmpty()) {
+        if (serverCommissions.isNotEmpty()) {
+            items(serverCommissions, key = { it.id }) { comm ->
+                ServerCommissionLedgerItem(commission = comm)
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+        } else if (commissions.isEmpty()) {
             item {
                 Surface(
                     shape = RoundedCornerShape(12.dp),
@@ -216,7 +250,7 @@ fun AffiliateScreen(
                 ) {
                     Box(modifier = Modifier.padding(20.dp), contentAlignment = Alignment.Center) {
                         Text(
-                            text = "No commissions recorded yet. Commissions auto-credit on qualifying downstream bets!",
+                            text = "No commissions recorded yet. Share your referral code to earn 6-tier commissions!",
                             color = TextMuted,
                             fontSize = 12.sp
                         )
@@ -224,7 +258,7 @@ fun AffiliateScreen(
                 }
             }
         } else {
-            items(commissions) { comm ->
+            items(commissions, key = { it.id }) { comm ->
                 CommissionLedgerItem(commission = comm)
                 Spacer(modifier = Modifier.height(8.dp))
             }
@@ -254,7 +288,27 @@ fun MiniStat(
 }
 
 @Composable
-fun ReferralTreeVisualizer(activeUsername: String) {
+fun ReferralTreeVisualizer(
+    activeUsername: String,
+    members: List<ServerAffiliateMember> = emptyList()
+) {
+    val tierColors = mapOf(
+        1 to NeonGreen,
+        2 to ElectricCyan,
+        3 to NeonViolet,
+        4 to AmberGlow,
+        5 to TextSecondary,
+        6 to TextMuted
+    )
+    val tierRates = mapOf(
+        1 to "1.00%",
+        2 to "0.75%",
+        3 to "0.60%",
+        4 to "0.50%",
+        5 to "0.30%",
+        6 to "0.20%"
+    )
+
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = SurfaceDark,
@@ -262,14 +316,25 @@ fun ReferralTreeVisualizer(activeUsername: String) {
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
-            // Tree Root
             TreeRow(depth = 0, title = "👑 You ($activeUsername)", subtitle = "Root Beneficiary", rate = "--", color = GoldAccent)
-            TreeRow(depth = 1, title = "Tier 1: Direct Referrals", subtitle = "Rohan_L1 (Active)", rate = "1.00%", color = NeonGreen)
-            TreeRow(depth = 2, title = "Tier 2: Sub-Level 2", subtitle = "Ananya_L2", rate = "0.75%", color = ElectricCyan)
-            TreeRow(depth = 3, title = "Tier 3: Sub-Level 3", subtitle = "Pooja_L3", rate = "0.60%", color = NeonViolet)
-            TreeRow(depth = 4, title = "Tier 4: Sub-Level 4", subtitle = "Arjun_L4", rate = "0.50%", color = AmberGlow)
-            TreeRow(depth = 5, title = "Tier 5: Sub-Level 5", subtitle = "Siddharth_L5", rate = "0.30%", color = TextSecondary)
-            TreeRow(depth = 6, title = "Tier 6: Sub-Level 6", subtitle = "Vikram_L6", rate = "0.20%", color = TextMuted)
+            for (tier in 1..6) {
+                val tierMembers = members.filter { it.tier == tier }
+                val subtitle = if (tierMembers.isEmpty()) {
+                    "0 referrals yet"
+                } else {
+                    val names = tierMembers.take(3).joinToString(", ") { it.name }
+                    val extra = if (tierMembers.size > 3) " +${tierMembers.size - 3} more" else ""
+                    "${tierMembers.size} member(s): $names$extra"
+                }
+                val title = if (tier == 1) "Tier 1: Direct Referrals" else "Tier $tier: Sub-Level $tier"
+                TreeRow(
+                    depth = tier,
+                    title = title,
+                    subtitle = subtitle,
+                    rate = tierRates[tier] ?: "0.20%",
+                    color = tierColors[tier] ?: TextMuted
+                )
+            }
         }
     }
 }
@@ -308,7 +373,8 @@ fun TreeRow(depth: Int, title: String, subtitle: String, rate: String, color: an
 @Composable
 fun CommissionRateTable(
     levelRates: List<Pair<Int, Double>>,
-    commissions: List<ReferralCommissionEntity>
+    commissions: List<ReferralCommissionEntity>,
+    serverCommissions: List<ServerAffiliateCommission> = emptyList()
 ) {
     Surface(
         shape = RoundedCornerShape(14.dp),
@@ -317,7 +383,6 @@ fun CommissionRateTable(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            // Table Header
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -331,7 +396,11 @@ fun CommissionRateTable(
             Divider(color = CardBorder)
 
             levelRates.forEach { (level, rate) ->
-                val levelEarned = commissions.filter { it.level == level }.sumOf { it.commissionAmount }
+                val levelEarned = if (serverCommissions.isNotEmpty()) {
+                    serverCommissions.filter { it.level == level }.sumOf { (it.commissionAmountRupees * 100.0).roundToLong() }
+                } else {
+                    commissions.filter { it.level == level }.sumOf { it.commissionAmount }
+                }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -361,6 +430,68 @@ fun CommissionRateTable(
                         modifier = Modifier.weight(1.5f)
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun ServerCommissionLedgerItem(commission: ServerAffiliateCommission) {
+    val commCents = (commission.commissionAmountRupees * 100.0).roundToLong()
+    val eligCents = (commission.eligibleAmountRupees * 100.0).roundToLong()
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = SurfaceDark,
+        border = borderStroke(1.dp, CardBorder),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(NeonGreen.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text = "L${commission.level}", color = NeonGreen, fontWeight = FontWeight.Black, fontSize = 12.sp)
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text(
+                        text = "L${commission.level} from ${commission.sourceUserName}",
+                        color = TextPrimary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                    Text(
+                        text = "${commission.createdAt} • Wager: ${MoneyUtils.formatCents(eligCents)}",
+                        color = TextMuted,
+                        fontSize = 10.sp
+                    )
+                }
+            }
+
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = "+${MoneyUtils.formatCents(commCents)}",
+                    color = NeonGreen,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 14.sp
+                )
+                Text(
+                    text = commission.status,
+                    color = ElectricCyan,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }

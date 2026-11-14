@@ -29,26 +29,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val pragmaticAdapter = PragmaticPlayAdapter()
     val spribeAdapter = SpribeAdapter()
 
-    // Active Tenant & User State
-    private val _activeTenantId = MutableStateFlow("tenant_apex_global")
+    private val authPrefs = application.getSharedPreferences("colour_king_auth", android.content.Context.MODE_PRIVATE)
+
+    // Active Tenant & User State (Restored from SharedPreferences if previously signed in)
+    private val initialLoggedIn = authPrefs.getBoolean("is_logged_in", false)
+    private val initialUserId = authPrefs.getString("active_user_id", null) ?: "user_player_rahul"
+    private val initialTenantId = authPrefs.getString("active_tenant_id", null) ?: "tenant_apex_global"
+
+    private val _activeTenantId = MutableStateFlow(initialTenantId)
     val activeTenantId = _activeTenantId.asStateFlow()
 
-    private val _activeUserId = MutableStateFlow("user_player_rahul")
+    private val _activeUserId = MutableStateFlow(initialUserId)
     val activeUserId = _activeUserId.asStateFlow()
 
-    private val _activeUser = MutableStateFlow<UserEntity?>(
-        UserEntity(
-            id = "user_player_rahul",
-            tenantId = "tenant_apex_global",
-            username = "Rahul_Player",
-            email = "rahul@apexcasino.com",
-            phone = "+91 98765 43210",
-            role = "USER",
-            passwordHash = "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8",
-            referralCode = "RAHUL777",
-            status = "ACTIVE"
-        )
-    )
+    private val _activeUser = MutableStateFlow<UserEntity?>(null)
     val activeUser = _activeUser.asStateFlow()
 
     private val _allUsers = MutableStateFlow<List<UserEntity>>(emptyList())
@@ -60,7 +54,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _notification = MutableStateFlow<UiNotification?>(null)
     val notification = _notification.asStateFlow()
 
-    private val _isLoggedIn = MutableStateFlow(false)
+    private val _isLoggedIn = MutableStateFlow(initialLoggedIn)
     val isLoggedIn = _isLoggedIn.asStateFlow()
 
     val backendUrl: StateFlow<String> = backendSyncService.activeBackendUrl
@@ -73,6 +67,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _serverAccountStatus = MutableStateFlow("ACTIVE")
     val serverAccountStatus = _serverAccountStatus.asStateFlow()
+
+    private val _serverAffiliateStats = MutableStateFlow<ServerAffiliateStats?>(null)
+    val serverAffiliateStats = _serverAffiliateStats.asStateFlow()
+
+    private fun saveAuthSession(userId: String, tenantId: String) {
+        authPrefs.edit()
+            .putBoolean("is_logged_in", true)
+            .putString("active_user_id", userId)
+            .putString("active_tenant_id", tenantId)
+            .apply()
+    }
+
+    private fun clearAuthSession() {
+        authPrefs.edit()
+            .putBoolean("is_logged_in", false)
+            .remove("active_user_id")
+            .apply()
+    }
 
     @Volatile
     private var lastLocalMutationAtMs: Long = 0L
@@ -301,8 +313,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 database.userDao().getUsersByTenant(tId)
             }.collect { users ->
                 _allUsers.value = users
-                val current = users.firstOrNull { it.id == _activeUserId.value } ?: users.firstOrNull()
-                _activeUser.value = current
+                if (_isLoggedIn.value) {
+                    val current = users.firstOrNull { it.id == _activeUserId.value }
+                    if (current != null) {
+                        _activeUser.value = current
+                    }
+                }
             }
         }
 
@@ -419,6 +435,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             gameEngineService.applyServerSync(tenantId, snap.drawOverrides, snap.declaredResults)
         } catch (_: Exception) {}
 
+        if (!_isLoggedIn.value) {
+            return
+        }
+
         // 2. Match current user in server SQLite users map
         val serverUser = snap.usersById[serverUserId]
             ?: snap.usersById[localUserId]
@@ -438,13 +458,43 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
+            // Ensure local UserEntity exists if restored from persistent server state
+            if (_activeUser.value == null) {
+                val restoredUser = database.userDao().getUserById(localUserId) ?: UserEntity(
+                    id = localUserId,
+                    tenantId = tenantId,
+                    username = serverUser.name,
+                    email = serverUser.email.ifBlank { "${serverUser.name.lowercase()}@colourking.in" },
+                    phone = serverUser.phone,
+                    passwordHash = "",
+                    role = UserRole.USER.name,
+                    referralCode = serverUser.referralCode,
+                    referredBy = serverUser.referredBy,
+                    status = nextStatus,
+                    createdAt = System.currentTimeMillis()
+                ).also { database.userDao().insertUser(it) }
+                _activeUser.value = restoredUser
+            }
+
             // Sync wallet balance from SQLite server (if no recent local optimistic mutation in flight)
             val recentlyMutated = (System.currentTimeMillis() - lastLocalMutationAtMs) < 1500L
             val localWallet = database.walletDao().getWallet(tenantId, localUserId)
             val serverBalCents = backendSyncService.rupeesToCents(serverUser.balanceRupees)
             val serverDepCents = backendSyncService.rupeesToCents(serverUser.totalDepositRupees)
             val serverWdCents = backendSyncService.rupeesToCents(serverUser.totalWithdrawRupees)
-            if (localWallet != null && !recentlyMutated) {
+            if (localWallet == null) {
+                database.walletDao().insertWallet(
+                    WalletEntity(
+                        id = "wallet_$localUserId",
+                        tenantId = tenantId,
+                        userId = localUserId,
+                        availableBalance = serverBalCents,
+                        lifetimeDeposit = serverDepCents,
+                        lifetimeWithdrawal = serverWdCents,
+                        status = nextStatus
+                    )
+                )
+            } else if (!recentlyMutated) {
                 if (kotlin.math.abs(localWallet.availableBalance - serverBalCents) >= 1L ||
                     kotlin.math.abs(localWallet.lifetimeDeposit - serverDepCents) >= 1L ||
                     kotlin.math.abs(localWallet.lifetimeWithdrawal - serverWdCents) >= 1L
@@ -587,6 +637,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+
+        // 5. Sync 6-Tier Referral Earnings & Team Hierarchy from SQLite
+        val affStats = backendSyncService.fetchUserAffiliates(serverUserId)
+        if (affStats != null) {
+            _serverAffiliateStats.value = affStats
+        }
     }
 
     fun dismissNotification() {
@@ -601,7 +657,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _activeUserId.value = userId
         val user = _allUsers.value.firstOrNull { it.id == userId }
         _activeUser.value = user
-        viewModelScope.launch { backendSyncService.forceSyncNow() }
+        saveAuthSession(userId, _activeTenantId.value)
+        viewModelScope.launch {
+            backendSyncService.forceSyncNow()
+            _serverAffiliateStats.value = backendSyncService.fetchUserAffiliates(getServerUserId())
+        }
         postNotification("Switched active user to ${user?.username}")
     }
 
@@ -627,6 +687,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun logout() {
         _isLoggedIn.value = false
         _activeUser.value = null
+        _serverAffiliateStats.value = null
+        clearAuthSession()
         postNotification("Logged out from Colour King", true)
     }
 
@@ -687,6 +749,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         _activeTenantId.value = user.tenantId
                         _activeUser.value = user
                         _isLoggedIn.value = true
+                        saveAuthSession(user.id, user.tenantId)
                         viewModelScope.launch { backendSyncService.forceSyncNow() }
                         postNotification("Welcome back, ${user.username}!", true)
                         onResult(true, null)
@@ -705,6 +768,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             _activeTenantId.value = updatedUser.tenantId
                             _activeUser.value = updatedUser
                             _isLoggedIn.value = true
+                            saveAuthSession(updatedUser.id, updatedUser.tenantId)
                             viewModelScope.launch { backendSyncService.forceSyncNow() }
                             postNotification("Welcome back, ${updatedUser.username}!", true)
                             onResult(true, null)
@@ -753,6 +817,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         _activeTenantId.value = syncedUser.tenantId
                         _activeUser.value = syncedUser
                         _isLoggedIn.value = true
+                        saveAuthSession(syncedUser.id, syncedUser.tenantId)
                         viewModelScope.launch { backendSyncService.forceSyncNow() }
                         postNotification("Welcome back, ${syncedUser.username}!", true)
                         onResult(true, null)
@@ -890,6 +955,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _activeUserId.value = newUserId
                 _activeUser.value = newUser
                 _isLoggedIn.value = true
+                saveAuthSession(newUserId, tenantId)
                 lastLocalMutationAtMs = System.currentTimeMillis()
                 viewModelScope.launch {
                     backendSyncService.registerUserOnServer(
@@ -1114,12 +1180,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val amountCents = (amountRupees * 100).toLong()
         if (method.startsWith("Demo", ignoreCase = true) || backendSyncService.connectionStatus.value == "OFFLINE") {
             depositFunds(amountCents, "$method (UTR: $utr)")
+            if (backendSyncService.connectionStatus.value != "OFFLINE") {
+                viewModelScope.launch {
+                    backendSyncService.adjustUserBalanceOnServer(
+                        serverUserId = getServerUserId(),
+                        amountDeltaRupees = amountRupees,
+                        reason = "Instant Demo Deposit ($method UTR: $utr)"
+                    )
+                    backendSyncService.forceSyncNow()
+                }
+            }
             return
         }
         viewModelScope.launch {
             val (ok, info) = backendSyncService.submitDepositOnServer(
                 serverUserId = getServerUserId(),
-                userName = _activeUser.value?.username ?: "Rahul_Player",
+                userName = _activeUser.value?.username ?: "Guest",
                 amountRupees = amountRupees,
                 utr = utr,
                 method = method
@@ -1151,7 +1227,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             backendSyncService.submitWithdrawalOnServer(
                 serverUserId = getServerUserId(),
-                userName = _activeUser.value?.username ?: "Rahul_Player",
+                userName = _activeUser.value?.username ?: "Guest",
                 amountRupees = amountRupees,
                 upiId = upiId,
                 bankName = bankName,

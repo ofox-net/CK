@@ -67,7 +67,7 @@ fun WebScreen(
     val backendStatus by viewModel.backendConnectionStatus.collectAsState()
 
     LaunchedEffect(wallet?.availableBalance) {
-        val bal = ((wallet?.availableBalance ?: 5020000L) / 100.0)
+        val bal = ((wallet?.availableBalance ?: 0L) / 100.0)
         webViewInstance?.evaluateJavascript(
             "if (window.updateBridgeBalance) { window.updateBridgeBalance($bal); }",
             null
@@ -77,7 +77,7 @@ fun WebScreen(
     LaunchedEffect(backendUrl) {
         val escapedUrl = backendUrl.replace("\\", "\\\\").replace("'", "\\'")
         val escapedUid = viewModel.getServerUserId().replace("\\", "\\\\").replace("'", "\\'")
-        val escapedName = (viewModel.activeUser.value?.username ?: "Rahul_Player").replace("\\", "\\\\").replace("'", "\\'")
+        val escapedName = (viewModel.activeUser.value?.username ?: "Guest").replace("\\", "\\\\").replace("'", "\\'")
         webViewInstance?.evaluateJavascript(
             "if (window.updateBridgeBackendUrl) { window.updateBridgeBackendUrl('$escapedUrl', '$escapedUid', '$escapedName'); }",
             null
@@ -128,7 +128,7 @@ fun WebScreen(
                             fontSize = 13.sp
                         )
                         Text(
-                            text = "Synced: ₹${"%.2f".format((wallet?.availableBalance ?: 5020000L) / 100.0)} • $backendStatus",
+                            text = "Synced: ₹${"%.2f".format((wallet?.availableBalance ?: 0L) / 100.0)} • $backendStatus",
                             color = if (backendStatus == "SSE LIVE") NeonGreen else ElectricCyan,
                             fontSize = 10.sp
                         )
@@ -240,10 +240,10 @@ fun WebScreen(
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {
                             pageProgress = 100
-                            val bal = ((viewModel.wallet.value?.availableBalance ?: 5020000L) / 100.0)
+                            val bal = ((viewModel.wallet.value?.availableBalance ?: 0L) / 100.0)
                             val escapedUrl = viewModel.backendUrl.value.replace("\\", "\\\\").replace("'", "\\'")
                             val escapedUid = viewModel.getServerUserId().replace("\\", "\\\\").replace("'", "\\'")
-                            val escapedName = (viewModel.activeUser.value?.username ?: "Rahul_Player").replace("\\", "\\\\").replace("'", "\\'")
+                            val escapedName = (viewModel.activeUser.value?.username ?: "Guest").replace("\\", "\\\\").replace("'", "\\'")
                             evaluateJavascript(
                                 "if (window.updateBridgeBackendUrl) { window.updateBridgeBackendUrl('$escapedUrl', '$escapedUid', '$escapedName'); } if (window.updateBridgeBalance) { window.updateBridgeBalance($bal); }",
                                 null
@@ -284,18 +284,18 @@ class AndroidWalletBridge(
 ) {
     @android.webkit.JavascriptInterface
     fun getWalletBalance(): Double {
-        val cents = viewModel.wallet.value?.availableBalance ?: 5020000L
+        val cents = viewModel.wallet.value?.availableBalance ?: 0L
         return cents / 100.0
     }
 
     @android.webkit.JavascriptInterface
     fun getUserId(): String {
-        return viewModel.activeUser.value?.id ?: "USR-1001"
+        return viewModel.activeUser.value?.id ?: ""
     }
 
     @android.webkit.JavascriptInterface
     fun getUserName(): String {
-        return viewModel.activeUser.value?.username ?: "Rahul_Player"
+        return viewModel.activeUser.value?.username ?: "Guest"
     }
 
     @android.webkit.JavascriptInterface

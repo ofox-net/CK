@@ -1107,7 +1107,7 @@
         <div class="brand-crown">👑</div>
         <div class="brand-text">
           <h1>Colour King</h1>
-          <p id="headerUserSubtitle">Rahul_Player • VIP 1</p>
+          <p id="headerUserSubtitle">Guest • Please Login</p>
         </div>
       </div>
       <div class="header-right">
@@ -1120,7 +1120,7 @@
         <div class="wallet-badge" onclick="switchTab('wallet')">
           <div>
             <span style="font-size:9px; color:var(--gold); display:block; text-align:right;">WALLET</span>
-            <span class="wallet-amount" id="headerWallet">₹50,200.00</span>
+            <span class="wallet-amount" id="headerWallet">₹0.00</span>
           </div>
           <span class="quick-deposit-plus">+</span>
         </div>
@@ -1513,7 +1513,7 @@
             <span style="font-size:11px; color:var(--gold); font-weight:800; letter-spacing:0.5px;">TOTAL AVAILABLE BALANCE</span>
             <span class="badge-pill badge-green">Synced Real-Time</span>
           </div>
-          <div style="font-size:32px; font-weight:900; color:#FFF; margin:4px 0; font-family:monospace;" id="walletTabBalance">₹50,200.00</div>
+          <div style="font-size:32px; font-weight:900; color:#FFF; margin:4px 0; font-family:monospace;" id="walletTabBalance">₹0.00</div>
           
           <div style="display:flex; gap:10px; margin-top:8px;">
             <button class="btn-primary" style="flex:1;" onclick="openDepositModal()">+ Quick Deposit</button>
@@ -1600,12 +1600,12 @@
           <!-- Lifetime Commission Banner -->
           <div style="background:var(--card-highlight); padding:12px; border-radius:10px; margin-top:4px;">
             <span style="font-size:10px; color:var(--text-muted); font-weight:700;">LIFETIME COMMISSION EARNINGS</span>
-            <div style="font-size:26px; font-weight:900; color:var(--green); margin:2px 0;">₹42,850.00</div>
+            <div id="affLifetimeCommission" style="font-size:26px; font-weight:900; color:var(--green); margin:2px 0;">₹0.00</div>
             
             <div style="display:flex; justify-content:space-between; margin-top:8px; font-size:11px; border-top:1px solid rgba(255,255,255,0.06); padding-top:6px;">
-              <span>Today's Commission: <strong style="color:var(--gold);">₹1,450.00</strong></span>
-              <span>Network Turnover: <strong style="color:var(--cyan);">₹5,80,000.00</strong></span>
-              <span>Team: <strong style="color:#FFF;">28 Users</strong></span>
+              <span>Today's Commission: <strong id="affTodayCommission" style="color:var(--gold);">₹0.00</strong></span>
+              <span>Network Turnover: <strong id="affNetworkTurnover" style="color:var(--cyan);">₹0.00</strong></span>
+              <span>Team: <strong id="affTeamCount" style="color:#FFF;">0 Users</strong></span>
             </div>
           </div>
 
@@ -1613,7 +1613,7 @@
           <div style="background:var(--card-highlight); padding:10px; border-radius:10px; display:flex; justify-content:space-between; align-items:center;">
             <div>
               <div style="font-size:10px; color:var(--text-muted);">YOUR REFERRAL CODE</div>
-              <div style="font-size:18px; font-weight:900; color:var(--gold);">RAHUL777</div>
+              <div id="affReferralCodeDisplay" style="font-size:18px; font-weight:900; color:var(--gold);">---</div>
             </div>
             <div style="display:flex; gap:6px;">
               <button class="btn-secondary" style="padding:6px 10px; font-size:11px;" onclick="copyReferralCode()">Copy Code</button>
@@ -1683,22 +1683,22 @@
         <div class="card" style="border:1px solid var(--border); background:linear-gradient(135deg, var(--card) 0%, var(--surface) 100%);">
           <div style="display:flex; align-items:center; gap:12px;">
             <div id="profileAvatarInitials" style="width:52px; height:52px; border-radius:50%; background:linear-gradient(135deg, var(--gold), var(--amber)); color:#000; font-size:20px; font-weight:900; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
-              RP
+              CK
             </div>
             <div style="flex:1;">
               <div style="display:flex; align-items:center; gap:8px;">
-                <h3 id="profileUsernameDisplay" style="font-size:16px; font-weight:900; color:#FFF;">Rahul_Player</h3>
+                <h3 id="profileUsernameDisplay" style="font-size:16px; font-weight:900; color:#FFF;">Guest</h3>
                 <span class="badge-pill badge-green">KYC VERIFIED</span>
                 <span class="badge-pill" style="background:rgba(255,215,0,0.2); color:var(--gold);">VIP 1</span>
               </div>
-              <p id="profileMetaDisplay" style="font-size:11px; color:var(--text-muted); margin-top:2px;">User ID: <span style="font-family:monospace; color:var(--cyan);">USR-1001</span> • rahul@gmail.com</p>
+              <p id="profileMetaDisplay" style="font-size:11px; color:var(--text-muted); margin-top:2px;">User ID: <span style="font-family:monospace; color:var(--cyan);">Guest</span></p>
             </div>
           </div>
 
           <div style="background:var(--card-highlight); border-radius:10px; padding:10px; display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
             <div>
               <span style="font-size:10px; color:var(--text-muted);">Current Wallet Balance</span>
-              <div style="font-size:20px; font-weight:900; color:var(--gold);" id="profileBalanceDisplay">₹50,200.00</div>
+              <div style="font-size:20px; font-weight:900; color:var(--gold);" id="profileBalanceDisplay">₹0.00</div>
             </div>
             <button class="btn-primary" style="padding:6px 14px; font-size:11px; width:auto;" onclick="openDepositModal()">+ Deposit</button>
           </div>
@@ -1865,7 +1865,7 @@
         </div>
         <div style="display:flex; justify-content:space-between; font-size:12px;">
           <span style="color:var(--text-muted);">Available Balance</span>
-          <span id="betModalAvailableBalance" style="color:#FFF; font-size:12px; font-weight:700;">₹50,000.00</span>
+          <span id="betModalAvailableBalance" style="color:#FFF; font-size:12px; font-weight:700;">₹0.00</span>
         </div>
         <div id="betModalInsufficientWarning" style="display:none; color:var(--red); font-size:11px; font-weight:700; margin-top:2px;">
           ⚠️ Insufficient wallet balance! Please reduce bet or deposit funds.
@@ -2045,7 +2045,7 @@
 
       <div style="background:var(--card-highlight); padding:8px 12px; border-radius:8px; font-size:12px; display:flex; justify-content:space-between; align-items:center;">
         <span style="color:var(--text-muted);">Available Balance:</span>
-        <strong style="color:var(--gold); font-size:15px;" id="userModalWithdrawBalance">₹50,200.00</strong>
+        <strong style="color:var(--gold); font-size:15px;" id="userModalWithdrawBalance">₹0.00</strong>
       </div>
 
       <div>
@@ -2104,7 +2104,7 @@
       <!-- Live Game Controls -->
       <div style="display:flex; justify-content:space-between; align-items:center; background:var(--card-highlight); padding:8px 12px; border-radius:8px; font-size:12px;">
         <span>Wallet Balance:</span>
-        <strong style="color:var(--gold); font-family:monospace;" id="clWalletBalance">₹50,200.00</strong>
+        <strong style="color:var(--gold); font-family:monospace;" id="clWalletBalance">₹0.00</strong>
       </div>
 
       <div>
@@ -2303,17 +2303,37 @@
     // Global User State - Authenticated session handling
     let currentUserId = null;
     let currentUserName = 'Guest';
+    let currentUserEmail = '';
+    let currentUserPhone = '';
+    let currentUserReferralCode = '';
     let userBalance = 0.00;
     let isSoundEnabled = true;
+
+    function persistSessionSnapshot() {
+      if (!currentUserId || currentUserId === 'Guest') return;
+      try {
+        localStorage.setItem('colour_king_user_session', JSON.stringify({
+          id: currentUserId,
+          name: currentUserName,
+          email: currentUserEmail || '',
+          phone: currentUserPhone || '',
+          balance: Number(userBalance) || 0,
+          referralCode: currentUserReferralCode || ''
+        }));
+      } catch (e) {}
+    }
 
     try {
       const savedSession = localStorage.getItem('colour_king_user_session');
       if (savedSession) {
         const parsed = JSON.parse(savedSession);
-        if (parsed && parsed.id) {
+        if (parsed && parsed.id && parsed.id !== 'Guest') {
           currentUserId = parsed.id;
           currentUserName = parsed.name || 'Player';
-          userBalance = typeof parsed.balance === 'number' ? parsed.balance : 50200.00;
+          currentUserEmail = parsed.email || '';
+          currentUserPhone = parsed.phone || '';
+          currentUserReferralCode = parsed.referralCode || '';
+          userBalance = typeof parsed.balance === 'number' ? parsed.balance : 0.00;
         }
       }
     } catch (e) {}
@@ -2381,6 +2401,7 @@
         syncAdminStateRealtime(true);
         loadUserBetsFromBackend();
         syncUserTransactions();
+        syncUserAffiliates();
       }
     };
 
@@ -2533,49 +2554,35 @@
       }
     };
 
-    // User Placed Bet Slips History (Loaded from localStorage or empty, NEVER hardcoding active WAIT bets)
+    // User Placed Bet Slips History (Scoped per userId; SQLite is single source of truth)
     let userBetSlipsHistory = [];
-    try {
-      const savedSlips = localStorage.getItem('colour_king_user_bet_slips');
-      if (savedSlips) {
-        userBetSlipsHistory = JSON.parse(savedSlips);
-      }
-    } catch (e) {}
-
-    if (!Array.isArray(userBetSlipsHistory) || userBetSlipsHistory.length === 0) {
-      userBetSlipsHistory = [
-        {
-          id: 'SLIP-9892',
-          marketId: 'MIAMI',
-          marketName: 'MIAMI MARKET',
-          period: (parseInt(initialSync.fullPeriodId) - 1).toString(),
-          target: 'RED',
-          type: 'COLOR',
-          mult: 2.0,
-          amount: 1000,
-          time: 'Today, 11:25:12 AM',
-          status: 'WON',
-          result: 'Won ₹2,000.00 (Outcome 8 RED)'
-        },
-        {
-          id: 'SLIP-9884',
-          marketId: 'VEGAS',
-          marketName: 'VEGAS MARKET',
-          period: (parseInt(initialSync.fullPeriodId) - 2).toString(),
-          target: 'GREEN',
-          type: 'COLOR',
-          mult: 2.0,
-          amount: 250,
-          time: 'Today, 11:21:40 AM',
-          status: 'LOST',
-          result: 'Lost (Outcome 4 RED)'
-        }
-      ];
-    }
-
     const RETENTION_90D_MS = 90 * 24 * 60 * 60 * 1000;
     let statementDaysFilter = 90;
     let latestStatementData = null;
+
+    function getBetSlipsStorageKey(uid = currentUserId) {
+      return (uid && uid !== 'Guest') ? `colour_king_user_bet_slips_${uid}` : null;
+    }
+
+    function loadSavedBetSlipsForCurrentUser() {
+      const key = getBetSlipsStorageKey();
+      if (!key) {
+        userBetSlipsHistory = [];
+        return [];
+      }
+      try {
+        const saved = localStorage.getItem(key);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            userBetSlipsHistory = parsed;
+            return parsed;
+          }
+        }
+      } catch (e) {}
+      userBetSlipsHistory = [];
+      return [];
+    }
 
     function pruneAndSaveBetSlips(slips) {
       const cutoff = Date.now() - RETENTION_90D_MS;
@@ -2583,32 +2590,31 @@
         const ts = Number(s && (s.createdAtMs || 0));
         return !ts || ts >= cutoff;
       });
-      try {
-        localStorage.setItem('colour_king_user_bet_slips', JSON.stringify(kept));
-      } catch (e) {}
+      const key = getBetSlipsStorageKey();
+      if (key) {
+        try {
+          localStorage.setItem(key, JSON.stringify(kept));
+        } catch (e) {}
+      }
       return kept;
     }
 
-    // Transaction Ledger History (Synced live from /api/statement; local fallback in offline preview)
-    let walletLedger = !hasBackendConnection() ? [
-      { id: 'TX-1092', type: 'DEPOSIT', category: 'DEPOSIT', title: 'Deposit via UPI (Instant)', ref: 'UTR #429188402911', amount: 5000.00, time: 'Today, 11:24 AM', status: 'SUCCESS' },
-      { id: 'TX-1088', type: 'WIN', category: 'PROFIT_LOSS', title: 'Win MIAMI Round #220', ref: 'Target RED 2.0X', amount: 2000.00, time: 'Today, 11:25 AM', status: 'COMPLETED' },
-      { id: 'TX-1085', type: 'BET', category: 'PROFIT_LOSS', title: 'Bet Placed on MIAMI', ref: 'Target RED 2.0X', amount: -1000.00, time: 'Today, 11:22 AM', status: 'COMPLETED' },
-      { id: 'TX-1076', type: 'REFERRAL_COMMISSION', category: 'REFERRAL', title: 'Tier 1 Refer & Earn Reward', ref: 'From Aman_Trader', amount: 350.00, time: 'Today, 10:45 AM', status: 'COMPLETED' },
-      { id: 'TX-1052', type: 'WITHDRAWAL', category: 'WITHDRAWAL', title: 'Withdrawal to SBI A/C', ref: 'Payout to 40928172901', amount: -8000.00, time: 'Today, 09:30 AM', status: 'IN PROCESS' }
-    ] : [];
+    if (currentUserId) {
+      loadSavedBetSlipsForCurrentUser();
+    }
 
-    // 6-Level Subordinates Team Directory
-    let affiliateTeam = [
-      { tier: 1, name: 'Aman_Trader', joined: '02 Nov 2026', turnover: 45000.00, commission: 450.00, status: 'ACTIVE' },
-      { tier: 1, name: 'Vikram_99', joined: '03 Nov 2026', turnover: 28000.00, commission: 280.00, status: 'ACTIVE' },
-      { tier: 2, name: 'Karan_Pro', joined: '04 Nov 2026', turnover: 60000.00, commission: 450.00, status: 'ACTIVE' },
-      { tier: 2, name: 'Priya_VIP', joined: '04 Nov 2026', turnover: 125000.00, commission: 937.50, status: 'ACTIVE' },
-      { tier: 3, name: 'Rohan_Bull', joined: '05 Nov 2026', turnover: 35000.00, commission: 210.00, status: 'ACTIVE' },
-      { tier: 4, name: 'Deepak_Win', joined: '06 Nov 2026', turnover: 20000.00, commission: 100.00, status: 'ACTIVE' },
-      { tier: 5, name: 'Sunny_Bet', joined: '07 Nov 2026', turnover: 15000.00, commission: 45.00, status: 'ACTIVE' },
-      { tier: 6, name: 'Amit_King', joined: '08 Nov 2026', turnover: 12000.00, commission: 24.00, status: 'ACTIVE' }
-    ];
+    // Transaction Ledger History (Synced live from SQLite /api/statement)
+    let walletLedger = [];
+
+    // 6-Level Subordinates Team Directory & Affiliate Stats (Synced live from SQLite /api/affiliates)
+    let affiliateTeam = [];
+    let affiliateSummary = {
+      referralCode: '',
+      lifetimeCommission: 0,
+      todayCommission: 0,
+      networkTurnover: 0,
+      teamCount: 0
+    };
 
     // Audio Synthesizer (Zero External Dependencies)
     let audioCtx = null;
@@ -2938,26 +2944,26 @@
 
       // 4. Reflect User Wallet Balance & Account Status in real-time
       let walletChanged = false;
-      if (currentUserId && state.users && state.users[currentUserId]) {
+      if (currentUserId && currentUserId !== 'Guest' && state.users && state.users[currentUserId]) {
         const sUser = state.users[currentUserId];
-        if (sUser.name && sUser.name !== currentUserName) {
-          currentUserName = sUser.name;
-        }
-        updateProfileIdentityUI(currentUserId, currentUserName, sUser.email || sUser.phone || '');
+        if (sUser.name) currentUserName = sUser.name;
+        if (sUser.email) currentUserEmail = sUser.email;
+        if (sUser.phone) currentUserPhone = sUser.phone;
+        if (sUser.referralCode) currentUserReferralCode = sUser.referralCode;
+        updateProfileIdentityUI(currentUserId, currentUserName, currentUserEmail || currentUserPhone || '');
         if (typeof sUser.balance === 'number' && Math.abs(sUser.balance - userBalance) > 0.01) {
           const diff = sUser.balance - userBalance;
           userBalance = sUser.balance;
           walletChanged = true;
           updateBalanceUI();
-          try {
-            localStorage.setItem('colour_king_user_session', JSON.stringify({ id: currentUserId, name: sUser.name || currentUserName, email: sUser.email || '', phone: sUser.phone || '', balance: userBalance }));
-          } catch(e) {}
           if (!hasBackendConnection() && window.AndroidBridge && window.AndroidBridge.syncWalletBalance) {
             window.AndroidBridge.syncWalletBalance(userBalance, 'Real-time Admin/Server sync');
           }
           if (reasonEvent && (reasonEvent.eventType === 'balance_adjusted' || reasonEvent.eventType === 'deposit_approved')) {
             showToast(diff >= 0 ? `💰 Wallet credited +₹${diff.toFixed(2)} by Admin!` : `💸 Wallet adjusted -₹${Math.abs(diff).toFixed(2)} by Admin.`);
           }
+        } else {
+          persistSessionSnapshot();
         }
         const curStatus = String(sUser.status || 'ACTIVE').toUpperCase();
         setAccountBlockedBanner(curStatus === 'BLOCKED');
@@ -2997,6 +3003,7 @@
       if (versionChanged || walletChanged || txChanged || force) {
         if (currentUserId && currentUserId !== 'Guest') {
           syncUserTransactions();
+          syncUserAffiliates();
           if (force || (reasonEvent && ['result_declared', 'round_settled', 'bets_locked', 'bet_placed', 'bet_cancelled', 'balance_adjusted', 'admin_sync'].includes(reasonEvent.eventType))) {
             loadUserBetsFromBackend();
           }
@@ -3554,13 +3561,20 @@
       const b = st.activeBets[index];
       if (!b) return;
 
+      if (!currentUserId || currentUserId === 'Guest') {
+        showToast('⚠️ Please login or register first!');
+        openAuthModal(0);
+        return;
+      }
+
       try {
         const res = await fetch(apiUrl('/api/bets/cancel'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({
             betId: b.id,
-            userId: currentUserId || 'USR-1001'
+            userId: currentUserId
           })
         });
         const data = await res.json();
@@ -3580,9 +3594,7 @@
         }
 
         st.activeBets.splice(index, 1);
-        try {
-          localStorage.setItem('colour_king_user_bet_slips', JSON.stringify(userBetSlipsHistory));
-        } catch (e) {}
+        userBetSlipsHistory = pruneAndSaveBetSlips(userBetSlipsHistory);
 
         walletLedger.unshift({
           id: 'TX-' + Math.floor(1000 + Math.random() * 9000),
@@ -3595,6 +3607,7 @@
         });
 
         updateBalanceUI();
+        syncUserTransactions();
         renderActiveBets();
         renderBetSlips();
         renderWalletLedger();
@@ -3809,6 +3822,12 @@
     }
 
     async function confirmPlaceBet() {
+      if (!currentUserId || currentUserId === 'Guest') {
+        showToast('⚠️ Please login or register to place bets!');
+        closeModal('betModal');
+        openAuthModal(0);
+        return;
+      }
       const st = marketStates[currentMarketId];
       if (st.isBettingLocked || st.secondsLeft <= 30) {
         showToast('⚠️ BETTING LOCKED: Betting is closed for current round (last 30s cutoff)!');
@@ -3831,8 +3850,9 @@
         const res = await fetch(apiUrl('/api/bets/place'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({
-            userId: currentUserId || 'USR-1001',
+            userId: currentUserId,
             market: currentMarketId,
             roundId: `RND_${currentMarketId}_${st.currentPeriod}`,
             period: st.currentPeriod,
@@ -3857,13 +3877,10 @@
         userBalance = data.newBalance;
         updateBalanceUI();
 
-        const confirmedBet = data.bet;
+        const confirmedBet = Object.assign({ createdAtMs: Date.now() }, data.bet || {});
         st.activeBets.push(confirmedBet);
         userBetSlipsHistory.unshift(confirmedBet);
-
-        try {
-          localStorage.setItem('colour_king_user_bet_slips', JSON.stringify(userBetSlipsHistory));
-        } catch (e) {}
+        userBetSlipsHistory = pruneAndSaveBetSlips(userBetSlipsHistory);
 
         walletLedger.unshift({
           id: 'TX-' + Math.floor(1000 + Math.random() * 9000),
@@ -3878,6 +3895,7 @@
         closeModal('betModal');
         renderActiveBets();
         renderBetSlips();
+        syncUserTransactions();
         showToast(`✓ Bet placed: ₹${total.toFixed(2)} on ${pendingBet.target}! (ID: ${confirmedBet.id})`);
         playSound('betClick');
 
@@ -3899,6 +3917,7 @@
     let lastKnownBetStatuses = {};
     let lastServerPeriodByMarket = {};
     let isLoadingUserBets = false;
+    let pendingReloadUserBets = false;
 
     function applyLocalBetSettlementFallback(mKey, oldPeriod, rec) {
       if (!rec) return;
@@ -3960,9 +3979,7 @@
           playSound('winFanfare');
           showToast(`🎉 WON +₹${wonTotal.toFixed(2)} on ${mKey} #${oldPeriod} (${winNum} ${outcomeColor})!`);
         }
-        try {
-          localStorage.setItem('colour_king_user_bet_slips', JSON.stringify(userBetSlipsHistory));
-        } catch (e) {}
+        userBetSlipsHistory = pruneAndSaveBetSlips(userBetSlipsHistory);
         renderActiveBets();
         renderBetSlips();
       }
@@ -3970,12 +3987,19 @@
 
     // Load User Bets Directly From Backend (90-Day Database Single Source of Truth)
     async function loadUserBetsFromBackend() {
-      if (!hasBackendConnection() || isLoadingUserBets) return;
+      if (!hasBackendConnection() || !currentUserId || currentUserId === 'Guest') return;
+      if (isLoadingUserBets) {
+        pendingReloadUserBets = true;
+        return;
+      }
       isLoadingUserBets = true;
-      const uid = currentUserId || 'USR-1001';
+      const uid = currentUserId;
       try {
-        const res = await fetch(apiUrl(`/api/bets?userId=${encodeURIComponent(uid)}&days=${encodeURIComponent(statementDaysFilter)}`));
-        if (res.ok) {
+        const res = await fetch(apiUrl(`/api/bets?userId=${encodeURIComponent(uid)}&days=${encodeURIComponent(statementDaysFilter)}&t=${Date.now()}`), {
+          credentials: 'include',
+          cache: 'no-store'
+        });
+        if (res.ok && currentUserId === uid) {
           const data = await res.json();
           let newlySettledWin = 0;
           let newlySettledCount = 0;
@@ -4012,6 +4036,7 @@
           if (newlySettledCount > 0) {
             fetchInitialBackendWallet();
             syncUserTransactions();
+            syncUserAffiliates();
             if (newlySettledWin > 0) {
               playSound('winFanfare');
               showToast(`🎉 Bet Won +₹${newlySettledWin.toFixed(2)} in ${lastSettledMarket} #${lastSettledPeriod}!`);
@@ -4024,6 +4049,10 @@
         console.warn('Error fetching bets from backend:', e);
       } finally {
         isLoadingUserBets = false;
+        if (pendingReloadUserBets) {
+          pendingReloadUserBets = false;
+          loadUserBetsFromBackend();
+        }
       }
     }
 
@@ -4509,6 +4538,14 @@
       userBalance -= selectedCasinoStake;
       updateBalanceUI();
       document.getElementById('clWalletBalance').innerText = `₹${userBalance.toFixed(2)}`;
+      if (hasBackendConnection() && currentUserId && currentUserId !== 'Guest') {
+        fetch(apiUrl('/api/user/adjust'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ userId: currentUserId, type: 'DEBIT', amount: selectedCasinoStake, reason: `Casino Round: ${activeLauncherGame ? activeLauncherGame.name : 'Casino'}` })
+        }).catch(() => {});
+      }
 
       const screen = document.getElementById('clScreen');
       const g = activeLauncherGame;
@@ -4552,7 +4589,7 @@
           const isWin = Math.random() < 0.40; // Strict 40% Win / 60% Loss Ratio
           if (isWin) {
             const mult = (1.5 + Math.random() * 3.0).toFixed(1);
-            const payout = selectedCasinoStake * mult;
+            const payout = Math.round(selectedCasinoStake * mult * 100) / 100;
             userBalance += payout;
             updateBalanceUI();
             document.getElementById('clWalletBalance').innerText = `₹${userBalance.toFixed(2)}`;
@@ -4562,6 +4599,15 @@
               <p style="font-size:11px; color:var(--gold);">${mult}X Multiplier Hit!</p>
             `;
             playSound('win');
+            if (hasBackendConnection() && currentUserId && currentUserId !== 'Guest') {
+              fetch(apiUrl('/api/user/adjust'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ userId: currentUserId, type: 'CREDIT', amount: payout, reason: `Casino Win (${mult}X): ${g.name}` })
+              }).then(() => syncBalanceWithBackend()).catch(() => {});
+              return;
+            }
           } else {
             screen.innerHTML = `
               <div style="font-size:36px;">💔</div>
@@ -4577,7 +4623,7 @@
       if (aviatorInterval) clearInterval(aviatorInterval);
       const multText = document.getElementById('avMultText')?.innerText || '1.50x';
       const multVal = parseFloat(multText) || 1.5;
-      const winAmt = selectedCasinoStake * multVal;
+      const winAmt = Math.round(selectedCasinoStake * multVal * 100) / 100;
       userBalance += winAmt;
       updateBalanceUI();
       document.getElementById('clWalletBalance').innerText = `₹${userBalance.toFixed(2)}`;
@@ -4589,7 +4635,16 @@
         <p style="font-size:11px; color:var(--gold); margin-top:4px;">Multiplier: ${multVal.toFixed(2)}x</p>
       `;
       playSound('win');
-      syncBalanceWithBackend();
+      if (hasBackendConnection() && currentUserId && currentUserId !== 'Guest') {
+        fetch(apiUrl('/api/user/adjust'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ userId: currentUserId, type: 'CREDIT', amount: winAmt, reason: `Aviator Cashout (${multVal.toFixed(2)}x)` })
+        }).then(() => syncBalanceWithBackend()).catch(() => {});
+      } else {
+        syncBalanceWithBackend();
+      }
     }
 
     // WALLET & 90-DAY ACCOUNT STATEMENT FUNCTIONS
@@ -4733,7 +4788,7 @@
         box.innerHTML = `
           <div style="background:var(--card-highlight); padding:10px; border-radius:10px;">
             <div style="color:var(--text-muted); font-size:10px;">ACCOUNT HOLDER</div>
-            <div style="font-weight:900; color:#FFF;">${currentUserName} (${currentUserId || 'USR-1001'})</div>
+            <div style="font-weight:900; color:#FFF;">${currentUserName} (${currentUserId || 'Guest'})</div>
             <div style="color:var(--cyan); font-size:11px; margin-top:2px;">Window: Last ${statementDaysFilter} Days (90-Day Storage Active)</div>
           </div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
@@ -4780,7 +4835,7 @@
       const esc = (v) => '"' + String(v === null || v === undefined ? '' : v).replace(/"/g, '""') + '"';
       const rows = [
         ['COLOUR KING - 90-DAY ACCOUNT & BETTING STATEMENT'],
-        ['User ID', currentUserId || 'USR-1001', 'User Name', currentUserName, 'Window', `Last ${statementDaysFilter} Days`],
+        ['User ID', currentUserId || 'Guest', 'User Name', currentUserName, 'Window', `Last ${statementDaysFilter} Days`],
         [],
         ['FINANCIAL SUMMARY (INR)'],
         ['Current Wallet Balance', Number(s.walletBalance || userBalance).toFixed(2)],
@@ -4810,14 +4865,19 @@
     }
 
     async function downloadAccountStatement(categoryOverride) {
-      const uid = currentUserId || 'USR-1001';
+      if (!currentUserId || currentUserId === 'Guest') {
+        showToast('⚠️ Please login or register first!');
+        openAuthModal(0);
+        return;
+      }
+      const uid = currentUserId;
       const cat = categoryOverride || ledgerFilterType || 'ALL';
       const fname = `ColourKing_${statementDaysFilter}Day_Statement_${uid}_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.csv`;
       try {
         let csvText = '';
         if (hasBackendConnection()) {
           const url = apiUrl(`/api/statement/export?userId=${encodeURIComponent(uid)}&days=${encodeURIComponent(statementDaysFilter)}&category=${encodeURIComponent(cat)}`);
-          const res = await fetch(url);
+          const res = await fetch(url, { credentials: 'include' });
           if (res.ok) {
             csvText = await res.text();
           }
@@ -4846,15 +4906,26 @@
 
     function syncUserTransactions() {
       if (!currentUserId || currentUserId === 'Guest' || !hasBackendConnection()) return;
-      fetch(apiUrl(`/api/statement?userId=${encodeURIComponent(currentUserId)}&days=${encodeURIComponent(statementDaysFilter)}`))
+      const uid = currentUserId;
+      fetch(apiUrl(`/api/statement?userId=${encodeURIComponent(uid)}&days=${encodeURIComponent(statementDaysFilter)}&t=${Date.now()}`), {
+        credentials: 'include',
+        cache: 'no-store'
+      })
         .then(r => r.ok ? r.json() : null)
         .then(stmt => {
-          if (!stmt || !stmt.summary) return;
+          if (!stmt || !stmt.summary || currentUserId !== uid) return;
           latestStatementData = stmt;
+          if (stmt.referralCode && !currentUserReferralCode) {
+            currentUserReferralCode = stmt.referralCode;
+          }
+          if (typeof stmt.summary.walletBalance === 'number' && Math.abs(stmt.summary.walletBalance - userBalance) > 0.01) {
+            userBalance = stmt.summary.walletBalance;
+            updateBalanceUI();
+          }
           if (Array.isArray(stmt.statementEntries)) {
             walletLedger = stmt.statementEntries;
           }
-          if (Array.isArray(stmt.bets) && stmt.bets.length >= userBetSlipsHistory.length) {
+          if (Array.isArray(stmt.bets)) {
             userBetSlipsHistory = pruneAndSaveBetSlips(stmt.bets);
             renderBetSlips();
           }
@@ -4875,11 +4946,18 @@
       const ifsc = document.getElementById('userModalIfsc').innerText;
       navigator.clipboard.writeText(ifsc).then(() => { showToast('📋 IFSC Code copied!'); });
     }
+    function getActiveReferralCode() {
+      return currentUserReferralCode || (affiliateSummary && affiliateSummary.referralCode) || (currentUserId && currentUserId !== 'Guest' ? currentUserId.slice(-6).toUpperCase() : '');
+    }
     function copyReferralCode() {
-      navigator.clipboard.writeText('RAHUL777').then(() => { showToast('📋 Referral code copied: RAHUL777'); });
+      const code = getActiveReferralCode();
+      if (!code) { showToast('⚠️ Please login first to get your referral code.'); openAuthModal(0); return; }
+      navigator.clipboard.writeText(code).then(() => { showToast('📋 Referral code copied: ' + code); });
     }
     function shareReferralLink() {
-      const link = window.location.origin + '/?ref=RAHUL777';
+      const code = getActiveReferralCode();
+      if (!code) { showToast('⚠️ Please login first to share your referral link.'); openAuthModal(0); return; }
+      const link = window.location.origin + '/?ref=' + encodeURIComponent(code);
       if (navigator.share) {
         navigator.share({ title: 'Join Colour King', text: 'Play Color Prediction and Casino with me!', url: link });
       } else {
@@ -4959,7 +5037,32 @@
       });
     }
 
-    function executeInstantDemoDeposit() {
+    async function executeInstantDemoDeposit() {
+      if (!currentUserId || currentUserId === 'Guest') {
+        showToast('⚠️ Please login or register first!');
+        openAuthModal(0);
+        return;
+      }
+      if (hasBackendConnection()) {
+        try {
+          const res = await fetch(apiUrl('/api/user/adjust'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ userId: currentUserId, type: 'CREDIT', amount: 1000.0, reason: 'Demo Test Credit' })
+          });
+          const data = await res.json();
+          if (res.ok && data.success && typeof data.balance === 'number') {
+            userBalance = data.balance;
+            updateBalanceUI();
+            syncUserTransactions();
+            closeModal('depositModal');
+            showToast('⚡ Instant Demo Credit +₹1,000 saved to wallet!');
+            playSound('win');
+            return;
+          }
+        } catch (e) {}
+      }
       userBalance += 1000;
       walletLedger.unshift({
         id: 'TX-' + Math.floor(1000 + Math.random() * 9000),
@@ -4971,7 +5074,6 @@
         status: 'SUCCESS'
       });
       updateBalanceUI();
-      syncBalanceWithBackend();
       renderWalletLedger();
       closeModal('depositModal');
       showToast('⚡ Instant Demo Credit +₹1,000 applied!');
@@ -5008,11 +5110,12 @@
       fetch(apiUrl('/api/withdrawals'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ userId: currentUserId, userName: currentUserName, amount, upiId, bankName, accNo, ifsc, bankingName })
       }).then(r => r.json()).then(res => {
         if (res.success) {
-          userBalance -= amount;
-          const wdId = res.withdrawal ? res.withdrawal.id : ('WD-' + Math.floor(10000 + Math.random() * 90000));
+          userBalance = typeof res.newBalance === 'number' ? res.newBalance : (userBalance - amount);
+          const wdId = res.withdrawalId || (res.withdrawal ? res.withdrawal.id : ('WD-' + Math.floor(10000 + Math.random() * 90000)));
           walletLedger.unshift({
             id: wdId,
             type: 'WITHDRAWAL',
@@ -5023,6 +5126,7 @@
             status: 'IN PROCESS'
           });
           updateBalanceUI();
+          syncUserTransactions();
           renderWalletLedger();
           closeModal('withdrawModal');
           showToast('✓ Withdrawal request submitted! Admin approval IN PROCESS.');
@@ -5030,47 +5134,89 @@
           showToast('⚠️ ' + (res.error || 'Failed'));
         }
       }).catch(() => {
-        userBalance -= amount;
-        walletLedger.unshift({
-          id: 'WD-' + Math.floor(10000 + Math.random() * 90000),
-          type: 'WITHDRAWAL',
-          title: `Withdrawal to ${bankName || 'Bank'}`,
-          ref: `A/C: ${accNo || upiId}`,
-          amount: -amount,
-          time: 'Just now',
-          status: 'IN PROCESS'
-        });
-        updateBalanceUI();
-        renderWalletLedger();
-        closeModal('withdrawModal');
-        showToast('✓ Withdrawal submitted! Status: IN PROCESS.');
+        showToast('⚠️ Error connecting to server for withdrawal.');
       });
     }
 
-    // AFFILIATE TEAM TABLE
+    // AFFILIATE TEAM TABLE & LIVE 6-TIER SYNC
+    function updateAffiliateStatsUI() {
+      const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const lcEl = document.getElementById('affLifetimeCommission');
+      const tcEl = document.getElementById('affTodayCommission');
+      const ntEl = document.getElementById('affNetworkTurnover');
+      const cntEl = document.getElementById('affTeamCount');
+      const rcEl = document.getElementById('affReferralCodeDisplay');
+      if (lcEl) lcEl.innerText = fmt(affiliateSummary.lifetimeCommission);
+      if (tcEl) tcEl.innerText = fmt(affiliateSummary.todayCommission);
+      if (ntEl) ntEl.innerText = fmt(affiliateSummary.networkTurnover);
+      if (cntEl) cntEl.innerText = `${affiliateSummary.teamCount || 0} Users`;
+      if (rcEl) rcEl.innerText = getActiveReferralCode() || '---';
+    }
+
     function renderAffiliateTeam() {
+      updateAffiliateStatsUI();
       const tbody = document.getElementById('affiliateTeamTableBody');
       if (!tbody) return;
+      if (!Array.isArray(affiliateTeam) || affiliateTeam.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:14px; font-size:12px;">No subordinates yet. Share your referral code to build your 6-tier team!</td></tr>`;
+        return;
+      }
       tbody.innerHTML = affiliateTeam.map(m => `
         <tr>
           <td><span class="badge-pill badge-green">Tier ${m.tier}</span></td>
           <td style="font-weight:700;">${m.name}</td>
-          <td style="color:var(--text-muted);">${m.joined}</td>
-          <td style="font-family:monospace;">₹${m.turnover.toLocaleString()}</td>
-          <td style="color:var(--green); font-weight:800; font-family:monospace;">+₹${m.commission.toFixed(2)}</td>
+          <td style="color:var(--text-muted);">${m.joined || '-'}</td>
+          <td style="font-family:monospace;">₹${Number(m.turnover || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+          <td style="color:var(--green); font-weight:800; font-family:monospace;">+₹${Number(m.commission || 0).toFixed(2)}</td>
         </tr>
       `).join('');
     }
 
+    function syncUserAffiliates() {
+      if (!currentUserId || currentUserId === 'Guest' || !hasBackendConnection()) {
+        renderAffiliateTeam();
+        return;
+      }
+      const uid = currentUserId;
+      fetch(apiUrl(`/api/affiliates?userId=${encodeURIComponent(uid)}&t=${Date.now()}`), {
+        credentials: 'include',
+        cache: 'no-store'
+      })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (!data || currentUserId !== uid) return;
+          if (data.referralCode) {
+            currentUserReferralCode = data.referralCode;
+            persistSessionSnapshot();
+          }
+          affiliateSummary = {
+            referralCode: data.referralCode || currentUserReferralCode || '',
+            lifetimeCommission: Number(data.lifetimeCommission || 0),
+            todayCommission: Number(data.todayCommission || 0),
+            networkTurnover: Number(data.networkTurnover || 0),
+            teamCount: Number(data.teamCount || 0)
+          };
+          affiliateTeam = Array.isArray(data.members) ? data.members : [];
+          renderAffiliateTeam();
+        }).catch(() => {});
+    }
+
     // BALANCE & SERVER SYNC
     function updateBalanceUI() {
-      const str = `₹${userBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const str = `₹${Number(userBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
       const hWallet = document.getElementById('headerWallet');
       const wBal = document.getElementById('walletTabBalance');
       const pBal = document.getElementById('profileBalanceDisplay');
+      const bBal = document.getElementById('betModalAvailableBalance');
+      const wdBal = document.getElementById('userModalWithdrawBalance');
+      const clBal = document.getElementById('clWalletBalance');
       if (hWallet) hWallet.innerText = str;
       if (wBal) wBal.innerText = str;
       if (pBal) pBal.innerText = str;
+      if (bBal) bBal.innerText = str;
+      if (wdBal) wdBal.innerText = str;
+      if (clBal) clBal.innerText = str;
+      persistSessionSnapshot();
     }
 
     function syncBalanceWithBackend() {
@@ -5078,13 +5224,30 @@
     }
 
     function fetchInitialBackendWallet() {
-      if (!hasBackendConnection()) return;
-      const uid = currentUserId || 'USR-1001';
-      fetch(apiUrl(`/api/wallet?userId=${encodeURIComponent(uid)}`)).then(r => r.json()).then(data => {
-        if (data && typeof data.balance === 'number') {
+      if (!hasBackendConnection() || !currentUserId || currentUserId === 'Guest') return;
+      const uid = currentUserId;
+      fetch(apiUrl(`/api/wallet?userId=${encodeURIComponent(uid)}&t=${Date.now()}`), {
+        credentials: 'include',
+        cache: 'no-store'
+      }).then(async r => {
+        if (r.status === 404) {
+          localStorage.removeItem('colour_king_user_session');
+          currentUserId = null;
+          restoreSessionFromServerAndStorage(true);
+          return null;
+        }
+        return r.ok ? r.json() : null;
+      }).then(data => {
+        if (!data || currentUserId !== uid) return;
+        if (typeof data.balance === 'number') {
           userBalance = data.balance;
           if (data.name) currentUserName = data.name;
+          if (data.email) currentUserEmail = data.email;
+          if (data.phone) currentUserPhone = data.phone;
+          if (data.referralCode) currentUserReferralCode = data.referralCode;
           updateBalanceUI();
+          updateProfileIdentityUI(currentUserId, currentUserName, currentUserEmail || currentUserPhone || '');
+          updateAffiliateStatsUI();
           if (!hasBackendConnection() && window.AndroidBridge && window.AndroidBridge.syncWalletBalance) {
             window.AndroidBridge.syncWalletBalance(userBalance, 'Server settlement sync');
           }
@@ -5139,17 +5302,26 @@
     function openLogoutModal() { document.getElementById('logoutModal').classList.add('active'); }
     function executeLogout() {
       closeModal('logoutModal');
+      if (hasBackendConnection()) {
+        fetch(apiUrl('/api/users/logout'), { method: 'POST', credentials: 'include' }).catch(() => {});
+      }
       localStorage.removeItem('colour_king_user_session');
       currentUserId = null;
       currentUserName = 'Guest';
+      currentUserEmail = '';
+      currentUserPhone = '';
+      currentUserReferralCode = '';
       userBalance = 0.00;
       latestStatementData = null;
       userBetSlipsHistory = [];
       walletLedger = [];
+      affiliateTeam = [];
+      affiliateSummary = { referralCode: '', lifetimeCommission: 0, todayCommission: 0, networkTurnover: 0, teamCount: 0 };
       lastKnownBetStatuses = {};
       renderBetSlips();
       renderActiveBets();
       renderWalletLedger();
+      renderAffiliateTeam();
       updateBalanceUI();
       updateProfileIdentityUI(null, 'Guest', '');
       showToast('Logged out. Please log in or register.');
@@ -5208,27 +5380,28 @@
     function completeAuthSession(userObj) {
       currentUserId = userObj.id;
       currentUserName = userObj.name || userObj.username || userObj.id;
-      userBalance = typeof userObj.balance === 'number' ? userObj.balance : 500.00;
+      currentUserEmail = userObj.email || '';
+      currentUserPhone = userObj.phone || '';
+      currentUserReferralCode = userObj.referralCode || currentUserReferralCode || '';
+      userBalance = typeof userObj.balance === 'number' ? userObj.balance : 0.00;
       const curStatus = String(userObj.status || 'ACTIVE').toUpperCase();
       lastKnownAccountStatus = curStatus;
       setAccountBlockedBanner(curStatus === 'BLOCKED');
       latestStatementData = null;
-      userBetSlipsHistory = [];
       walletLedger = [];
+      affiliateTeam = [];
       lastKnownBetStatuses = {};
-      localStorage.setItem('colour_king_user_session', JSON.stringify({
-        id: currentUserId,
-        name: currentUserName,
-        email: userObj.email || '',
-        phone: userObj.phone || '',
-        balance: userBalance
-      }));
+      loadSavedBetSlipsForCurrentUser();
+      persistSessionSnapshot();
       updateBalanceUI();
-      updateProfileIdentityUI(currentUserId, currentUserName, userObj.email || userObj.phone || '');
+      updateProfileIdentityUI(currentUserId, currentUserName, currentUserEmail || currentUserPhone || '');
       closeModal('authModal');
+      renderBetSlips();
+      renderAffiliateTeam();
       fetchInitialBackendWallet();
       loadUserBetsFromBackend();
       syncUserTransactions();
+      syncUserAffiliates();
       syncAdminStateRealtime(true);
     }
 
@@ -5254,6 +5427,7 @@
           const res = await fetch(apiUrl('/api/users/login'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({ identifier, password })
           });
           const data = await res.json();
@@ -5323,6 +5497,7 @@
           const res = await fetch(apiUrl('/api/users/register'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({
               id: newUid,
               name: name,
@@ -5351,6 +5526,56 @@
       }
     }
 
+    async function restoreSessionFromServerAndStorage(forceOpenAuthIfMissing = false) {
+      if (hasBackendConnection()) {
+        try {
+          const query = (currentUserId && currentUserId !== 'Guest')
+            ? `?userId=${encodeURIComponent(currentUserId)}&t=${Date.now()}`
+            : `?t=${Date.now()}`;
+          const res = await fetch(apiUrl(`/api/session${query}`), { credentials: 'include', cache: 'no-store' });
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.authenticated && data.user) {
+              completeAuthSession(data.user);
+              return;
+            }
+          }
+        } catch (e) {}
+      }
+
+      if (currentUserId && currentUserId !== 'Guest' && !forceOpenAuthIfMissing) {
+        loadSavedBetSlipsForCurrentUser();
+        updateProfileIdentityUI(currentUserId, currentUserName, currentUserEmail || currentUserPhone || '');
+        updateBalanceUI();
+        renderBetSlips();
+        fetchInitialBackendWallet();
+        loadUserBetsFromBackend();
+        syncUserTransactions();
+        syncUserAffiliates();
+        return;
+      }
+
+      localStorage.removeItem('colour_king_user_session');
+      currentUserId = null;
+      currentUserName = 'Guest';
+      currentUserEmail = '';
+      currentUserPhone = '';
+      currentUserReferralCode = '';
+      userBalance = 0.00;
+      userBetSlipsHistory = [];
+      walletLedger = [];
+      affiliateTeam = [];
+      affiliateSummary = { referralCode: '', lifetimeCommission: 0, todayCommission: 0, networkTurnover: 0, teamCount: 0 };
+      renderBetSlips();
+      renderWalletLedger();
+      renderAffiliateTeam();
+      updateProfileIdentityUI(null, 'Guest', '');
+      updateBalanceUI();
+      setTimeout(() => {
+        openAuthModal(0);
+      }, 120);
+    }
+
     // INITIALIZATION
     window.addEventListener('DOMContentLoaded', () => {
       initPastRecords();
@@ -5366,25 +5591,15 @@
       renderWalletLedger();
       renderAffiliateTeam();
 
-      if (currentUserId && currentUserId !== 'Guest') {
-        let savedContact = '';
-        try {
-          const p = JSON.parse(localStorage.getItem('colour_king_user_session') || '{}');
-          savedContact = p.email || p.phone || '';
-        } catch(e) {}
-        updateProfileIdentityUI(currentUserId, currentUserName, savedContact);
-        fetchInitialBackendWallet();
-        syncUserTransactions();
-      } else {
-        updateProfileIdentityUI(null, 'Guest', '');
-        updateBalanceUI();
-        setTimeout(() => {
-          openAuthModal(0);
-        }, 120);
-      }
+      restoreSessionFromServerAndStorage();
 
       setInterval(() => syncAdminStateRealtime(false), 3000);
-      setInterval(syncUserTransactions, 4000);
+      setInterval(() => {
+        if (currentUserId && currentUserId !== 'Guest') {
+          syncUserTransactions();
+          syncUserAffiliates();
+        }
+      }, 4000);
       startEngineLoop();
 
       // Check URL for referral parameter

@@ -115,6 +115,45 @@ data class ServerPushEvent(
     val serverTimeMs: Long = System.currentTimeMillis()
 )
 
+data class ServerAffiliateMember(
+    val id: String,
+    val name: String,
+    val tier: Int,
+    val tierLabel: String,
+    val joined: String,
+    val totalDepositRupees: Double,
+    val turnoverRupees: Double,
+    val commissionRupees: Double,
+    val status: String
+)
+
+data class ServerAffiliateCommission(
+    val id: String,
+    val sourceUserId: String,
+    val sourceUserName: String,
+    val sourceBetId: String,
+    val level: Int,
+    val rate: Double,
+    val eligibleAmountRupees: Double,
+    val commissionAmountRupees: Double,
+    val status: String,
+    val createdAt: String,
+    val createdAtMs: Long
+)
+
+data class ServerAffiliateStats(
+    val userId: String,
+    val userName: String,
+    val referralCode: String,
+    val lifetimeCommissionRupees: Double,
+    val todayCommissionRupees: Double,
+    val networkTurnoverRupees: Double,
+    val teamCount: Int,
+    val directCount: Int,
+    val members: List<ServerAffiliateMember> = emptyList(),
+    val recentCommissions: List<ServerAffiliateCommission> = emptyList()
+)
+
 data class ServerSyncSnapshot(
     val stateVersion: Long = 0L,
     val serverTimeMs: Long = 0L,
@@ -665,6 +704,124 @@ class BackendSyncService(
         } catch (_: Exception) {
             null
         }
+    }
+
+    suspend fun fetchUserById(serverUserId: String): ServerUserState? = withContext(Dispatchers.IO) {
+        if (serverUserId.isBlank()) return@withContext null
+        val baseUrl = _activeBackendUrl.value
+        return@withContext try {
+            val req = Request.Builder()
+                .url("$baseUrl/api/wallet?userId=$serverUserId")
+                .get()
+                .build()
+            httpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                val root = JSONObject(resp.body?.string() ?: return@use null)
+                val uObj = root.optJSONObject("user") ?: root
+                if (!uObj.has("id")) return@use null
+                ServerUserState(
+                    id = uObj.optString("id"),
+                    name = uObj.optString("name", uObj.optString("id")),
+                    phone = uObj.optString("phone", ""),
+                    email = uObj.optString("email", ""),
+                    balanceRupees = uObj.optDouble("balance", 0.0),
+                    totalDepositRupees = uObj.optDouble("totalDeposit", 0.0),
+                    totalWithdrawRupees = uObj.optDouble("totalWithdraw", 0.0),
+                    betsCount = uObj.optInt("betsCount", 0),
+                    status = uObj.optString("status", "ACTIVE").uppercase(),
+                    referralCode = uObj.optString("referralCode", ""),
+                    referredBy = uObj.optString("referredBy").takeIf { it.isNotBlank() && it != "null" }
+                )
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    suspend fun fetchUserAffiliates(serverUserId: String): ServerAffiliateStats? = withContext(Dispatchers.IO) {
+        if (serverUserId.isBlank()) return@withContext null
+        val baseUrl = _activeBackendUrl.value
+        return@withContext try {
+            val req = Request.Builder()
+                .url("$baseUrl/api/affiliates?userId=$serverUserId&t=${System.currentTimeMillis()}")
+                .get()
+                .build()
+            httpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                val root = JSONObject(resp.body?.string() ?: return@use null)
+                if (root.optBoolean("notFound", false)) return@use null
+
+                val membersList = mutableListOf<ServerAffiliateMember>()
+                val mArr = root.optJSONArray("members") ?: JSONArray()
+                for (i in 0 until mArr.length()) {
+                    val m = mArr.optJSONObject(i) ?: continue
+                    membersList.add(
+                        ServerAffiliateMember(
+                            id = m.optString("id"),
+                            name = m.optString("name", m.optString("id")),
+                            tier = m.optInt("tier", 1),
+                            tierLabel = m.optString("tierLabel", "Tier 1"),
+                            joined = m.optString("joined", ""),
+                            totalDepositRupees = m.optDouble("totalDeposit", 0.0),
+                            turnoverRupees = m.optDouble("turnover", 0.0),
+                            commissionRupees = m.optDouble("commission", 0.0),
+                            status = m.optString("status", "ACTIVE").uppercase()
+                        )
+                    )
+                }
+
+                val commsList = mutableListOf<ServerAffiliateCommission>()
+                val cArr = root.optJSONArray("recentCommissions") ?: JSONArray()
+                for (i in 0 until cArr.length()) {
+                    val c = cArr.optJSONObject(i) ?: continue
+                    commsList.add(
+                        ServerAffiliateCommission(
+                            id = c.optString("id"),
+                            sourceUserId = c.optString("sourceUserId", ""),
+                            sourceUserName = c.optString("sourceUserName", ""),
+                            sourceBetId = c.optString("sourceBetId", ""),
+                            level = c.optInt("level", 1),
+                            rate = c.optDouble("rate", 0.01),
+                            eligibleAmountRupees = c.optDouble("eligibleAmount", 0.0),
+                            commissionAmountRupees = c.optDouble("commissionAmount", 0.0),
+                            status = c.optString("status", "SETTLED").uppercase(),
+                            createdAt = c.optString("createdAt", ""),
+                            createdAtMs = c.optLong("createdAtMs", System.currentTimeMillis())
+                        )
+                    )
+                }
+
+                ServerAffiliateStats(
+                    userId = root.optString("userId", serverUserId),
+                    userName = root.optString("userName", serverUserId),
+                    referralCode = root.optString("referralCode", ""),
+                    lifetimeCommissionRupees = root.optDouble("lifetimeCommission", 0.0),
+                    todayCommissionRupees = root.optDouble("todayCommission", 0.0),
+                    networkTurnoverRupees = root.optDouble("networkTurnover", 0.0),
+                    teamCount = root.optInt("teamCount", membersList.size),
+                    directCount = root.optInt("directCount", membersList.count { it.tier == 1 }),
+                    members = membersList,
+                    recentCommissions = commsList
+                )
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    suspend fun adjustUserBalanceOnServer(
+        serverUserId: String,
+        amountDeltaRupees: Double,
+        reason: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (serverUserId.isBlank()) return@withContext false
+        val payload = JSONObject().apply {
+            put("userId", serverUserId)
+            put("delta", amountDeltaRupees)
+            put("reason", reason)
+        }
+        val resp = postJsonWithStatus("/api/user/adjust", payload)
+        return@withContext resp?.optBoolean("success", false) == true
     }
 
     suspend fun registerUserOnServer(
