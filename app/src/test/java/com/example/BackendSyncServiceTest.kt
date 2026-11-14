@@ -201,4 +201,156 @@ class BackendSyncServiceTest {
         assertEquals(stateAtBase.periodNumber + 1L, statePlus3Min.periodNumber)
         assertTrue(stateAtBase.secondsLeft in 0..180)
     }
+
+    @Test
+    fun updateUserProfileFields_preservesPasswordHash_andFindUserIsCaseInsensitive() = runBlocking {
+        val tenantId = "tenant_apex_global"
+        val userDao = database.userDao()
+        val expectedHash = ProvablyFairEngine.hashSha256("MySecret@99")
+        userDao.insertUser(
+            com.example.data.model.UserEntity(
+                id = "USR-900101",
+                tenantId = tenantId,
+                username = "AryanKing",
+                email = "aryan@colourking.in",
+                phone = "+919811223344",
+                passwordHash = expectedHash,
+                referralCode = "ARYA123",
+                status = "ACTIVE"
+            )
+        )
+
+        userDao.updateUserProfileFields(
+            userId = "USR-900101",
+            username = "AryanKing",
+            email = "aryan.updated@colourking.in",
+            phone = "+919811223344",
+            status = "BLOCKED",
+            referralCode = "ARYA123"
+        )
+
+        val reloaded = userDao.getUserById("USR-900101")
+        assertNotNull(reloaded)
+        assertEquals(expectedHash, reloaded!!.passwordHash)
+        assertEquals("BLOCKED", reloaded.status)
+        assertEquals("aryan.updated@colourking.in", reloaded.email)
+
+        val byUpper = userDao.findUserByIdentifier(tenantId, "  ARYANKING  ")
+        assertNotNull(byUpper)
+        assertEquals("USR-900101", byUpper!!.id)
+    }
+
+    @Test
+    fun registerAndLoginWithResult_handlesSuccessAndServerRejections() = runBlocking {
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
+        val port = server.address.port
+        val registeredPasswords = mutableMapOf<String, String>()
+
+        server.createContext("/api/users/register") { ex ->
+            val body = ex.requestBody.bufferedReader().readText()
+            val req = org.json.JSONObject(body)
+            val name = req.optString("name")
+            val pw = req.optString("password")
+            val (code, respStr) = if (registeredPasswords.containsKey(name.lowercase())) {
+                409 to org.json.JSONObject()
+                    .put("success", false)
+                    .put("error", "Username already registered")
+                    .toString()
+            } else {
+                registeredPasswords[name.lowercase()] = pw
+                200 to org.json.JSONObject()
+                    .put("success", true)
+                    .put(
+                        "user",
+                        org.json.JSONObject()
+                            .put("id", "USR-777001")
+                            .put("name", name)
+                            .put("phone", req.optString("phone"))
+                            .put("email", "$name@colourking.in")
+                            .put("balance", 100.0)
+                            .put("status", "ACTIVE")
+                            .put("referralCode", "TEST777")
+                    )
+                    .toString()
+            }
+            val bytes = respStr.toByteArray()
+            ex.responseHeaders.add("Content-Type", "application/json")
+            ex.sendResponseHeaders(code, bytes.size.toLong())
+            ex.responseBody.use { it.write(bytes) }
+        }
+
+        server.createContext("/api/users/login") { ex ->
+            val req = org.json.JSONObject(ex.requestBody.bufferedReader().readText())
+            val idf = req.optString("identifier").lowercase()
+            val pw = req.optString("password")
+            val (code, respStr) = if (registeredPasswords[idf] == pw) {
+                200 to org.json.JSONObject()
+                    .put("success", true)
+                    .put(
+                        "user",
+                        org.json.JSONObject()
+                            .put("id", "USR-777001")
+                            .put("name", idf)
+                            .put("phone", "+919900112233")
+                            .put("email", "$idf@colourking.in")
+                            .put("balance", 100.0)
+                            .put("status", "ACTIVE")
+                            .put("referralCode", "TEST777")
+                    )
+                    .toString()
+            } else {
+                401 to org.json.JSONObject()
+                    .put("success", false)
+                    .put("error", "Invalid password. Please try again.")
+                    .toString()
+            }
+            val bytes = respStr.toByteArray()
+            ex.responseHeaders.add("Content-Type", "application/json")
+            ex.sendResponseHeaders(code, bytes.size.toLong())
+            ex.responseBody.use { it.write(bytes) }
+        }
+
+        server.start()
+        try {
+            val sync = BackendSyncService(context, "http://127.0.0.1:$port")
+            val regOk = sync.registerUserWithResult(
+                userId = "USR-777001",
+                username = "karan99",
+                phone = "+919900112233",
+                email = "",
+                balanceRupees = 100.0,
+                password = "pass@123"
+            )
+            assertNotNull(regOk.user)
+            assertEquals("USR-777001", regOk.user!!.id)
+            assertEquals(false, regOk.isNetworkError)
+
+            val regDup = sync.registerUserWithResult(
+                userId = "USR-777002",
+                username = "Karan99",
+                phone = "+919900112233",
+                email = "",
+                balanceRupees = 100.0,
+                password = "pass@123"
+            )
+            assertEquals(null, regDup.user)
+            assertEquals(false, regDup.isNetworkError)
+            assertTrue(regDup.error!!.contains("already", ignoreCase = true))
+
+            // Repeated logins succeed cleanly
+            repeat(3) {
+                val loginOk = sync.loginUserWithResult("karan99", "pass@123")
+                assertNotNull(loginOk.user)
+                assertEquals("USR-777001", loginOk.user!!.id)
+            }
+
+            // Wrong password returns exact server rejection and isNetworkError=false
+            val loginBad = sync.loginUserWithResult("karan99", "wrong")
+            assertEquals(null, loginBad.user)
+            assertEquals(false, loginBad.isNetworkError)
+            assertEquals("Invalid password. Please try again.", loginBad.error)
+        } finally {
+            server.stop(0)
+        }
+    }
 }

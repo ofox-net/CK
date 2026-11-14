@@ -5633,26 +5633,39 @@
 
     function openChangePasswordModal() { document.getElementById('changePasswordModal').classList.add('active'); }
     async function submitChangePassword() {
+      const curPw = (document.getElementById('cpCurrentInput')?.value || '').trim();
       const np = (document.getElementById('cpNewInput')?.value || '').trim();
       const cp = (document.getElementById('cpConfirmInput')?.value || '').trim();
       if (np.length < 4) { showToast('⚠️ New password must be at least 4 characters'); return; }
       if (np !== cp) { showToast('⚠️ Passwords do not match!'); return; }
-      if (hasBackendConnection() && currentUserId && currentUserId !== 'Guest') {
-        try {
-          const res = await fetch(apiUrl('/api/users/change-password'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: currentUserId, newPassword: np })
-          });
-          const data = await res.json();
-          if (!res.ok || !data.success) {
-            showToast('⚠️ ' + (data.error || 'Could not update password'));
-            return;
-          }
-        } catch (e) {}
+      if (!hasBackendConnection() || !currentUserId || currentUserId === 'Guest') {
+        showToast('⚠️ Please log in with server connection active first.');
+        return;
       }
-      showToast('✓ Password updated successfully!');
-      closeModal('changePasswordModal');
+      try {
+        const res = await fetch(apiUrl('/api/users/change-password'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            userId: currentUserId,
+            currentPassword: curPw,
+            newPassword: np
+          })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          showToast('⚠️ ' + (data.error || 'Could not update password'));
+          return;
+        }
+        if (document.getElementById('cpCurrentInput')) document.getElementById('cpCurrentInput').value = '';
+        if (document.getElementById('cpNewInput')) document.getElementById('cpNewInput').value = '';
+        if (document.getElementById('cpConfirmInput')) document.getElementById('cpConfirmInput').value = '';
+        showToast('✓ Password updated successfully!');
+        closeModal('changePasswordModal');
+      } catch (e) {
+        showToast('⚠️ Network error while updating password. Please retry.');
+      }
     }
     function openLogoutModal() { document.getElementById('logoutModal').classList.add('active'); }
     function executeLogout() {
@@ -5853,44 +5866,41 @@
         return;
       }
 
+      if (!hasBackendConnection()) {
+        showAuthError('regErrorBox', 'Server connection unavailable. Please retry.');
+        return;
+      }
+
       const btn = document.getElementById('registerSubmitBtn');
       if (btn) { btn.disabled = true; btn.innerText = 'Registering Account...'; }
 
-      const newUid = 'USR-' + Math.floor(2000 + Math.random() * 8000);
-      let registeredUser = {
-        id: newUid,
-        name: name,
-        phone: '+91' + phone,
-        email: email || `${name.toLowerCase().replace(/\s+/g, '_')}@colourking.in`,
-        balance: 100.00,
-        status: 'ACTIVE'
-      };
+      const newUid = 'USR-' + (100000 + Math.floor(Math.random() * 900000));
 
       try {
-        if (hasBackendConnection()) {
-          const res = await fetch(apiUrl('/api/users/register'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({
-              id: newUid,
-              name: name,
-              phone: '+91' + phone,
-              email: email,
-              password: password,
-              balance: 100.00,
-              referredBy: refCodeInput
-            })
-          });
-          const data = await res.json();
-          if (!res.ok || !data.success) {
-            showAuthError('regErrorBox', data.error || 'Registration failed');
-            return;
-          }
-          if (data.user) registeredUser = data.user;
+        const res = await fetch(apiUrl('/api/users/register'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            id: newUid,
+            name: name,
+            phone: '+91' + phone,
+            email: email,
+            password: password,
+            balance: 100.00,
+            referredBy: refCodeInput
+          })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success || !data.user) {
+          showAuthError('regErrorBox', data.error || 'Registration failed');
+          return;
         }
 
-        completeAuthSession(registeredUser);
+        if (document.getElementById('regPasswordInput')) document.getElementById('regPasswordInput').value = '';
+        if (document.getElementById('regConfirmPasswordInput')) document.getElementById('regConfirmPasswordInput').value = '';
+
+        completeAuthSession(data.user);
         showToast(`🎉 Welcome ${currentUserName}! ₹${Number(userBalance).toLocaleString('en-IN')} welcome bonus credited!`);
         playSound('win');
       } catch (e) {
@@ -5901,7 +5911,7 @@
     }
 
     async function restoreSessionFromServerAndStorage(forceOpenAuthIfMissing = false) {
-      if (!window.lockedReferralCode && hasBackendConnection()) {
+      if (hasBackendConnection()) {
         try {
           const query = (currentUserId && currentUserId !== 'Guest')
             ? `?userId=${encodeURIComponent(currentUserId)}&t=${Date.now()}`
@@ -5917,7 +5927,7 @@
         } catch (e) {}
       }
 
-      if (!window.lockedReferralCode && currentUserId && currentUserId !== 'Guest' && !forceOpenAuthIfMissing) {
+      if (currentUserId && currentUserId !== 'Guest' && !forceOpenAuthIfMissing) {
         loadSavedBetSlipsForCurrentUser();
         updateProfileIdentityUI(currentUserId, currentUserName, currentUserEmail || currentUserPhone || '');
         updateBalanceUI();

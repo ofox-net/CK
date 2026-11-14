@@ -7,12 +7,46 @@ import threading
 import time
 import urllib.parse
 import hashlib
+import hmac
 import random
 import math
 import csv
 import io
 import queue
 from datetime import datetime, timezone, timedelta
+
+PBKDF2_ITERATIONS = 100_000
+
+def hash_password_secure(raw_password):
+    clean = str(raw_password or "")
+    salt = os.urandom(16).hex()
+    dk = hashlib.pbkdf2_hmac("sha256", clean.encode("utf-8"), salt.encode("utf-8"), PBKDF2_ITERATIONS)
+    return f"pbkdf2_sha256${PBKDF2_ITERATIONS}${salt}${dk.hex()}"
+
+def verify_password_secure(raw_password, stored_hash, stored_plain=""):
+    candidate = str(raw_password or "")
+    s_hash = str(stored_hash or "").strip()
+    s_plain = str(stored_plain or "")
+    if s_hash.startswith("pbkdf2_sha256$"):
+        parts = s_hash.split("$")
+        if len(parts) == 4:
+            try:
+                iters = int(parts[1])
+                salt = parts[2]
+                expected_hex = parts[3]
+                dk = hashlib.pbkdf2_hmac("sha256", candidate.encode("utf-8"), salt.encode("utf-8"), iters).hex()
+                return hmac.compare_digest(dk, expected_hex)
+            except Exception:
+                return False
+    if len(s_hash) == 64:
+        cand_sha = hashlib.sha256(candidate.encode("utf-8")).hexdigest()
+        if hmac.compare_digest(cand_sha, s_hash.lower()):
+            return True
+    if s_plain != "" and hmac.compare_digest(candidate, s_plain):
+        return True
+    if not s_hash and not s_plain and candidate == "password123":
+        return True
+    return False
 
 PORT = 3000
 DIRECTORY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
@@ -294,9 +328,9 @@ def init_database():
             except Exception:
                 pass
         try:
-            default_pw_hash = hashlib.sha256(b"password123").hexdigest()
-            c.execute("UPDATE users SET password_hash = ? WHERE password_hash IS NULL OR password_hash = ''", (default_pw_hash,))
-            c.execute("UPDATE users SET password_plain = 'password123' WHERE password_plain IS NULL OR password_plain = ''")
+            default_pw_sha = hashlib.sha256(b"password123").hexdigest()
+            c.execute("UPDATE users SET password_hash = ? WHERE password_hash IS NULL OR password_hash = ''", (default_pw_sha,))
+            c.execute("UPDATE users SET password_plain = 'password123' WHERE (password_plain IS NULL OR password_plain = '') AND password_hash = ?", (default_pw_sha,))
             c.execute("UPDATE bets SET created_at_ms = CAST(strftime('%s', created_at) AS INTEGER) * 1000 WHERE created_at_ms IS NULL OR created_at_ms = 0")
             c.execute("UPDATE transactions SET created_at_ms = CAST(strftime('%s', created_at) AS INTEGER) * 1000 WHERE created_at_ms IS NULL OR created_at_ms = 0")
             c.execute("UPDATE deposits SET created_at_ms = CAST(strftime('%s', created_at) AS INTEGER) * 1000 WHERE created_at_ms IS NULL OR created_at_ms = 0")
@@ -1722,20 +1756,27 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
 
                 c.execute("SELECT * FROM users")
                 all_user_rows = c.fetchall()
-                users_list = {r["id"]: {
-                    "id": r["id"],
-                    "name": r["name"],
-                    "phone": r["phone"] or "",
-                    "email": r["email"] or "",
-                    "password": (r["password_plain"] if "password_plain" in r.keys() and r["password_plain"] else "password123"),
-                    "balance": round(float(r["balance"] or 0.0), 2),
-                    "totalDeposit": round(float(r["total_deposit"] or 0.0), 2),
-                    "totalWithdraw": round(float(r["total_withdraw"] or 0.0), 2),
-                    "betsCount": int(r["bets_count"] or 0),
-                    "status": r["status"] or "ACTIVE",
-                    "referralCode": (r["referral_code"] if "referral_code" in r.keys() and r["referral_code"] else r["id"][-6:].upper()),
-                    "referredBy": (r["referred_by"] if "referred_by" in r.keys() else None)
-                } for r in all_user_rows}
+                default_pw_sha = hashlib.sha256(b"password123").hexdigest()
+                users_list = {}
+                for r in all_user_rows:
+                    r_plain = (r["password_plain"] if "password_plain" in r.keys() and r["password_plain"] else "")
+                    r_hash = (r["password_hash"] if "password_hash" in r.keys() and r["password_hash"] else "")
+                    if not r_plain and r_hash == default_pw_sha:
+                        r_plain = "password123"
+                    users_list[r["id"]] = {
+                        "id": r["id"],
+                        "name": r["name"],
+                        "phone": r["phone"] or "",
+                        "email": r["email"] or "",
+                        "password": r_plain,
+                        "balance": round(float(r["balance"] or 0.0), 2),
+                        "totalDeposit": round(float(r["total_deposit"] or 0.0), 2),
+                        "totalWithdraw": round(float(r["total_withdraw"] or 0.0), 2),
+                        "betsCount": int(r["bets_count"] or 0),
+                        "status": r["status"] or "ACTIVE",
+                        "referralCode": (r["referral_code"] if "referral_code" in r.keys() and r["referral_code"] else r["id"][-6:].upper()),
+                        "referredBy": (r["referred_by"] if "referred_by" in r.keys() else None)
+                    }
 
                 c.execute("SELECT * FROM deposits ORDER BY created_at_ms DESC, created_at DESC LIMIT 100")
                 deposits_list = [{
@@ -2257,89 +2298,95 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
         # 4. USER REGISTRATION, BALANCE ADJUSTMENT & STATUS
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         if path == "/api/users/register":
-            uid = str(payload.get("id") or payload.get("userId") or f"USR-{random.randint(2000, 9999)}").strip()
+            requested_uid = str(payload.get("id") or payload.get("userId") or "").strip()
             name = str(payload.get("name") or payload.get("username") or "").strip()
             raw_phone = str(payload.get("phone") or "").strip()
             digits_phone = "".join(ch for ch in raw_phone if ch.isdigit())
             norm_phone = digits_phone[-10:] if len(digits_phone) >= 10 else digits_phone
             formatted_phone = f"+91{norm_phone}" if len(norm_phone) == 10 else raw_phone
-            email = str(payload.get("email") or "").strip()
+            raw_email = str(payload.get("email") or "").strip()
             raw_password = str(payload.get("password") or "").strip()
             pw_hash_in = str(payload.get("passwordHash") or "").strip()
             bal = float(payload.get("balance") if payload.get("balance") is not None else 100.00)
-            ref_code = str(payload.get("referralCode") or f"{(name[:4] or 'CK').upper()}{random.randint(100, 999)}").strip().upper()
+            clean_prefix = "".join(ch for ch in name.upper() if ch.isalnum())[:4] or "CK"
+            ref_code = str(payload.get("referralCode") or f"{clean_prefix}{random.randint(100, 999)}").strip().upper()
             ref_by_code = str(payload.get("referredBy") or "").strip().upper()
 
             if len(name) < 3:
                 self._send_json({ "success": False, "error": "Username must be at least 3 characters" }, status=400)
                 return
-            if not payload.get("id") and len(norm_phone) < 10:
+            if len(norm_phone) != 10:
                 self._send_json({ "success": False, "error": "Please enter a valid 10-digit mobile number" }, status=400)
                 return
-            if not payload.get("id") and len(raw_password) < 4 and not pw_hash_in:
+            if len(raw_password) < 4 and not pw_hash_in:
                 self._send_json({ "success": False, "error": "Password must be at least 4 characters" }, status=400)
                 return
 
-            pw_plain_to_store = raw_password or ""
-            pw_hash = pw_hash_in or hashlib.sha256((raw_password or "password123").encode("utf-8")).hexdigest()
-            if not email:
-                email = f"{name.lower().replace(' ', '_')}@colourking.in"
+            pw_plain_to_store = raw_password
+            pw_hash = hash_password_secure(raw_password) if raw_password else pw_hash_in
+            email = raw_email if raw_email else f"{name.lower().replace(' ', '_')}@colourking.in"
 
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
-                c.execute("SELECT id FROM users WHERE LOWER(name) = LOWER(?) AND id != ?", (name, uid))
+
+                # Check duplicate username (case-insensitive, trimmed)
+                c.execute("SELECT id FROM users WHERE LOWER(TRIM(name)) = LOWER(?)", (name,))
                 if c.fetchone():
                     conn.close()
                     self._send_json({ "success": False, "error": "Username already exists. Please choose another." }, status=409)
                     return
 
-                if len(norm_phone) == 10:
-                    c.execute("SELECT id, phone FROM users WHERE id != ?", (uid,))
-                    for pr in c.fetchall():
-                        existing_digits = "".join(ch for ch in str(pr["phone"] or "") if ch.isdigit())
-                        if existing_digits[-10:] == norm_phone:
-                            conn.close()
-                            self._send_json({ "success": False, "error": "Mobile number already registered. Please login." }, status=409)
-                            return
+                # Check duplicate normalized 10-digit mobile number
+                c.execute("SELECT id, phone FROM users")
+                for pr in c.fetchall():
+                    existing_digits = "".join(ch for ch in str(pr["phone"] or "") if ch.isdigit())
+                    if len(existing_digits) >= 10 and existing_digits[-10:] == norm_phone:
+                        conn.close()
+                        self._send_json({ "success": False, "error": "Mobile number already registered. Please login." }, status=409)
+                        return
+
+                # Check duplicate custom email if explicitly supplied
+                if raw_email:
+                    c.execute("SELECT id FROM users WHERE LOWER(TRIM(email)) = LOWER(?)", (raw_email,))
+                    if c.fetchone():
+                        conn.close()
+                        self._send_json({ "success": False, "error": "Email address already registered. Please login." }, status=409)
+                        return
+
+                # Allocate a guaranteed collision-free User ID (never overwrite existing users!)
+                uid = requested_uid if requested_uid else f"USR-{random.randint(10000, 999999)}"
+                c.execute("SELECT 1 FROM users WHERE id = ?", (uid,))
+                while c.fetchone():
+                    uid = f"USR-{random.randint(10000, 999999)}"
+                    c.execute("SELECT 1 FROM users WHERE id = ?", (uid,))
 
                 referred_by_uid = None
                 if ref_by_code:
-                    c.execute("SELECT id FROM users WHERE UPPER(referral_code) = ? OR UPPER(id) = ? OR LOWER(name) = LOWER(?)", (ref_by_code, ref_by_code, ref_by_code))
+                    c.execute("SELECT id FROM users WHERE UPPER(referral_code) = ? OR UPPER(id) = ? OR LOWER(TRIM(name)) = LOWER(?)", (ref_by_code, ref_by_code, ref_by_code))
                     sp = c.fetchone()
                     if sp and sp["id"] != uid:
                         referred_by_uid = sp["id"]
 
                 # Ensure unique referral_code
-                c.execute("SELECT id FROM users WHERE UPPER(referral_code) = ? AND id != ?", (ref_code, uid))
-                if c.fetchone():
-                    ref_code = f"{ref_code[:4]}{random.randint(1000, 9999)}"
+                c.execute("SELECT id FROM users WHERE UPPER(referral_code) = ?", (ref_code,))
+                while c.fetchone():
+                    ref_code = f"{clean_prefix}{random.randint(1000, 99999)}"
+                    c.execute("SELECT id FROM users WHERE UPPER(referral_code) = ?", (ref_code,))
 
-                c.execute("SELECT * FROM users WHERE id = ?", (uid,))
-                existing = c.fetchone()
-                if not existing:
-                    c.execute("""
-                        INSERT INTO users (id, name, phone, email, balance, total_deposit, total_withdraw, bets_count, status, referral_code, referred_by, password_hash, password_plain)
-                        VALUES (?, ?, ?, ?, ?, ?, 0.0, 0, 'ACTIVE', ?, ?, ?, ?)
-                    """, (uid, name, formatted_phone, email, bal, bal, ref_code, referred_by_uid, pw_hash, pw_plain_to_store or "password123"))
-                    c.execute("""
-                        INSERT INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status, created_at_ms)
-                        VALUES (?, ?, 'DEPOSIT', 'New Player Sign-Up Bonus (₹100)', ?, ?, 0.0, ?, 'SUCCESS', ?)
-                    """, (f"TX-BONUS-{uid}", uid, f"Welcome Credit ({ref_code})", bal, bal, now_ms))
-                    c.execute("""
-                        INSERT INTO admin_audit_logs (actor, action, entity, desc)
-                        VALUES ('System', 'USER_REGISTERED', ?, ?)
-                    """, (uid, f"Registered user {name} ({formatted_phone}) • Welcome Bonus ₹{bal:.2f}"))
-                else:
-                    c.execute("""
-                        UPDATE users
-                        SET name = ?,
-                            phone = COALESCE(NULLIF(?, ''), phone),
-                            email = COALESCE(NULLIF(?, ''), email),
-                            password_hash = COALESCE(NULLIF(?, ''), password_hash),
-                            password_plain = COALESCE(NULLIF(?, ''), password_plain)
-                        WHERE id = ?
-                    """, (name, formatted_phone, email, pw_hash, pw_plain_to_store, uid))
+                c.execute("""
+                    INSERT INTO users (id, name, phone, email, balance, total_deposit, total_withdraw, bets_count, status, referral_code, referred_by, password_hash, password_plain)
+                    VALUES (?, ?, ?, ?, ?, ?, 0.0, 0, 'ACTIVE', ?, ?, ?, ?)
+                """, (uid, name, formatted_phone, email, bal, bal, ref_code, referred_by_uid, pw_hash, pw_plain_to_store))
+                c.execute("""
+                    INSERT INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status, created_at_ms)
+                    VALUES (?, ?, 'DEPOSIT', 'New Player Sign-Up Bonus (₹100)', ?, ?, 0.0, ?, 'SUCCESS', ?)
+                """, (f"TX-BONUS-{uid}", uid, f"Welcome Credit ({ref_code})", bal, bal, now_ms))
+                c.execute("""
+                    INSERT INTO admin_audit_logs (actor, action, entity, desc)
+                    VALUES ('System', 'USER_REGISTERED', ?, ?)
+                """, (uid, f"Registered user {name} ({formatted_phone}) • Welcome Bonus ₹{bal:.2f}"))
+
                 _, sse_ev = bump_state_version(conn, "user_registered", {"userId": uid, "name": name})
                 c.execute("SELECT * FROM users WHERE id = ?", (uid,))
                 u = c.fetchone()
@@ -2374,16 +2421,15 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
 
             ident_digits = "".join(ch for ch in identifier if ch.isdigit())
             ident_last10 = ident_digits[-10:] if len(ident_digits) >= 10 else ""
-            pw_hash_input = hashlib.sha256(raw_password.encode("utf-8")).hexdigest()
 
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
                 c.execute("""
                     SELECT * FROM users
-                    WHERE UPPER(id) = UPPER(?) OR LOWER(name) = LOWER(?) OR LOWER(email) = LOWER(?)
+                    WHERE UPPER(TRIM(id)) = UPPER(?) OR LOWER(TRIM(name)) = LOWER(?) OR LOWER(TRIM(email)) = LOWER(?) OR TRIM(phone) = ?
                     LIMIT 1
-                """, (identifier, identifier, identifier))
+                """, (identifier, identifier, identifier, identifier))
                 u = c.fetchone()
                 if not u and ident_last10:
                     c.execute("SELECT * FROM users")
@@ -2392,18 +2438,27 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                         if len(r_digits) >= 10 and r_digits[-10:] == ident_last10:
                             u = row
                             break
+
+                if not u:
+                    conn.close()
+                    self._send_json({ "success": False, "error": "User not found. Please register a new account." }, status=404)
+                    return
+
+                stored_hash = (u["password_hash"] if "password_hash" in u.keys() else "") or ""
+                stored_plain = (u["password_plain"] if "password_plain" in u.keys() else "") or ""
+                is_valid = verify_password_secure(raw_password, stored_hash, stored_plain)
+                if not is_valid:
+                    conn.close()
+                    self._send_json({ "success": False, "error": "Incorrect password. Please try again." }, status=401)
+                    return
+
+                # Upgrade legacy SHA-256 or missing hash cleanly to PBKDF2-HMAC-SHA256
+                if not stored_hash.startswith("pbkdf2_sha256$"):
+                    upgraded_hash = hash_password_secure(raw_password)
+                    plain_to_keep = stored_plain if stored_plain else raw_password
+                    c.execute("UPDATE users SET password_hash = ?, password_plain = ? WHERE id = ?", (upgraded_hash, plain_to_keep, u["id"]))
+                    conn.commit()
                 conn.close()
-
-            if not u:
-                self._send_json({ "success": False, "error": "User not found. Please register a new account." }, status=404)
-                return
-
-            stored_hash = (u["password_hash"] if "password_hash" in u.keys() else "") or ""
-            stored_plain = (u["password_plain"] if "password_plain" in u.keys() else "") or ""
-            is_valid = (stored_hash == pw_hash_input) or (stored_plain != "" and stored_plain == raw_password) or (not stored_hash and raw_password == "password123")
-            if not is_valid:
-                self._send_json({ "success": False, "error": "Incorrect password. Please try again." }, status=401)
-                return
 
             self._send_json({
                 "success": True,
@@ -2428,15 +2483,30 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         if path == "/api/users/change-password":
-            uid = str(payload.get("userId") or "").strip()
+            uid = str(payload.get("userId") or self._get_cookie_uid() or "").strip()
+            current_pw = payload.get("currentPassword")
             new_pw = str(payload.get("newPassword") or "").strip()
-            if not uid or len(new_pw) < 4:
+            if not uid:
+                self._send_json({ "success": False, "error": "Not authenticated" }, status=401)
+                return
+            if len(new_pw) < 4:
                 self._send_json({ "success": False, "error": "Password must be at least 4 characters" }, status=400)
                 return
-            new_hash = hashlib.sha256(new_pw.encode("utf-8")).hexdigest()
+            new_hash = hash_password_secure(new_pw)
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
+                c.execute("SELECT * FROM users WHERE id = ?", (uid,))
+                u = c.fetchone()
+                if not u:
+                    conn.close()
+                    self._send_json({ "success": False, "error": "User not found" }, status=404)
+                    return
+                if current_pw is not None and str(current_pw).strip() != "":
+                    if not verify_password_secure(str(current_pw).strip(), u["password_hash"] if "password_hash" in u.keys() else "", u["password_plain"] if "password_plain" in u.keys() else ""):
+                        conn.close()
+                        self._send_json({ "success": False, "error": "Current password is incorrect" }, status=401)
+                        return
                 c.execute("UPDATE users SET password_hash = ?, password_plain = ? WHERE id = ?", (new_hash, new_pw, uid))
                 _, sse_ev = bump_state_version(conn, "password_updated", {"userId": uid})
                 conn.commit()
@@ -2447,8 +2517,13 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
 
         if path == "/api/user/adjust":
             uid = payload.get("userId")
-            adj_type = payload.get("type", "CREDIT")
-            amount = float(payload.get("amount", 0.0))
+            if payload.get("delta") is not None and payload.get("amount") is None:
+                delta_val = float(payload.get("delta", 0.0))
+                adj_type = "CREDIT" if delta_val >= 0 else "DEBIT"
+                amount = abs(delta_val)
+            else:
+                adj_type = str(payload.get("type", "CREDIT")).upper().strip()
+                amount = float(payload.get("amount", 0.0))
             reason = str(payload.get("reason", f"Admin {adj_type}")).strip()
 
             with db_lock:
@@ -2720,22 +2795,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     c.execute("INSERT OR REPLACE INTO app_state (key, value, updated_at) VALUES ('bank_config', ?, CURRENT_TIMESTAMP)", (json.dumps(payload["bank_config"]),))
                 if isinstance(payload.get("platform_settings"), dict):
                     c.execute("INSERT OR REPLACE INTO app_state (key, value, updated_at) VALUES ('platform_settings', ?, CURRENT_TIMESTAMP)", (json.dumps(payload["platform_settings"]),))
-                if isinstance(payload.get("users"), list):
-                    for u in payload["users"]:
-                        uid_u = str(u.get("id") or "").strip()
-                        if not uid_u:
-                            continue
-                        c.execute("SELECT id FROM users WHERE id = ?", (uid_u,))
-                        if not c.fetchone():
-                            c.execute("""
-                                INSERT INTO users (id, name, phone, email, balance, total_deposit, total_withdraw, bets_count, status)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """, (
-                                uid_u, str(u.get("name") or uid_u), u.get("phone"), u.get("email"),
-                                float(u.get("balance", 0.0)), float(u.get("totalDeposit", 0.0)),
-                                float(u.get("totalWithdraw", 0.0)), int(u.get("betsCount", 0)),
-                                str(u.get("status") or "ACTIVE")
-                            ))
+                # Note: Never mutate, overwrite, or delete `users` rows via bulk sync-state; users are exclusively managed via /api/users/*, /api/user/adjust, and /api/user/status.
                 if isinstance(payload.get("deposits"), list):
                     for d in payload["deposits"]:
                         did = str(d.get("id") or "").strip()

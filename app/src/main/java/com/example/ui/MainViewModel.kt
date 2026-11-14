@@ -492,15 +492,44 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
-            // Ensure local UserEntity exists if restored from persistent server state
-            if (_activeUser.value == null) {
-                val restoredUser = database.userDao().getUserById(localUserId) ?: UserEntity(
+            // Sync local UserEntity profile fields safely WITHOUT ever clearing passwordHash
+            val existingLocal = database.userDao().getUserById(localUserId)
+            if (existingLocal != null) {
+                val safeEmail = serverUser.email.ifBlank { existingLocal.email }
+                val safePhone = serverUser.phone.ifBlank { existingLocal.phone }
+                val safeRef = serverUser.referralCode.ifBlank { existingLocal.referralCode }
+                if (existingLocal.username != serverUser.name ||
+                    existingLocal.email != safeEmail ||
+                    existingLocal.phone != safePhone ||
+                    existingLocal.status != nextStatus ||
+                    existingLocal.referralCode != safeRef
+                ) {
+                    database.userDao().updateUserProfileFields(
+                        userId = localUserId,
+                        username = serverUser.name,
+                        email = safeEmail,
+                        phone = safePhone,
+                        status = nextStatus,
+                        referralCode = safeRef
+                    )
+                    _activeUser.value = existingLocal.copy(
+                        username = serverUser.name,
+                        email = safeEmail,
+                        phone = safePhone,
+                        status = nextStatus,
+                        referralCode = safeRef
+                    )
+                } else if (_activeUser.value == null) {
+                    _activeUser.value = existingLocal
+                }
+            } else if (_activeUser.value == null) {
+                val restoredUser = UserEntity(
                     id = localUserId,
                     tenantId = tenantId,
                     username = serverUser.name,
                     email = serverUser.email.ifBlank { "${serverUser.name.lowercase()}@colourking.in" },
                     phone = serverUser.phone,
-                    passwordHash = "",
+                    passwordHash = "__SERVER_AUTH_ONLY__",
                     role = UserRole.USER.name,
                     referralCode = serverUser.referralCode,
                     referredBy = serverUser.referredBy,
@@ -757,25 +786,89 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _authLoading.value = true
             try {
                 val tenantId = _activeTenantId.value
+                val hashedInput = ProvablyFairEngine.hashSha256(cleanPass)
 
+                // 1. Server-first authoritative SQLite authentication
+                val serverAuth = backendSyncService.loginUserWithResult(cleanId, cleanPass)
+                val serverUser = serverAuth.user
+                if (serverUser != null) {
+                    val existingById = database.userDao().getUserById(serverUser.id)
+                    val syncedUser = (existingById?.copy(
+                        username = serverUser.name,
+                        email = serverUser.email.ifBlank { existingById.email },
+                        phone = serverUser.phone.ifBlank { existingById.phone },
+                        passwordHash = hashedInput,
+                        referralCode = serverUser.referralCode.ifBlank { existingById.referralCode },
+                        referredBy = serverUser.referredBy ?: existingById.referredBy,
+                        status = serverUser.status
+                    ) ?: UserEntity(
+                        id = serverUser.id,
+                        tenantId = tenantId,
+                        username = serverUser.name,
+                        email = serverUser.email.ifBlank { "${serverUser.name.lowercase()}@colourking.in" },
+                        phone = serverUser.phone,
+                        passwordHash = hashedInput,
+                        role = UserRole.USER.name,
+                        referralCode = serverUser.referralCode.ifBlank { serverUser.name.take(4).uppercase() + "777" },
+                        referredBy = serverUser.referredBy,
+                        status = serverUser.status,
+                        createdAt = System.currentTimeMillis()
+                    ))
+                    database.userDao().insertUser(syncedUser)
+
+                    val balCents = backendSyncService.rupeesToCents(serverUser.balanceRupees)
+                    val depCents = backendSyncService.rupeesToCents(serverUser.totalDepositRupees)
+                    val wdCents = backendSyncService.rupeesToCents(serverUser.totalWithdrawRupees)
+                    val existingWallet = database.walletDao().getWallet(tenantId, syncedUser.id)
+                    database.walletDao().insertWallet(
+                        existingWallet?.copy(
+                            availableBalance = balCents,
+                            lifetimeDeposit = depCents,
+                            lifetimeWithdrawal = wdCents,
+                            status = serverUser.status,
+                            updatedAt = System.currentTimeMillis()
+                        ) ?: WalletEntity(
+                            id = "wallet_${syncedUser.id}",
+                            tenantId = tenantId,
+                            userId = syncedUser.id,
+                            availableBalance = balCents,
+                            lifetimeDeposit = depCents,
+                            lifetimeWithdrawal = wdCents,
+                            status = serverUser.status
+                        )
+                    )
+
+                    _activeUserId.value = syncedUser.id
+                    _activeTenantId.value = syncedUser.tenantId
+                    _activeUser.value = syncedUser
+                    _serverAccountStatus.value = serverUser.status
+                    _isLoggedIn.value = true
+                    saveAuthSession(syncedUser.id, syncedUser.tenantId)
+                    lastLocalMutationAtMs = System.currentTimeMillis()
+                    viewModelScope.launch { backendSyncService.forceSyncNow() }
+                    postNotification("Welcome back, ${syncedUser.username}!", true)
+                    onResult(true, null)
+                    return@launch
+                }
+
+                // 2. If server responded with explicit rejection (401/403/404), do NOT bypass or override message
+                if (!serverAuth.isNetworkError) {
+                    onResult(false, serverAuth.error ?: "Invalid credentials")
+                    return@launch
+                }
+
+                // 3. Offline fallback ONLY when backend server is genuinely unreachable
                 val cleanDigits = cleanId.filter { it.isDigit() }
                 val norm10 = if (cleanDigits.length >= 10) cleanDigits.takeLast(10) else cleanDigits
                 val withCountry = if (!cleanId.startsWith("+91") && cleanDigits.length == 10) "+91$cleanDigits" else cleanId
                 val withoutCountry = if (norm10.length == 10) norm10 else cleanId.removePrefix("+91").trim()
 
-                // 1. Search in DB for user by username, phone, or email
-                var user = database.userDao().findUserByIdentifier(tenantId, cleanId)
-                if (user == null && withCountry != cleanId) {
-                    user = database.userDao().findUserByIdentifier(tenantId, withCountry)
-                }
-                if (user == null && withoutCountry != cleanId) {
-                    user = database.userDao().findUserByIdentifier(tenantId, withoutCountry)
-                }
+                var localUser = database.userDao().findUserByIdentifier(tenantId, cleanId)
+                    ?: (if (withCountry != cleanId) database.userDao().findUserByIdentifier(tenantId, withCountry) else null)
+                    ?: (if (withoutCountry != cleanId) database.userDao().findUserByIdentifier(tenantId, withoutCountry) else null)
 
-                // If not found in current tenant or normalized mobile suffix differs, check all users
-                if (user == null) {
-                    val all = _allUsers.value
-                    user = all.firstOrNull { u ->
+                if (localUser == null) {
+                    localUser = _allUsers.value.firstOrNull { u ->
                         val uDigits = u.phone.filter { it.isDigit() }.takeLast(10)
                         u.username.equals(cleanId, ignoreCase = true) ||
                             u.phone == cleanId ||
@@ -785,93 +878,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                if (user != null) {
-                    val hashedInput = ProvablyFairEngine.hashSha256(cleanPass)
-                    val isMatch = user.passwordHash == hashedInput ||
-                            user.passwordHash == cleanPass ||
-                            (user.passwordHash.startsWith("hash_") && cleanPass == "password123")
-
+                if (localUser != null && localUser.passwordHash.isNotBlank() && localUser.passwordHash != "__SERVER_AUTH_ONLY__") {
+                    val isMatch = localUser.passwordHash == hashedInput ||
+                        localUser.passwordHash == cleanPass ||
+                        (localUser.passwordHash.startsWith("hash_") && cleanPass == "password123")
                     if (isMatch) {
-                        _activeUserId.value = user.id
-                        _activeTenantId.value = user.tenantId
-                        _activeUser.value = user
+                        _activeUserId.value = localUser.id
+                        _activeTenantId.value = localUser.tenantId
+                        _activeUser.value = localUser
+                        _serverAccountStatus.value = localUser.status
                         _isLoggedIn.value = true
-                        saveAuthSession(user.id, user.tenantId)
-                        viewModelScope.launch { backendSyncService.forceSyncNow() }
-                        postNotification("Welcome back, ${user.username}!", true)
+                        saveAuthSession(localUser.id, localUser.tenantId)
+                        postNotification("Welcome back, ${localUser.username}!", true)
                         onResult(true, null)
+                        return@launch
                     } else {
-                        // Also try validating against the SQLite server in case password was changed on Web
-                        val (serverUser, _) = backendSyncService.loginUserOnServer(cleanId, cleanPass)
-                        if (serverUser != null) {
-                            val updatedUser = user.copy(
-                                passwordHash = hashedInput,
-                                email = serverUser.email.ifBlank { user.email },
-                                phone = serverUser.phone.ifBlank { user.phone },
-                                status = serverUser.status
-                            )
-                            database.userDao().insertUser(updatedUser)
-                            _activeUserId.value = updatedUser.id
-                            _activeTenantId.value = updatedUser.tenantId
-                            _activeUser.value = updatedUser
-                            _isLoggedIn.value = true
-                            saveAuthSession(updatedUser.id, updatedUser.tenantId)
-                            viewModelScope.launch { backendSyncService.forceSyncNow() }
-                            postNotification("Welcome back, ${updatedUser.username}!", true)
-                            onResult(true, null)
-                        } else {
-                            onResult(false, "Incorrect password. Please try again.")
-                        }
-                    }
-                } else {
-                    val (serverUser, serverErr) = backendSyncService.loginUserOnServer(cleanId, cleanPass)
-                    if (serverUser != null) {
-                        val syncedUser = UserEntity(
-                            id = serverUser.id,
-                            tenantId = tenantId,
-                            username = serverUser.name,
-                            email = serverUser.email.ifBlank { "${serverUser.name.lowercase()}@colourking.in" },
-                            phone = serverUser.phone,
-                            passwordHash = ProvablyFairEngine.hashSha256(cleanPass),
-                            role = UserRole.USER.name,
-                            referralCode = serverUser.referralCode.ifBlank { serverUser.name.take(4).uppercase() + "777" },
-                            referredBy = serverUser.referredBy,
-                            status = serverUser.status,
-                            createdAt = System.currentTimeMillis()
-                        )
-                        database.userDao().insertUser(syncedUser)
-
-                        val balCents = backendSyncService.rupeesToCents(serverUser.balanceRupees)
-                        val depCents = backendSyncService.rupeesToCents(serverUser.totalDepositRupees)
-                        val wdCents = backendSyncService.rupeesToCents(serverUser.totalWithdrawRupees)
-                        val existingWallet = database.walletDao().getWallet(tenantId, syncedUser.id)
-                        database.walletDao().insertWallet(
-                            existingWallet?.copy(
-                                availableBalance = balCents,
-                                lifetimeDeposit = depCents,
-                                lifetimeWithdrawal = wdCents
-                            ) ?: WalletEntity(
-                                id = "wallet_${syncedUser.id}",
-                                tenantId = tenantId,
-                                userId = syncedUser.id,
-                                availableBalance = balCents,
-                                lifetimeDeposit = depCents,
-                                lifetimeWithdrawal = wdCents
-                            )
-                        )
-
-                        _activeUserId.value = syncedUser.id
-                        _activeTenantId.value = syncedUser.tenantId
-                        _activeUser.value = syncedUser
-                        _isLoggedIn.value = true
-                        saveAuthSession(syncedUser.id, syncedUser.tenantId)
-                        viewModelScope.launch { backendSyncService.forceSyncNow() }
-                        postNotification("Welcome back, ${syncedUser.username}!", true)
-                        onResult(true, null)
-                    } else {
-                        onResult(false, serverErr ?: "User not found. Please register a new account.")
+                        onResult(false, "Incorrect password. Please try again.")
+                        return@launch
                     }
                 }
+
+                onResult(false, serverAuth.error ?: "Unable to reach server. Please check connection and try again.")
             } catch (e: Exception) {
                 onResult(false, e.message ?: "Authentication failed")
             } finally {
@@ -889,15 +916,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         onResult: (Boolean, String?) -> Unit
     ) {
         val cleanUser = username.trim()
-        val cleanPhone = phone.trim()
+        val cleanPhoneDigits = phone.filter { it.isDigit() }
         val cleanEmail = email.trim()
         val cleanPass = password.trim()
+        val cleanRefCode = referralCode?.trim()?.uppercase()?.takeIf { it.isNotBlank() }
 
         if (cleanUser.length < 3) {
             onResult(false, "Username must be at least 3 characters")
             return
         }
-        if (cleanPhone.length < 10) {
+        if (cleanPhoneDigits.length < 10) {
             onResult(false, "Please enter a valid 10-digit mobile number")
             return
         }
@@ -906,123 +934,116 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
+        val norm10 = cleanPhoneDigits.takeLast(10)
+        val formattedPhone = "+91$norm10"
+
         viewModelScope.launch {
             _authLoading.value = true
             try {
                 val tenantId = _activeTenantId.value
+                val candidateServerId = "USR-" + (100000..999999).random()
 
-                // 1. Check duplicate username
-                val existingUser = database.userDao().getUserByUsername(tenantId, cleanUser)
-                if (existingUser != null) {
-                    onResult(false, "Username already exists. Please choose another.")
-                    return@launch
-                }
-
-                // 2. Check duplicate phone (normalized 10-digit suffix)
-                val cleanPhoneDigits = cleanPhone.filter { it.isDigit() }.takeLast(10)
-                val existingPhone = database.userDao().getUserByPhone(tenantId, cleanPhone)
-                    ?: _allUsers.value.firstOrNull {
-                        val d = it.phone.filter { ch -> ch.isDigit() }.takeLast(10)
-                        cleanPhoneDigits.length == 10 && d == cleanPhoneDigits
-                    }
-                if (existingPhone != null) {
-                    onResult(false, "Mobile number already registered. Please login.")
-                    return@launch
-                }
-
-                // 3. Check sponsor referral code
-                var referredById: String? = null
-                if (!referralCode.isNullOrBlank()) {
-                    val sponsor = database.userDao().getUserByReferralCode(tenantId, referralCode.trim().uppercase())
-                    if (sponsor != null) {
-                        referredById = sponsor.id
-                    }
-                }
-
-                val newUserId = "user_" + UUID.randomUUID().toString().take(8)
-                val generatedRefCode = cleanUser.take(4).uppercase() + (100..999).random()
-
-                val newUser = UserEntity(
-                    id = newUserId,
-                    tenantId = tenantId,
+                // 1. Authoritatively persist user in SQLite backend BEFORE creating local session
+                val serverAuth = backendSyncService.registerUserWithResult(
+                    userId = candidateServerId,
                     username = cleanUser,
-                    email = if (cleanEmail.isNotBlank()) cleanEmail else "${cleanUser.lowercase()}@apexplay.io",
-                    phone = cleanPhone,
+                    phone = formattedPhone,
+                    email = cleanEmail,
+                    balanceRupees = 100.0,
+                    referredBy = cleanRefCode,
+                    password = cleanPass
+                )
+                val serverUser = serverAuth.user
+                if (serverUser == null) {
+                    onResult(false, serverAuth.error ?: "Unable to register on server. Please check connection and retry.")
+                    return@launch
+                }
+
+                val canonicalUserId = serverUser.id
+                val canonicalRefCode = serverUser.referralCode.ifBlank {
+                    cleanUser.take(4).uppercase() + (100..999).random()
+                }
+                val newUser = UserEntity(
+                    id = canonicalUserId,
+                    tenantId = tenantId,
+                    username = serverUser.name.ifBlank { cleanUser },
+                    email = serverUser.email.ifBlank {
+                        cleanEmail.ifBlank { "${cleanUser.lowercase().replace(" ", "_")}@colourking.in" }
+                    },
+                    phone = serverUser.phone.ifBlank { formattedPhone },
                     passwordHash = ProvablyFairEngine.hashSha256(cleanPass),
                     role = UserRole.USER.name,
-                    referralCode = generatedRefCode,
-                    referredBy = referredById,
+                    referralCode = canonicalRefCode,
+                    referredBy = serverUser.referredBy,
+                    status = serverUser.status,
                     createdAt = System.currentTimeMillis()
                 )
                 database.userDao().insertUser(newUser)
 
-                // 4. Create Starter Wallet with ₹100 welcome bonus (10000 cents)
-                val starterBonusCents = 10000L // ₹100.00
-                val walletId = "wallet_$newUserId"
+                // 2. Create Starter Wallet with server balance (₹100 welcome bonus = 10000 cents)
+                val starterBonusCents = backendSyncService.rupeesToCents(serverUser.balanceRupees).coerceAtLeast(10000L)
+                val walletId = "wallet_$canonicalUserId"
                 val newWallet = WalletEntity(
                     id = walletId,
                     tenantId = tenantId,
-                    userId = newUserId,
+                    userId = canonicalUserId,
                     availableBalance = starterBonusCents,
-                    lifetimeDeposit = starterBonusCents
+                    lifetimeDeposit = starterBonusCents,
+                    status = serverUser.status
                 )
                 database.walletDao().insertWallet(newWallet)
 
-                // 5. Create initial ledger credit transaction
-                val ledger = WalletLedgerEntity(
-                    id = UUID.randomUUID().toString(),
-                    tenantId = tenantId,
-                    walletId = walletId,
-                    userId = newUserId,
-                    transactionId = "tx_bonus_$newUserId",
-                    entryType = LedgerEntryType.DEPOSIT.name,
-                    direction = LedgerDirection.CREDIT.name,
-                    amount = starterBonusCents,
-                    currency = "INR",
-                    balanceBefore = 0L,
-                    balanceAfter = starterBonusCents,
-                    referenceType = "SIGNUP_BONUS",
-                    referenceId = newUserId,
-                    metadataJson = "{\"bonus\":\"welcome_100\"}",
-                    idempotencyKey = "signup_bonus_$newUserId"
-                )
-                database.ledgerDao().insertLedger(ledger)
+                // 3. Create initial ledger credit transaction idempotently
+                val bonusKey = "signup_bonus_$canonicalUserId"
+                if (database.ledgerDao().getLedgerByIdempotencyKey(bonusKey) == null) {
+                    val ledger = WalletLedgerEntity(
+                        id = UUID.randomUUID().toString(),
+                        tenantId = tenantId,
+                        walletId = walletId,
+                        userId = canonicalUserId,
+                        transactionId = "tx_bonus_$canonicalUserId",
+                        entryType = LedgerEntryType.DEPOSIT.name,
+                        direction = LedgerDirection.CREDIT.name,
+                        amount = starterBonusCents,
+                        currency = "INR",
+                        balanceBefore = 0L,
+                        balanceAfter = starterBonusCents,
+                        referenceType = "SIGNUP_BONUS",
+                        referenceId = canonicalUserId,
+                        metadataJson = "{\"bonus\":\"welcome_100\"}",
+                        idempotencyKey = bonusKey
+                    )
+                    database.ledgerDao().insertLedger(ledger)
+                }
 
-                // 6. Connect in referral closure table if sponsor existed
-                if (referredById != null) {
-                    database.referralDao().insertRelationships(
-                        listOf(
-                            ReferralRelationshipEntity(
-                                id = UUID.randomUUID().toString(),
-                                tenantId = tenantId,
-                                ancestorUserId = referredById,
-                                descendantUserId = newUserId,
-                                depth = 1
+                // 4. Connect in local referral closure table if sponsor exists locally
+                if (cleanRefCode != null) {
+                    val sponsor = database.userDao().getUserByReferralCode(tenantId, cleanRefCode)
+                    if (sponsor != null) {
+                        database.referralDao().insertRelationships(
+                            listOf(
+                                ReferralRelationshipEntity(
+                                    id = UUID.randomUUID().toString(),
+                                    tenantId = tenantId,
+                                    ancestorUserId = sponsor.id,
+                                    descendantUserId = canonicalUserId,
+                                    depth = 1
+                                )
                             )
                         )
-                    )
+                    }
                 }
 
-                // 7. Auto login newly registered player & sync to SQLite backend
-                _activeUserId.value = newUserId
+                // 5. Auto login newly registered player & refresh sync snapshot
+                _activeUserId.value = canonicalUserId
                 _activeUser.value = newUser
+                _serverAccountStatus.value = serverUser.status
                 _isLoggedIn.value = true
-                saveAuthSession(newUserId, tenantId)
+                saveAuthSession(canonicalUserId, tenantId)
                 lastLocalMutationAtMs = System.currentTimeMillis()
-                viewModelScope.launch {
-                    backendSyncService.registerUserOnServer(
-                        userId = newUserId,
-                        username = cleanUser,
-                        phone = cleanPhone,
-                        email = newUser.email,
-                        balanceRupees = starterBonusCents / 100.0,
-                        referredBy = referralCode,
-                        password = cleanPass
-                    )
-                    backendSyncService.forceSyncNow()
-                }
+                viewModelScope.launch { backendSyncService.forceSyncNow() }
 
-                postNotification("🎉 Welcome $cleanUser! ₹100 welcome bonus credited to your wallet!", true)
+                postNotification("🎉 Welcome ${newUser.username}! ₹100 welcome bonus credited to your wallet!", true)
                 onResult(true, null)
             } catch (e: Exception) {
                 onResult(false, e.message ?: "Registration failed")

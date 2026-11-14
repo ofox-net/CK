@@ -1202,6 +1202,7 @@
               <thead>
                 <tr>
                   <th>User Details</th>
+                  <th>Password</th>
                   <th>Wallet Balance</th>
                   <th>Total Deposits</th>
                   <th>Total Withdrawals</th>
@@ -2043,20 +2044,17 @@
       recalculateMasterKPIs();
     }
 
-    // Sync Helper
+    // Sync Helper (Local cache only — backend mutations use dedicated atomic SQLite APIs)
     function persistAllState(skipBackendSync = false) {
       saveAdminLocalCacheOnly();
       if (skipBackendSync || window.location.protocol === 'file:') return;
 
-      // Automatically sync actions to SQLite backend
+      // Only push bank_config safely via sync-state; NEVER push client users/deposits/withdrawals lists
       fetch('/api/admin/sync-state', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          bank_config: bankConfig,
-          users: usersList,
-          deposits: depositRequests,
-          withdrawals: withdrawalRequests
+          bank_config: bankConfig
         })
       }).catch(() => {});
     }
@@ -2719,28 +2717,57 @@
       renderUsersTable();
     }
 
+    function escapeAdminHtml(str) {
+      return String(str === null || str === undefined ? '' : str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function copyUserPasswordBtn(btn) {
+      const pw = btn?.getAttribute('data-pw') || '';
+      if (!pw) {
+        showToast('Password unavailable for this user.');
+        return;
+      }
+      copyToClipboard(pw);
+    }
+
     function renderUsersTable() {
       const q = (document.getElementById('searchUsersInput')?.value || '').toLowerCase();
       const tbody = document.getElementById('usersTableBody');
       const filtered = usersList.filter(u => {
         const matchesStatus = (currentUserFilter === 'ALL' || u.status === currentUserFilter);
-        const matchesQuery = (!q || u.name.toLowerCase().includes(q) || u.id.toLowerCase().includes(q) || u.phone.toLowerCase().includes(q));
+        const matchesQuery = (!q || String(u.name || '').toLowerCase().includes(q) || String(u.id || '').toLowerCase().includes(q) || String(u.phone || '').toLowerCase().includes(q));
         return matchesStatus && matchesQuery;
       });
 
       tbody.innerHTML = filtered.map(u => {
         const netPL = u.totalDeposit - u.totalWithdraw - u.balance;
+        const safeName = escapeAdminHtml(u.name);
+        const safeId = escapeAdminHtml(u.id);
+        const safePhone = escapeAdminHtml(u.phone);
+        const rawPw = u.password || '';
+        const safePw = rawPw ? escapeAdminHtml(rawPw) : '••••••••';
         return `
           <tr>
             <td>
-              <strong style="font-size:14px; color:#FFF;">${u.name}</strong><br/>
-              <span style="font-size:11px; color:var(--cyan); font-family:monospace;">${u.id}</span> • 
-              <span style="font-size:11px; color:var(--text-muted);">${u.phone}</span>
+              <strong style="font-size:14px; color:#FFF;">${safeName}</strong><br/>
+              <span style="font-size:11px; color:var(--cyan); font-family:monospace;">${safeId}</span> • 
+              <span style="font-size:11px; color:var(--text-muted);">${safePhone}</span>
             </td>
-            <td><strong style="color:var(--green); font-size:14px;">₹${u.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></td>
-            <td>₹${u.totalDeposit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-            <td>₹${u.totalWithdraw.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-            <td>${u.betsCount} wagers</td>
+            <td>
+              <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(255,215,0,0.08); border:1px solid rgba(255,215,0,0.28); padding:4px 8px; border-radius:6px;">
+                <span style="font-family:monospace; font-size:12px; font-weight:700; color:var(--gold); letter-spacing:0.4px;">${safePw}</span>
+                ${rawPw ? `<button type="button" data-pw="${escapeAdminHtml(rawPw)}" onclick="copyUserPasswordBtn(this)" title="Copy Password" style="background:none; border:none; color:var(--cyan); cursor:pointer; font-size:11px; padding:0;">📋</button>` : ''}
+              </div>
+            </td>
+            <td><strong style="color:var(--green); font-size:14px;">₹${Number(u.balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></td>
+            <td>₹${Number(u.totalDeposit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+            <td>₹${Number(u.totalWithdraw || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+            <td>${Number(u.betsCount || 0)} wagers</td>
             <td style="color:${netPL >= 0 ? 'var(--green)' : 'var(--red)'}; font-weight:700;">
               ${netPL >= 0 ? '+' : ''}₹${netPL.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </td>
@@ -2751,10 +2778,10 @@
             </td>
             <td>
               <div style="display:flex; gap:6px;">
-                <button class="btn ${u.status === 'ACTIVE' ? 'btn-red' : 'btn-green'} btn-sm" onclick="toggleUserBlock('${u.id}')">
+                <button class="btn ${u.status === 'ACTIVE' ? 'btn-red' : 'btn-green'} btn-sm" onclick="toggleUserBlock('${safeId}')">
                   ${u.status === 'ACTIVE' ? '🚫 Block' : '✅ Unblock'}
                 </button>
-                <button class="btn btn-secondary btn-sm" onclick="openBalanceAdjustModal('${u.id}')">
+                <button class="btn btn-secondary btn-sm" onclick="openBalanceAdjustModal('${safeId}')">
                   ⚖️ Adjust Balance
                 </button>
               </div>
@@ -2767,28 +2794,24 @@
     function toggleUserBlock(userId) {
       const user = usersList.find(u => u.id === userId);
       if (!user) return;
-      const isNowBlocked = (user.status === 'ACTIVE');
-      user.status = isNowBlocked ? 'BLOCKED' : 'ACTIVE';
+      const nextStatus = (user.status === 'ACTIVE') ? 'BLOCKED' : 'ACTIVE';
 
-      // Persist to database backend
       fetch('/api/user/status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, status: user.status })
-      }).then(() => pullAdminStateFromServer()).catch(() => {});
-
-      auditLogs.unshift({
-        time: new Date().toLocaleTimeString(),
-        actor: "ColourPrince",
-        action: isNowBlocked ? "USER_BLOCK" : "USER_UNBLOCK",
-        entity: `${user.id} (${user.name})`,
-        desc: `Account status toggled to ${user.status}`
-      });
-
-      persistAllState(true);
-      renderUsersTable();
-      renderAuditTable();
-      showToast(`User ${user.name} is now ${user.status}!`);
+        body: JSON.stringify({ userId, status: nextStatus })
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (!data || !data.success) {
+          showToast('❌ ' + (data?.error || 'Failed to update user status'));
+          return;
+        }
+        user.status = nextStatus;
+        pullAdminStateFromServer();
+        showToast(`User ${user.name} is now ${user.status}!`);
+      })
+      .catch(() => showToast('❌ Network error updating user status'));
     }
 
     function openBalanceAdjustModal(userId) {
@@ -2807,61 +2830,53 @@
       const type = document.getElementById('adjustType').value;
       const amount = parseFloat(document.getElementById('adjustAmount').value) || 0;
       const reason = document.getElementById('adjustReason').value || 'Manual admin balance adjustment';
-
-      if (type === 'CREDIT') {
-        user.balance += amount;
-      } else {
-        user.balance = Math.max(0, user.balance - amount);
+      if (amount <= 0) {
+        showToast('⚠️ Enter a valid positive amount');
+        return;
       }
 
-      // Persist to database backend so user side updates balance in real-time
       fetch('/api/user/adjust', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: activeAdjustUserId, type, amount, reason })
-      }).then(() => pullAdminStateFromServer()).catch(() => {});
-
-      auditLogs.unshift({
-        time: new Date().toLocaleTimeString(),
-        actor: "ColourPrince",
-        action: `BALANCE_${type}`,
-        entity: `${user.id} (${user.name})`,
-        desc: `${type} ₹${amount.toFixed(2)}: ${reason}`
-      });
-
-      persistAllState(true);
-      closeModal('balanceAdjustModal');
-      renderUsersTable();
-      renderAuditTable();
-      showToast(`✅ Adjusted ${user.name}'s balance by ${type === 'CREDIT' ? '+' : '-'}₹${amount}!`);
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (!data || !data.success) {
+          showToast('❌ ' + (data?.error || 'Balance adjustment failed'));
+          return;
+        }
+        closeModal('balanceAdjustModal');
+        pullAdminStateFromServer();
+        showToast(`✅ Adjusted ${user.name}'s balance (${type} ₹${amount})!`);
+      })
+      .catch(() => showToast('❌ Network error executing adjustment'));
     }
 
     function addNewDemoUser() {
       const names = ["Sanjay_Trader", "Deepak_King", "Anita_Pro", "Ramesh_Gamer"];
-      const rName = names[Math.floor(Math.random() * names.length)] + "_" + Math.floor(10 + Math.random() * 90);
+      const rName = names[Math.floor(Math.random() * names.length)] + "_" + Math.floor(100 + Math.random() * 899);
       const newU = {
-        id: "USR-" + Math.floor(1010 + Math.random() * 8900),
         name: rName,
-        phone: "+91 9" + Math.floor(100000000 + Math.random() * 900000000),
+        phone: "+91" + Math.floor(9100000000 + Math.random() * 890000000),
         email: rName.toLowerCase() + "@gmail.com",
-        balance: 10000.00,
-        totalDeposit: 0.00,
-        totalWithdraw: 0.00,
-        betsCount: 0,
-        status: "ACTIVE"
+        password: "demo" + Math.floor(100 + Math.random() * 899),
+        balance: 100.00
       };
       fetch('/api/users/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newU)
-      }).then(() => {
-        pullAdminStateFromServer();
-        showToast(`User ${newU.name} saved to SQLite database!`);
+      }).then(async r => {
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok || !data.success) {
+          showToast('❌ ' + (data.error || 'Could not register user'));
+          return;
+        }
+        await pullAdminStateFromServer();
+        showToast(`✅ User ${data.user?.name || newU.name} saved to SQLite database!`);
       }).catch(() => {
-        usersList.push(newU);
-        persistAllState();
-        renderUsersTable();
-        showToast(`User ${newU.name} registered!`);
+        showToast('❌ Server unavailable — user not created.');
       });
     }
 
@@ -2951,7 +2966,10 @@
         return matchesMarket && matchesStatus && matchesQ;
       });
 
-      tbody.innerHTML = filtered.map(b => `
+      tbody.innerHTML = filtered.map(b => {
+        const feeVal = typeof b.platformFee === 'number' ? b.platformFee : +(Number(b.amount || 0) * 0.03).toFixed(2);
+        const netVal = typeof b.netAmount === 'number' ? b.netAmount : +(Number(b.amount || 0) - feeVal).toFixed(2);
+        return `
         <tr>
           <td><strong style="color:var(--gold); font-family:monospace;">${b.id}</strong></td>
           <td><strong style="color:var(--cyan);">${b.market}</strong></td>
@@ -2965,7 +2983,11 @@
               ${b.target}
             </span>
           </td>
-          <td><strong>₹${b.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></td>
+          <td>
+            <strong>₹${b.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong><br/>
+            <span style="font-size:10px; color:var(--amber);">3% Fee: ₹${feeVal.toFixed(2)}</span> • 
+            <span style="font-size:10px; color:var(--cyan);">Net: ₹${netVal.toFixed(2)}</span>
+          </td>
           <td style="color:var(--gold); font-weight:700;">${b.multiplier}X</td>
           <td>
             <span class="badge ${b.status === 'WON' ? 'badge-approved' : b.status === 'LOST' ? 'badge-rejected' : 'badge-pending'}">
@@ -2977,13 +2999,15 @@
           </td>
           <td style="font-size:11px; color:var(--text-muted);">${b.time}</td>
         </tr>
-      `).join('');
+      `; }).join('');
     }
 
     function exportBetsToCSV() {
-      let csv = "BetID,Market,Period,UserID,UserName,Target,Amount,Multiplier,Status,Payout,Time\n";
+      let csv = "BetID,Market,Period,UserID,UserName,Target,GrossAmount,PlatformFee3Pct,NetAmount,Multiplier,Status,Payout,Time\n";
       allBets.forEach(b => {
-        csv += `${b.id},${b.market},${b.period},${b.userId},${b.userName},${b.target},${b.amount},${b.multiplier},${b.status},${b.payout},${b.time}\n`;
+        const feeVal = typeof b.platformFee === 'number' ? b.platformFee : +(Number(b.amount || 0) * 0.03).toFixed(2);
+        const netVal = typeof b.netAmount === 'number' ? b.netAmount : +(Number(b.amount || 0) - feeVal).toFixed(2);
+        csv += `${b.id},${b.market},${b.period},${b.userId},${b.userName},${b.target},${b.amount},${feeVal},${netVal},${b.multiplier},${b.status},${b.payout},${b.time}\n`;
       });
       const blob = new Blob([csv], { type: 'text/csv' });
       const url = URL.createObjectURL(blob);
@@ -3384,8 +3408,7 @@
       if (Array.isArray(data.deposits)) depositRequests = data.deposits;
       if (Array.isArray(data.withdrawals)) withdrawalRequests = data.withdrawals;
       if (data.users && typeof data.users === 'object') {
-        const uList = Object.values(data.users);
-        if (uList.length) usersList = uList;
+        usersList = Object.values(data.users);
       }
       if (Array.isArray(data.bets)) allBets = data.bets;
       if (Array.isArray(data.declared_results_list) && data.declared_results_list.length) {

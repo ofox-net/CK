@@ -167,6 +167,12 @@ data class ServerSyncSnapshot(
     val withdrawals: List<ServerWithdrawalItem> = emptyList()
 )
 
+data class ServerAuthResult(
+    val user: ServerUserState? = null,
+    val error: String? = null,
+    val isNetworkError: Boolean = false
+)
+
 class BackendSyncService(
     private val context: Context? = null,
     initialBaseUrl: String? = null
@@ -228,6 +234,12 @@ class BackendSyncService(
         .connectTimeout(4, TimeUnit.SECONDS)
         .readTimeout(6, TimeUnit.SECONDS)
         .writeTimeout(6, TimeUnit.SECONDS)
+        .build()
+
+    private val probeClient: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(2, TimeUnit.SECONDS)
+        .readTimeout(2, TimeUnit.SECONDS)
+        .writeTimeout(2, TimeUnit.SECONDS)
         .build()
 
     private val sseClient: OkHttpClient = OkHttpClient.Builder()
@@ -316,20 +328,23 @@ class BackendSyncService(
         launchFallbackPolling()
     }
 
-    suspend fun resolveReachableBackendUrl(): String {
+    suspend fun resolveReachableBackendUrl(): String = withContext(Dispatchers.IO) {
         val saved = normalizeUrl(prefs?.getString(KEY_BACKEND_URL, null))
         val candidates = buildList {
             if (saved.isNotBlank()) add(saved)
             addAll(DEFAULT_CANDIDATE_URLS)
         }.distinct()
 
-        for (candidate in candidates) {
-            if (probeHealth(candidate)) {
-                _activeBackendUrl.value = candidate
-                return candidate
-            }
+        val probeResults = candidates.map { candidate ->
+            async { candidate to probeHealth(candidate) }
+        }.awaitAll()
+
+        val winner = probeResults.firstOrNull { it.second }?.first
+        if (winner != null) {
+            _activeBackendUrl.value = winner
+            return@withContext winner
         }
-        return _activeBackendUrl.value
+        return@withContext _activeBackendUrl.value
     }
 
     private fun probeHealth(baseUrl: String): Boolean {
@@ -338,7 +353,7 @@ class BackendSyncService(
                 .url("$baseUrl/api/state/version")
                 .get()
                 .build()
-            httpClient.newCall(req).execute().use { resp ->
+            probeClient.newCall(req).execute().use { resp ->
                 resp.isSuccessful
             }
         } catch (_: Exception) {
@@ -829,51 +844,18 @@ class BackendSyncService(
         val payload = JSONObject().apply {
             put("userId", serverUserId)
             put("delta", amountDeltaRupees)
+            put("type", if (amountDeltaRupees >= 0.0) "CREDIT" else "DEBIT")
+            put("amount", kotlin.math.abs(amountDeltaRupees))
             put("reason", reason)
         }
         val resp = postJsonWithStatus("/api/user/adjust", payload)
         return@withContext resp?.optBoolean("success", false) == true
     }
 
-    suspend fun registerUserOnServer(
-        userId: String,
-        username: String,
-        phone: String,
-        email: String,
-        balanceRupees: Double = 100.0,
-        referredBy: String? = null,
-        password: String? = null
-    ): Boolean = withContext(Dispatchers.IO) {
-        val payload = JSONObject().apply {
-            put("id", userId)
-            put("name", username)
-            put("phone", phone)
-            put("email", email)
-            put("balance", balanceRupees)
-            if (!referredBy.isNullOrBlank()) put("referredBy", referredBy)
-            if (!password.isNullOrBlank()) put("password", password)
-        }
-        return@withContext postJson("/api/users/register", payload) != null
-    }
-
-    suspend fun loginUserOnServer(
-        identifier: String,
-        password: String
-    ): Pair<ServerUserState?, String?> = withContext(Dispatchers.IO) {
-        val payload = JSONObject().apply {
-            put("identifier", identifier)
-            put("password", password)
-        }
-        val resp = postJsonWithStatus("/api/users/login", payload)
-            ?: return@withContext null to "Unable to reach server. Check connection."
-        if (!resp.optBoolean("success", false)) {
-            return@withContext null to (resp.optString("error").takeIf { it.isNotBlank() } ?: "Invalid credentials")
-        }
-        val uObj = resp.optJSONObject("user")
-            ?: return@withContext null to "Invalid server response"
-        val userState = ServerUserState(
+    private fun parseServerUser(uObj: JSONObject): ServerUserState {
+        return ServerUserState(
             id = uObj.optString("id"),
-            name = uObj.optString("name"),
+            name = uObj.optString("name", uObj.optString("id")),
             phone = uObj.optString("phone", ""),
             email = uObj.optString("email", ""),
             balanceRupees = uObj.optDouble("balance", 0.0),
@@ -884,7 +866,102 @@ class BackendSyncService(
             referralCode = uObj.optString("referralCode", ""),
             referredBy = uObj.optString("referredBy").takeIf { it.isNotBlank() && it != "null" }
         )
-        return@withContext userState to null
+    }
+
+    suspend fun registerUserWithResult(
+        userId: String,
+        username: String,
+        phone: String,
+        email: String,
+        balanceRupees: Double = 100.0,
+        referredBy: String? = null,
+        password: String? = null
+    ): ServerAuthResult = withContext(Dispatchers.IO) {
+        val payload = JSONObject().apply {
+            if (userId.isNotBlank()) put("id", userId)
+            put("name", username)
+            put("phone", phone)
+            put("email", email)
+            put("balance", balanceRupees)
+            if (!referredBy.isNullOrBlank()) put("referredBy", referredBy)
+            if (!password.isNullOrBlank()) put("password", password)
+        }
+        val resp = postJsonWithRetry("/api/users/register", payload)
+            ?: return@withContext ServerAuthResult(
+                user = null,
+                error = "Unable to reach server. Check your connection and try again.",
+                isNetworkError = true
+            )
+        if (!resp.optBoolean("success", false)) {
+            return@withContext ServerAuthResult(
+                user = null,
+                error = resp.optString("error").takeIf { it.isNotBlank() } ?: "Registration failed on server.",
+                isNetworkError = false
+            )
+        }
+        val uObj = resp.optJSONObject("user")
+            ?: return@withContext ServerAuthResult(
+                user = null,
+                error = "Invalid registration response from server.",
+                isNetworkError = false
+            )
+        return@withContext ServerAuthResult(user = parseServerUser(uObj))
+    }
+
+    suspend fun registerUserOnServer(
+        userId: String,
+        username: String,
+        phone: String,
+        email: String,
+        balanceRupees: Double = 100.0,
+        referredBy: String? = null,
+        password: String? = null
+    ): Boolean = registerUserWithResult(
+        userId = userId,
+        username = username,
+        phone = phone,
+        email = email,
+        balanceRupees = balanceRupees,
+        referredBy = referredBy,
+        password = password
+    ).user != null
+
+    suspend fun loginUserWithResult(
+        identifier: String,
+        password: String
+    ): ServerAuthResult = withContext(Dispatchers.IO) {
+        val payload = JSONObject().apply {
+            put("identifier", identifier)
+            put("password", password)
+        }
+        val resp = postJsonWithRetry("/api/users/login", payload)
+            ?: return@withContext ServerAuthResult(
+                user = null,
+                error = "Unable to reach server. Check connection.",
+                isNetworkError = true
+            )
+        if (!resp.optBoolean("success", false)) {
+            return@withContext ServerAuthResult(
+                user = null,
+                error = resp.optString("error").takeIf { it.isNotBlank() } ?: "Invalid credentials",
+                isNetworkError = false
+            )
+        }
+        val uObj = resp.optJSONObject("user")
+            ?: return@withContext ServerAuthResult(
+                user = null,
+                error = "Invalid server response",
+                isNetworkError = false
+            )
+        return@withContext ServerAuthResult(user = parseServerUser(uObj))
+    }
+
+    suspend fun loginUserOnServer(
+        identifier: String,
+        password: String
+    ): Pair<ServerUserState?, String?> {
+        val res = loginUserWithResult(identifier, password)
+        return res.user to res.error
     }
 
     suspend fun placeBetOnServer(
@@ -980,6 +1057,16 @@ class BackendSyncService(
         return if (resp != null && resp.optBoolean("success", true)) resp else null
     }
 
+    private suspend fun postJsonWithRetry(path: String, payload: JSONObject): JSONObject? {
+        val first = postJsonWithStatus(path, payload)
+        if (first != null) return first
+        if (!hasCustomOverride) {
+            resolveReachableBackendUrl()
+            return postJsonWithStatus(path, payload)
+        }
+        return null
+    }
+
     private fun postJsonWithStatus(path: String, payload: JSONObject): JSONObject? {
         val baseUrl = _activeBackendUrl.value
         return try {
@@ -988,8 +1075,17 @@ class BackendSyncService(
                 .post(payload.toString().toRequestBody(jsonMediaType))
                 .build()
             httpClient.newCall(req).execute().use { resp ->
-                val txt = resp.body?.string() ?: "{}"
-                JSONObject(txt)
+                val txt = resp.body?.string()?.trim().orEmpty()
+                if (txt.isEmpty()) {
+                    if (resp.isSuccessful) JSONObject().put("success", true)
+                    else JSONObject().put("success", false).put("error", "Server returned HTTP ${resp.code}")
+                } else {
+                    try {
+                        JSONObject(txt)
+                    } catch (_: Exception) {
+                        JSONObject().put("success", false).put("error", "Server returned HTTP ${resp.code}")
+                    }
+                }
             }
         } catch (_: Exception) {
             null

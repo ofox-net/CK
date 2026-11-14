@@ -15,14 +15,24 @@ interface UserDao {
     @Query("SELECT * FROM users WHERE tenantId = :tenantId AND referralCode = :code LIMIT 1")
     suspend fun getUserByReferralCode(tenantId: String, code: String): UserEntity?
 
-    @Query("SELECT * FROM users WHERE tenantId = :tenantId AND (username = :identifier OR phone = :identifier OR email = :identifier) LIMIT 1")
+    @Query("SELECT * FROM users WHERE tenantId = :tenantId AND (LOWER(TRIM(username)) = LOWER(TRIM(:identifier)) OR TRIM(phone) = TRIM(:identifier) OR LOWER(TRIM(email)) = LOWER(TRIM(:identifier))) LIMIT 1")
     suspend fun findUserByIdentifier(tenantId: String, identifier: String): UserEntity?
 
-    @Query("SELECT * FROM users WHERE tenantId = :tenantId AND username = :username LIMIT 1")
+    @Query("SELECT * FROM users WHERE tenantId = :tenantId AND LOWER(TRIM(username)) = LOWER(TRIM(:username)) LIMIT 1")
     suspend fun getUserByUsername(tenantId: String, username: String): UserEntity?
 
-    @Query("SELECT * FROM users WHERE tenantId = :tenantId AND phone = :phone LIMIT 1")
+    @Query("SELECT * FROM users WHERE tenantId = :tenantId AND TRIM(phone) = TRIM(:phone) LIMIT 1")
     suspend fun getUserByPhone(tenantId: String, phone: String): UserEntity?
+
+    @Query("UPDATE users SET username = :username, email = :email, phone = :phone, status = :status, referralCode = :referralCode WHERE id = :userId")
+    suspend fun updateUserProfileFields(
+        userId: String,
+        username: String,
+        email: String,
+        phone: String,
+        status: String,
+        referralCode: String
+    )
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertUser(user: UserEntity)
