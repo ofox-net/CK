@@ -1288,6 +1288,66 @@
       overflow: hidden;
       border: 1px solid var(--border);
     }
+
+    /* 24/7 Live Support UI */
+    .support-topic-pill {
+      background: var(--card-highlight);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 6px 10px;
+      border-radius: 999px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .support-topic-pill:hover {
+      border-color: var(--cyan);
+      background: rgba(0, 229, 255, 0.12);
+    }
+    .support-msg-row {
+      display: flex;
+      flex-direction: column;
+      max-width: 88%;
+      gap: 3px;
+    }
+    .support-msg-row.user { align-self: flex-end; align-items: flex-end; }
+    .support-msg-row.auto,
+    .support-msg-row.admin { align-self: flex-start; align-items: flex-start; }
+    .support-msg-bubble {
+      padding: 9px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .support-msg-row.user .support-msg-bubble {
+      background: linear-gradient(135deg, rgba(255, 215, 0, 0.22), rgba(255, 143, 0, 0.16));
+      border: 1px solid rgba(255, 215, 0, 0.45);
+      color: #FFF;
+      border-bottom-right-radius: 3px;
+    }
+    .support-msg-row.auto .support-msg-bubble {
+      background: rgba(0, 229, 255, 0.1);
+      border: 1px solid rgba(0, 229, 255, 0.35);
+      color: #E8F7FF;
+      border-bottom-left-radius: 3px;
+    }
+    .support-msg-row.admin .support-msg-bubble {
+      background: rgba(0, 230, 118, 0.14);
+      border: 1px solid rgba(0, 230, 118, 0.48);
+      color: #FFFFFF;
+      border-bottom-left-radius: 3px;
+    }
+    .support-msg-meta {
+      font-size: 9px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
   </style>
 </head>
 <body>
@@ -1967,6 +2027,24 @@
           </div>
         </div>
 
+        <!-- 24/7 Live Support System -->
+        <div class="card" id="profileSupportCard" style="border:1px solid rgba(0,229,255,0.35); background:linear-gradient(135deg, rgba(0,229,255,0.08) 0%, var(--surface) 100%);">
+          <div class="section-title" style="margin-bottom:4px;">
+            <span>💬 24/7 Live Support</span>
+            <span id="profileSupportStatusBadge" class="badge-pill" style="background:rgba(0,230,118,0.18); color:var(--green);">ONLINE 24/7</span>
+          </div>
+          <p id="profileSupportSituationSummary" style="font-size:11px; color:var(--text-muted); line-height:1.45;">
+            Instant situation-aware auto-help for Deposits, UTR, Withdrawals, Bet Results &amp; Account Alerts + direct custom Admin replies.
+          </p>
+          <div id="profileSupportLatestPreview" style="display:none; background:var(--card-highlight); border:1px solid var(--border); border-radius:8px; padding:8px 10px; font-size:11px; color:var(--text); margin-top:2px;"></div>
+          <div style="display:flex; gap:8px; align-items:center; margin-top:4px;">
+            <button class="btn-primary" style="flex:1; background:linear-gradient(135deg, var(--cyan), #00B0FF); color:#06101B;" onclick="openSupportModal()" id="profileOpenSupportBtn">
+              💬 Open 24/7 Support Chat
+            </button>
+            <span id="profileSupportUnreadBadge" class="badge-pill" style="display:none; background:var(--red); color:#FFF; font-weight:900; padding:5px 9px;">0 NEW</span>
+          </div>
+        </div>
+
         <!-- Log Out Action Card -->
         <div class="card">
           <button class="btn-secondary" style="color:var(--red); border-color:rgba(255, 23, 68, 0.4);" onclick="openLogoutModal()">
@@ -2500,6 +2578,47 @@
         <button class="btn-primary" style="flex:1;" onclick="downloadAccountStatement()">📥 Download CSV Statement</button>
         <button class="btn-secondary" onclick="closeModal('statementModal')">Close</button>
       </div>
+    </div>
+  </div>
+
+  <!-- 24/7 Live Support Chat Modal -->
+  <div class="modal-overlay" id="supportChatModal">
+    <div class="modal-content" style="max-width:460px; max-height:88vh; gap:10px; padding:16px;">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <div class="modal-title" style="color:var(--cyan);">💬 24/7 Live Support</div>
+          <span id="supportModalTicketBadge" class="badge-pill badge-green" style="font-size:9px;">OPEN</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <button class="btn-secondary" style="padding:4px 8px; font-size:10px;" onclick="fetchUserSupportThread(true, false)" title="Refresh Support Chat">🔄</button>
+          <button class="btn-close" onclick="closeSupportModal()">✕</button>
+        </div>
+      </div>
+
+      <!-- Live Situation Diagnostic Strip -->
+      <div id="supportSituationBox" style="background:rgba(0,229,255,0.08); border:1px solid rgba(0,229,255,0.28); border-radius:10px; padding:9px 11px; font-size:11px; line-height:1.45; color:var(--text);">
+        Loading live account &amp; payment status...
+      </div>
+
+      <!-- Quick Situation Topics -->
+      <div style="display:flex; gap:6px; overflow-x:auto; padding-bottom:2px;">
+        <button class="support-topic-pill" onclick="triggerQuickSupportTopic('DEPOSIT', 'Please check my deposit / UTR payment status')">💳 Deposit / UTR</button>
+        <button class="support-topic-pill" onclick="triggerQuickSupportTopic('WITHDRAWAL', 'Please check my withdrawal / refund status')">🏦 Withdrawal / Refund</button>
+        <button class="support-topic-pill" onclick="triggerQuickSupportTopic('BET', 'Explain my recent bet / result / 3% platform fee')">🎲 Bet / Fee</button>
+        <button class="support-topic-pill" onclick="triggerQuickSupportTopic('ACCOUNT', 'Check my account verification and status')">🛡️ Account Status</button>
+      </div>
+
+      <!-- Scrollable Transcript -->
+      <div id="supportMessagesList" style="flex:1; min-height:220px; max-height:42vh; overflow-y:auto; display:flex; flex-direction:column; gap:8px; background:#090E1A; border:1px solid var(--border); border-radius:12px; padding:10px;">
+        <div style="text-align:center; color:var(--text-muted); font-size:11px; padding:24px 8px;">Connecting to 24/7 Support Desk...</div>
+      </div>
+
+      <!-- Composer -->
+      <form onsubmit="event.preventDefault(); sendUserSupportMessage();" style="display:flex; gap:8px; align-items:center;">
+        <input id="supportMessageInput" type="text" placeholder="Type your issue (Deposit, Withdrawal, Bet, Account)..." autocomplete="off"
+          style="flex:1; background:var(--card-highlight); border:1px solid var(--border); border-radius:10px; padding:10px 12px; color:#FFF; font-size:12px; outline:none;" />
+        <button id="supportSendBtn" type="submit" class="btn-primary" style="padding:10px 14px; font-size:12px; white-space:nowrap;">Send</button>
+      </form>
     </div>
   </div>
 
@@ -3354,6 +3473,15 @@
             }
             if (evType === 'withdrawal_rejected' && targetUid === currentUserId) {
               showToast('❌ Withdrawal rejected & refunded: ' + (reasonText || 'Check bank details'));
+            }
+            if (currentUserId && currentUserId !== 'Guest' &&
+                ['support_reply', 'support_updated', 'support_message', 'balance_adjusted', 'user_status_changed', 'deposit_approved', 'deposit_rejected', 'withdrawal_approved', 'withdrawal_rejected'].includes(evType)) {
+              if (!targetUid || targetUid === currentUserId) {
+                fetchUserSupportThread(userSupportState.isOpen, false);
+                if (evType === 'support_reply' && targetUid === currentUserId && !userSupportState.isOpen) {
+                  showToast('💬 Admin replied to your 24/7 Support chat!');
+                }
+              }
             }
           } catch (err) {
             syncAdminStateRealtime(true);
@@ -5686,6 +5814,7 @@
       affiliateTeam = [];
       affiliateSummary = { referralCode: '', lifetimeCommission: 0, todayCommission: 0, networkTurnover: 0, teamCount: 0 };
       lastKnownBetStatuses = {};
+      resetUserSupportState();
       renderBetSlips();
       renderActiveBets();
       renderWalletLedger();
@@ -5790,6 +5919,7 @@
       syncUserTransactions();
       syncUserAffiliates();
       syncAdminStateRealtime(true);
+      fetchUserSupportThread(false, false);
     }
 
     async function submitLoginUser() {
@@ -5950,6 +6080,7 @@
       walletLedger = [];
       affiliateTeam = [];
       affiliateSummary = { referralCode: '', lifetimeCommission: 0, todayCommission: 0, networkTurnover: 0, teamCount: 0 };
+      resetUserSupportState();
       renderBetSlips();
       renderWalletLedger();
       renderAffiliateTeam();
@@ -5958,6 +6089,256 @@
       setTimeout(() => {
         openAuthModal(window.lockedReferralCode ? 1 : 0);
       }, 120);
+    }
+
+    // ==========================================
+    // 24/7 LIVE SUPPORT SYSTEM (WEB & SYNCED)
+    // ==========================================
+    const userSupportState = {
+      ticket: null,
+      messages: [],
+      situation: null,
+      unreadUser: 0,
+      isOpen: false,
+      isSending: false
+    };
+
+    function escapeSupportHtml(val) {
+      return String(val == null ? '' : val)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function resetUserSupportState() {
+      userSupportState.ticket = null;
+      userSupportState.messages = [];
+      userSupportState.situation = null;
+      userSupportState.unreadUser = 0;
+      userSupportState.isOpen = false;
+      userSupportState.isSending = false;
+      closeModal('supportChatModal');
+      updateProfileSupportCard();
+    }
+
+    function closeSupportModal() {
+      userSupportState.isOpen = false;
+      closeModal('supportChatModal');
+    }
+
+    async function fetchUserSupportThread(markRead = false, initWelcome = false) {
+      if (!hasBackendConnection() || !currentUserId || currentUserId === 'Guest') {
+        updateProfileSupportCard();
+        return;
+      }
+      try {
+        const url = apiUrl(`/api/support/thread?userId=${encodeURIComponent(currentUserId)}&markRead=${markRead ? '1' : '0'}&init=${initWelcome ? '1' : '0'}&t=${Date.now()}`);
+        const res = await fetch(url, { credentials: 'include', cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data || !data.success) return;
+        userSupportState.ticket = data.ticket || null;
+        userSupportState.messages = Array.isArray(data.messages) ? data.messages : [];
+        userSupportState.situation = data.situation || null;
+        userSupportState.unreadUser = Number(data.unreadUser || (data.ticket && data.ticket.unreadUser) || 0);
+        updateProfileSupportCard();
+        if (userSupportState.isOpen) {
+          renderSupportChat();
+        }
+      } catch (e) {}
+    }
+
+    function updateProfileSupportCard() {
+      const badge = document.getElementById('profileSupportUnreadBadge');
+      const statusBadge = document.getElementById('profileSupportStatusBadge');
+      const summaryEl = document.getElementById('profileSupportSituationSummary');
+      const previewEl = document.getElementById('profileSupportLatestPreview');
+      const sit = userSupportState.situation;
+      const tkt = userSupportState.ticket;
+
+      if (statusBadge) {
+        if (sit && sit.accountStatus === 'BLOCKED') {
+          statusBadge.innerText = 'ACCOUNT PRIORITY';
+          statusBadge.style.background = 'rgba(255,23,68,0.22)';
+          statusBadge.style.color = 'var(--red)';
+        } else if (tkt && tkt.status === 'RESOLVED') {
+          statusBadge.innerText = 'RESOLVED';
+          statusBadge.style.background = 'rgba(0,230,118,0.18)';
+          statusBadge.style.color = 'var(--green)';
+        } else {
+          statusBadge.innerText = 'ONLINE 24/7';
+          statusBadge.style.background = 'rgba(0,230,118,0.18)';
+          statusBadge.style.color = 'var(--green)';
+        }
+      }
+
+      if (badge) {
+        const unread = Number(userSupportState.unreadUser || 0);
+        if (unread > 0) {
+          badge.style.display = 'inline-block';
+          badge.innerText = `${unread} NEW`;
+        } else {
+          badge.style.display = 'none';
+        }
+      }
+
+      if (summaryEl) {
+        if (sit) {
+          const highlights = [];
+          highlights.push(`Account: ${sit.accountStatus || 'ACTIVE'}`);
+          if (sit.pendingDeposit) highlights.push(`Pending Deposit ₹${Number(sit.pendingDeposit.amount || 0).toLocaleString('en-IN')}`);
+          else if (sit.failedDeposit) highlights.push(`Rejected Deposit ${sit.failedDeposit.id}`);
+          if (sit.pendingWithdrawal) highlights.push(`Pending Withdrawal ₹${Number(sit.pendingWithdrawal.amount || 0).toLocaleString('en-IN')}`);
+          else if (sit.failedWithdrawal) highlights.push(`Refunded Withdrawal ${sit.failedWithdrawal.id}`);
+          highlights.push(`UPI: ${sit.upiId || 'Live'}`);
+          summaryEl.innerText = `Live Account Telemetry • ${highlights.join(' • ')}`;
+        } else {
+          summaryEl.innerText = 'Instant situation-aware auto-help for Deposits, UTR, Withdrawals, Bet Results & Account Alerts + direct custom Admin replies.';
+        }
+      }
+
+      if (previewEl) {
+        const msgs = userSupportState.messages || [];
+        if (msgs.length > 0) {
+          const last = msgs[msgs.length - 1];
+          const who = last.senderType === 'ADMIN' ? '👑 Admin' : (last.senderType === 'AUTO_BOT' ? '🤖 24/7 Bot' : 'You');
+          previewEl.style.display = 'block';
+          previewEl.innerHTML = `<strong style="color:var(--cyan);">${escapeSupportHtml(who)}:</strong> ${escapeSupportHtml(String(last.message || '').slice(0, 120))}${String(last.message || '').length > 120 ? '…' : ''}`;
+        } else {
+          previewEl.style.display = 'none';
+        }
+      }
+    }
+
+    function openSupportModal() {
+      if (!currentUserId || currentUserId === 'Guest') {
+        showToast('Please login first to access 24/7 Support.');
+        openAuthModal(0);
+        return;
+      }
+      userSupportState.isOpen = true;
+      document.getElementById('supportChatModal').classList.add('active');
+      renderSupportChat();
+      fetchUserSupportThread(true, true);
+    }
+
+    function renderSupportChat() {
+      const tkt = userSupportState.ticket;
+      const sit = userSupportState.situation;
+      const badgeEl = document.getElementById('supportModalTicketBadge');
+      const sitEl = document.getElementById('supportSituationBox');
+      const listEl = document.getElementById('supportMessagesList');
+
+      if (badgeEl) {
+        const st = tkt ? String(tkt.status || 'OPEN').toUpperCase() : 'ONLINE';
+        badgeEl.innerText = st;
+        badgeEl.style.background = st === 'RESOLVED' ? 'rgba(0,230,118,0.18)' : 'rgba(0,229,255,0.18)';
+        badgeEl.style.color = st === 'RESOLVED' ? 'var(--green)' : 'var(--cyan)';
+      }
+
+      if (sitEl) {
+        if (!sit) {
+          sitEl.innerHTML = '🤖 Connected to 24/7 Situation-Aware Support Desk. Send a question or tap a topic below.';
+        } else {
+          const lines = [];
+          const acctColor = sit.accountStatus === 'BLOCKED' ? 'var(--red)' : 'var(--green)';
+          lines.push(`<div><strong>Account:</strong> <span style="color:${acctColor}; font-weight:800;">${escapeSupportHtml(sit.accountStatus)}</span> • <strong>Wallet:</strong> <span style="color:var(--gold); font-weight:800;">₹${Number(sit.balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>`);
+          if (sit.pendingDeposit) {
+            lines.push(`<div style="color:var(--amber);">⏳ Pending Deposit ${escapeSupportHtml(sit.pendingDeposit.id)} • ₹${Number(sit.pendingDeposit.amount || 0).toLocaleString('en-IN')} (UTR: ${escapeSupportHtml(sit.pendingDeposit.utr)})</div>`);
+          } else if (sit.failedDeposit) {
+            lines.push(`<div style="color:var(--red);">❌ Rejected Deposit ${escapeSupportHtml(sit.failedDeposit.id)}: ${escapeSupportHtml(sit.failedDeposit.reason || 'Verification failed')}</div>`);
+          }
+          if (sit.pendingWithdrawal) {
+            lines.push(`<div style="color:var(--amber);">⏳ Pending Withdrawal ${escapeSupportHtml(sit.pendingWithdrawal.id)} • ₹${Number(sit.pendingWithdrawal.amount || 0).toLocaleString('en-IN')}</div>`);
+          } else if (sit.failedWithdrawal) {
+            lines.push(`<div style="color:var(--cyan);">↩️ Refunded Withdrawal ${escapeSupportHtml(sit.failedWithdrawal.id)}: ${escapeSupportHtml(sit.failedWithdrawal.reason || 'Refunded to wallet')}</div>`);
+          }
+          lines.push(`<div style="color:var(--text-muted); font-size:10px;">Active Gateway UPI: ${escapeSupportHtml(sit.upiId || '')} (${escapeSupportHtml(sit.bankName || '')})</div>`);
+          sitEl.innerHTML = lines.join('');
+        }
+      }
+
+      if (listEl) {
+        const msgs = userSupportState.messages || [];
+        if (msgs.length === 0) {
+          listEl.innerHTML = '<div style="text-align:center; color:var(--text-muted); font-size:11px; padding:24px 8px;">Tap a quick topic or send a message for instant situation-aware help &amp; Admin reply.</div>';
+        } else {
+          listEl.innerHTML = msgs.map(m => {
+            const st = String(m.senderType || 'AUTO_BOT').toUpperCase();
+            const rowCls = st === 'USER' ? 'user' : (st === 'ADMIN' ? 'admin' : 'auto');
+            const badge = st === 'ADMIN'
+              ? '<span style="background:rgba(0,230,118,0.22); color:var(--green); padding:1px 5px; border-radius:4px; font-weight:800;">ADMIN</span>'
+              : (st === 'AUTO_BOT' ? '<span style="background:rgba(0,229,255,0.2); color:var(--cyan); padding:1px 5px; border-radius:4px; font-weight:800;">24/7 AUTO</span>' : '');
+            const timeLabel = m.createdAtMs ? new Date(m.createdAtMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (m.createdAt || '');
+            return `
+              <div class="support-msg-row ${rowCls}">
+                <div class="support-msg-meta">${badge}<span>${escapeSupportHtml(m.senderName || st)}</span><span>• ${escapeSupportHtml(timeLabel)}</span></div>
+                <div class="support-msg-bubble">${escapeSupportHtml(m.message || '')}</div>
+              </div>
+            `;
+          }).join('');
+          listEl.scrollTop = listEl.scrollHeight;
+        }
+      }
+    }
+
+    function triggerQuickSupportTopic(category, promptText) {
+      const inp = document.getElementById('supportMessageInput');
+      if (inp) inp.value = promptText;
+      sendUserSupportMessage(promptText, category);
+    }
+
+    async function sendUserSupportMessage(customMsg = null, category = 'GENERAL') {
+      if (!currentUserId || currentUserId === 'Guest') {
+        showToast('Please login first to send a support message.');
+        return;
+      }
+      if (userSupportState.isSending) return;
+      const inp = document.getElementById('supportMessageInput');
+      const text = String(customMsg != null ? customMsg : (inp ? inp.value : '')).trim();
+      if (!text) {
+        showToast('Please type a support message.');
+        return;
+      }
+      if (!hasBackendConnection()) {
+        showToast('⚠️ Backend server required for 24/7 Support.');
+        return;
+      }
+
+      userSupportState.isSending = true;
+      const btn = document.getElementById('supportSendBtn');
+      if (btn) { btn.disabled = true; btn.innerText = '...'; }
+      try {
+        const res = await fetch(apiUrl('/api/support/message'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            userId: currentUserId,
+            message: text,
+            category: category
+          })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          showToast('⚠️ ' + ((data && data.error) || 'Failed to send support message'));
+          return;
+        }
+        if (inp) inp.value = '';
+        userSupportState.ticket = data.ticket || userSupportState.ticket;
+        userSupportState.messages = Array.isArray(data.messages) ? data.messages : userSupportState.messages;
+        userSupportState.situation = data.situation || userSupportState.situation;
+        userSupportState.unreadUser = 0;
+        updateProfileSupportCard();
+        renderSupportChat();
+      } catch (e) {
+        showToast('⚠️ Network error sending support message.');
+      } finally {
+        userSupportState.isSending = false;
+        if (btn) { btn.disabled = false; btn.innerText = 'Send'; }
+      }
     }
 
     // INITIALIZATION
@@ -5987,6 +6368,7 @@
         if (currentUserId && currentUserId !== 'Guest') {
           syncUserTransactions();
           syncUserAffiliates();
+          fetchUserSupportThread(userSupportState.isOpen, false);
         }
       }, 4000);
       startEngineLoop();

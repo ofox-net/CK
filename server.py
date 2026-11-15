@@ -357,6 +357,43 @@ def init_database():
             )
         """)
 
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS support_tickets (
+                ticket_id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                user_name TEXT,
+                status TEXT NOT NULL DEFAULT 'OPEN',
+                category TEXT DEFAULT 'GENERAL',
+                last_message TEXT DEFAULT '',
+                last_sender TEXT DEFAULT 'AUTO_BOT',
+                unread_admin INTEGER NOT NULL DEFAULT 0,
+                unread_user INTEGER NOT NULL DEFAULT 0,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at_ms INTEGER NOT NULL DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_support_tickets_user ON support_tickets (user_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_support_tickets_updated ON support_tickets (updated_at_ms DESC)")
+
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS support_messages (
+                id TEXT PRIMARY KEY,
+                ticket_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                sender_type TEXT NOT NULL,
+                sender_name TEXT NOT NULL,
+                category TEXT DEFAULT 'GENERAL',
+                message TEXT NOT NULL,
+                is_auto INTEGER NOT NULL DEFAULT 0,
+                situation_tag TEXT DEFAULT '',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at_ms INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_support_msgs_ticket ON support_messages (ticket_id, created_at_ms ASC)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_support_msgs_user ON support_messages (user_id, created_at_ms ASC)")
+
         # Seed default users if empty
         c.execute("SELECT COUNT(*) FROM users")
         if c.fetchone()[0] == 0:
@@ -394,6 +431,10 @@ def init_database():
             c.execute("INSERT OR REPLACE INTO app_state (key, value) VALUES ('state_version', '1')")
 
         conn.commit()
+        try:
+            c.execute("PRAGMA wal_checkpoint(PASSIVE)")
+        except Exception:
+            pass
         conn.close()
 
 def get_ist_now():
@@ -486,6 +527,24 @@ def generate_provably_fair_outcome(market_code, period):
         "seed": seed_str
     }
 
+def normalize_bet_target_num(btype, target):
+    t = str(target or "").upper().strip()
+    if t.startswith("NUM "):
+        t = t[4:].strip()
+    elif t.startswith("NUM_"):
+        t = t[4:].strip()
+    elif t.startswith("NUMBER "):
+        t = t[7:].strip()
+    elif t.startswith("#"):
+        t = t[1:].strip()
+    if len(t) == 1 and t.isdigit():
+        return int(t)
+    if str(btype or "").upper().strip() == "NUMBER":
+        digits = "".join(ch for ch in t if ch.isdigit())
+        if len(digits) == 1:
+            return int(digits)
+    return None
+
 def settle_round_in_db(conn, market_code, round_id, period, winning_number, draw_mode="AUTO_RANDOM", declared_by="SYSTEM"):
     c = conn.cursor()
 
@@ -531,13 +590,13 @@ def settle_round_in_db(conn, market_code, round_id, period, winning_number, draw
         amt = float(b["amount"] or 0.0)
         net_amt_db = float(b["net_amount"] or 0.0) if "net_amount" in b.keys() else 0.0
         stake_base = net_amt_db if net_amt_db > 0.0 else round(amt - round(amt * 0.03, 2), 2)
-        btype = b["prediction_type"]
-        target = b["prediction_target"].upper()
+        btype = str(b["prediction_type"] or "").upper().strip()
+        target = str(b["prediction_target"] or "").upper().strip()
         mult = b["multiplier"]
 
         won = False
         actual_mult = mult
-        if btype == "BIG_SMALL":
+        if btype in ("BIG_SMALL", "SIZE"):
             if target == "BIG" and is_big:
                 won = True
             elif target == "SMALL" and not is_big:
@@ -561,7 +620,8 @@ def settle_round_in_db(conn, market_code, round_id, period, winning_number, draw
                     won = True
                     actual_mult = 1.5
         elif btype == "NUMBER":
-            if target == str(winning_number):
+            t_num = normalize_bet_target_num(btype, target)
+            if t_num is not None and t_num == winning_number:
                 won = True
                 actual_mult = 9.0
 
@@ -1205,6 +1265,559 @@ def build_user_affiliates(conn, uid):
         "recentCommissions": recent_commissions
     }
 
+def compute_live_wagers_and_market_stats(conn, now_ms=None):
+    if now_ms is None:
+        now_ms = int(time.time() * 1000)
+    c = conn.cursor()
+    live_wagers = {}
+    market_stats = {}
+
+    for m_code in MARKET_KEYS:
+        auth = calculate_authoritative_round(m_code, now_ms)
+        cur_period = auth["period"]
+
+        pool = {
+            "market": m_code,
+            "period": cur_period,
+            "green": 0.0,
+            "greenBets": 0,
+            "violet": 0.0,
+            "violetBets": 0,
+            "red": 0.0,
+            "redBets": 0,
+            "big": 0.0,
+            "bigBets": 0,
+            "small": 0.0,
+            "smallBets": 0,
+            "numbers": [0.0] * 10,
+            "numberBets": [0] * 10,
+            "totalPool": 0.0,
+            "totalBets": 0,
+        }
+
+        c.execute("""
+            SELECT prediction_type, prediction_target, amount
+            FROM bets
+            WHERE market = ? AND period = ? AND UPPER(status) IN ('PENDING', 'LOCKED')
+        """, (m_code, cur_period))
+        for row in c.fetchall():
+            amt = round(float(row["amount"] or 0.0), 2)
+            btype = str(row["prediction_type"] or "").upper().strip()
+            target = str(row["prediction_target"] or "").upper().strip()
+
+            t_num = normalize_bet_target_num(btype, target)
+            if t_num is not None and 0 <= t_num <= 9:
+                pool["numbers"][t_num] = round(pool["numbers"][t_num] + amt, 2)
+                pool["numberBets"][t_num] += 1
+            elif target == "GREEN":
+                pool["green"] = round(pool["green"] + amt, 2)
+                pool["greenBets"] += 1
+            elif target == "VIOLET":
+                pool["violet"] = round(pool["violet"] + amt, 2)
+                pool["violetBets"] += 1
+            elif target == "RED":
+                pool["red"] = round(pool["red"] + amt, 2)
+                pool["redBets"] += 1
+            elif target == "BIG":
+                pool["big"] = round(pool["big"] + amt, 2)
+                pool["bigBets"] += 1
+            elif target == "SMALL":
+                pool["small"] = round(pool["small"] + amt, 2)
+                pool["smallBets"] += 1
+
+            pool["totalPool"] = round(pool["totalPool"] + amt, 2)
+            pool["totalBets"] += 1
+
+        live_wagers[m_code] = pool
+
+        c.execute("""
+            SELECT
+                COALESCE(SUM(CASE WHEN UPPER(status) NOT IN ('CANCELLED', 'REFUNDED') THEN amount ELSE 0.0 END), 0.0) AS turnover,
+                COALESCE(SUM(CASE WHEN UPPER(status) IN ('WON', 'LOST') THEN amount ELSE 0.0 END), 0.0) AS settled_turnover,
+                COALESCE(SUM(CASE WHEN UPPER(status) = 'WON' THEN win_amount ELSE 0.0 END), 0.0) AS payout,
+                COUNT(CASE WHEN UPPER(status) NOT IN ('CANCELLED', 'REFUNDED') THEN 1 END) AS total_bets
+            FROM bets
+            WHERE market = ?
+        """, (m_code,))
+        srow = c.fetchone()
+        turnover = round(float(srow["turnover"] or 0.0), 2) if srow else 0.0
+        settled_turnover = round(float(srow["settled_turnover"] or 0.0), 2) if srow else 0.0
+        payout = round(float(srow["payout"] or 0.0), 2) if srow else 0.0
+        total_bets_mkt = int(srow["total_bets"] or 0) if srow else 0
+        net_house = round(settled_turnover - payout, 2)
+        margin_pct = round((net_house / settled_turnover) * 100.0, 1) if settled_turnover > 0.0 else 0.0
+
+        market_stats[m_code] = {
+            "market": m_code,
+            "period": cur_period,
+            "activePool": pool["totalPool"],
+            "activeBetsCount": pool["totalBets"],
+            "turnover": turnover,
+            "settledTurnover": settled_turnover,
+            "payout": payout,
+            "netHouseProfit": net_house,
+            "marginPct": margin_pct,
+            "totalBetsCount": total_bets_mkt,
+        }
+
+    return live_wagers, market_stats
+
+def compute_admin_kpis(conn):
+    c = conn.cursor()
+    c.execute("""
+        SELECT
+            COALESCE(SUM(CASE WHEN UPPER(status) IN ('SUCCESS', 'APPROVED') THEN amount ELSE 0.0 END), 0.0) AS total_dep,
+            COUNT(CASE WHEN UPPER(status) IN ('SUCCESS', 'APPROVED') THEN 1 END) AS approved_dep_count,
+            COUNT(CASE WHEN UPPER(status) IN ('IN PROCESS', 'PENDING') THEN 1 END) AS pending_dep_count
+        FROM deposits
+    """)
+    drow = c.fetchone()
+    total_dep = round(float(drow["total_dep"] or 0.0), 2) if drow else 0.0
+    approved_dep_count = int(drow["approved_dep_count"] or 0) if drow else 0
+    pending_dep_count = int(drow["pending_dep_count"] or 0) if drow else 0
+
+    c.execute("""
+        SELECT
+            COALESCE(SUM(CASE WHEN UPPER(status) IN ('SUCCESS', 'APPROVED') THEN amount ELSE 0.0 END), 0.0) AS total_wd,
+            COUNT(CASE WHEN UPPER(status) IN ('IN PROCESS', 'PENDING') THEN 1 END) AS pending_wd_count
+        FROM withdrawals
+    """)
+    wrow = c.fetchone()
+    total_wd = round(float(wrow["total_wd"] or 0.0), 2) if wrow else 0.0
+    pending_wd_count = int(wrow["pending_wd_count"] or 0) if wrow else 0
+
+    c.execute("""
+        SELECT
+            COALESCE(SUM(CASE WHEN UPPER(status) NOT IN ('CANCELLED', 'REFUNDED') THEN amount ELSE 0.0 END), 0.0) AS turnover,
+            COUNT(CASE WHEN UPPER(status) NOT IN ('CANCELLED', 'REFUNDED') THEN 1 END) AS bets_count
+        FROM bets
+    """)
+    brow = c.fetchone()
+    turnover = round(float(brow["turnover"] or 0.0), 2) if brow else 0.0
+    bets_count = int(brow["bets_count"] or 0) if brow else 0
+
+    c.execute("""
+        SELECT
+            COUNT(*) AS total_users,
+            COUNT(CASE WHEN UPPER(status) = 'ACTIVE' THEN 1 END) AS active_users,
+            COUNT(CASE WHEN UPPER(status) = 'BLOCKED' THEN 1 END) AS blocked_users
+        FROM users
+    """)
+    urow = c.fetchone()
+    total_users = int(urow["total_users"] or 0) if urow else 0
+    active_users = int(urow["active_users"] or 0) if urow else 0
+    blocked_users = int(urow["blocked_users"] or 0) if urow else 0
+
+    net_profit = round(total_dep - total_wd, 2)
+    margin_pct = round((net_profit / total_dep) * 100.0, 2) if total_dep > 0.0 else 0.0
+
+    return {
+        "totalDeposits": total_dep,
+        "approvedDepositsCount": approved_dep_count,
+        "pendingDepositsCount": pending_dep_count,
+        "totalWithdrawals": total_wd,
+        "pendingWithdrawalsCount": pending_wd_count,
+        "netProfit": net_profit,
+        "marginPct": margin_pct,
+        "totalTurnover": turnover,
+        "totalBetsCount": bets_count,
+        "totalUsers": total_users,
+        "activeUsers": active_users,
+        "blockedUsers": blocked_users,
+    }
+
+def build_user_support_situation(conn, uid):
+    c = conn.cursor()
+    c.execute("SELECT * FROM users WHERE id = ?", (uid,))
+    u = c.fetchone()
+    if not u:
+        return None
+
+    c.execute("SELECT value FROM app_state WHERE key = 'bank_config'")
+    bcfg_row = c.fetchone()
+    bank_cfg = json.loads(bcfg_row[0]) if bcfg_row else DEFAULT_BANK_CONFIG
+
+    c.execute("SELECT * FROM deposits WHERE user_id = ? ORDER BY created_at_ms DESC, created_at DESC LIMIT 5", (uid,))
+    deps = c.fetchall()
+    latest_dep = deps[0] if deps else None
+    pending_dep = next((d for d in deps if str(d["status"] or "").upper() in ("IN PROCESS", "PENDING")), None)
+    failed_dep = next((d for d in deps if str(d["status"] or "").upper() in ("FAIL", "REJECTED")), None)
+
+    c.execute("SELECT * FROM withdrawals WHERE user_id = ? ORDER BY created_at_ms DESC, created_at DESC LIMIT 5", (uid,))
+    wds = c.fetchall()
+    latest_wd = wds[0] if wds else None
+    pending_wd = next((w for w in wds if str(w["status"] or "").upper() in ("IN PROCESS", "PENDING")), None)
+    failed_wd = next((w for w in wds if str(w["status"] or "").upper() in ("FAIL", "REJECTED")), None)
+
+    c.execute("""
+        SELECT * FROM transactions
+        WHERE user_id = ? AND UPPER(type) = 'ADJUSTMENT'
+        ORDER BY created_at_ms DESC, created_at DESC LIMIT 1
+    """, (uid,))
+    last_adj = c.fetchone()
+
+    c.execute("SELECT * FROM bets WHERE user_id = ? ORDER BY created_at_ms DESC LIMIT 1", (uid,))
+    latest_bet = c.fetchone()
+    c.execute("SELECT COUNT(*) FROM bets WHERE user_id = ? AND UPPER(status) IN ('PENDING', 'LOCKED')", (uid,))
+    active_bets_count = int(c.fetchone()[0] or 0)
+
+    def dep_to_dict(d):
+        if not d:
+            return None
+        return {
+            "id": d["id"],
+            "amount": round(float(d["amount"] or 0.0), 2),
+            "method": d["method"] or "UPI",
+            "utr": d["utr"] or "",
+            "status": str(d["status"] or "IN PROCESS").upper(),
+            "reason": d["reason"] or "",
+            "time": d["time_str"] or d["created_at"] or "",
+        }
+
+    def wd_to_dict(w):
+        if not w:
+            return None
+        return {
+            "id": w["id"],
+            "amount": round(float(w["amount"] or 0.0), 2),
+            "destination": w["destination"] or "",
+            "status": str(w["status"] or "IN PROCESS").upper(),
+            "reason": w["reason"] or "",
+            "time": w["time_str"] or w["created_at"] or "",
+        }
+
+    return {
+        "userId": u["id"],
+        "userName": u["name"],
+        "phone": u["phone"] or "",
+        "accountStatus": str(u["status"] or "ACTIVE").upper(),
+        "balance": round(float(u["balance"] or 0.0), 2),
+        "totalDeposit": round(float(u["total_deposit"] or 0.0), 2),
+        "totalWithdraw": round(float(u["total_withdraw"] or 0.0), 2),
+        "activeBetsCount": active_bets_count,
+        "latestDeposit": dep_to_dict(latest_dep),
+        "pendingDeposit": dep_to_dict(pending_dep),
+        "failedDeposit": dep_to_dict(failed_dep),
+        "latestWithdrawal": wd_to_dict(latest_wd),
+        "pendingWithdrawal": wd_to_dict(pending_wd),
+        "failedWithdrawal": wd_to_dict(failed_wd),
+        "lastAdjustment": {
+            "txId": last_adj["tx_id"],
+            "amount": round(float(last_adj["amount"] or 0.0), 2),
+            "ref": last_adj["ref"] or "",
+            "time": last_adj["created_at"] or "",
+        } if last_adj else None,
+        "latestBet": {
+            "id": latest_bet["bet_id"],
+            "market": latest_bet["market"],
+            "period": latest_bet["period"],
+            "target": latest_bet["prediction_target"],
+            "amount": round(float(latest_bet["amount"] or 0.0), 2),
+            "status": str(latest_bet["status"] or "PENDING").upper(),
+            "result": latest_bet["result_text"] or "",
+        } if latest_bet else None,
+        "upiId": bank_cfg.get("upiId", DEFAULT_BANK_CONFIG["upiId"]),
+        "bankName": bank_cfg.get("bankName", DEFAULT_BANK_CONFIG["bankName"]),
+        "minDeposit": bank_cfg.get("minDeposit", 100),
+        "maxDeposit": bank_cfg.get("maxDeposit", 100000),
+    }
+
+def generate_support_auto_reply(conn, uid, user_message="", category="GENERAL"):
+    sit = build_user_support_situation(conn, uid)
+    if not sit:
+        return "SUPPORT_GENERAL", "Welcome to Colour King 24/7 Support! Please log in or share your User ID so an Admin agent can assist you."
+
+    msg_l = str(user_message or "").lower()
+    cat_u = str(category or "GENERAL").upper().strip()
+    bal_str = f"₹{sit['balance']:,.2f}"
+    parts = []
+    tag = "SUPPORT_GENERAL"
+
+    # 1. Blocked account priority
+    if sit["accountStatus"] == "BLOCKED" or cat_u == "ACCOUNT" or any(k in msg_l for k in ("block", "ban", "suspend", "unblock", "locked", "account")):
+        if sit["accountStatus"] == "BLOCKED":
+            tag = "ACCOUNT_BLOCKED"
+            parts.append(f"⚠️ Account Alert ({sit['userId']}): Your account is currently RESTRICTED / BLOCKED by Admin security review.")
+            parts.append("Your ticket has been marked high-priority for Admin review. An Admin will inspect your compliance check and reply here shortly.")
+        else:
+            tag = "ACCOUNT_ACTIVE"
+            parts.append(f"✅ Account Status: {sit['userName']} ({sit['userId']}) is ACTIVE & verified. Current Wallet Balance: {bal_str}.")
+
+    # 2. Deposit / UTR situation
+    asks_deposit = cat_u == "DEPOSIT" or any(k in msg_l for k in ("deposit", "utr", "add money", "recharge", "upi", "payment", "credit"))
+    if asks_deposit or (not msg_l and (sit["failedDeposit"] or sit["pendingDeposit"])):
+        dep = sit["failedDeposit"] if (sit["failedDeposit"] and (not sit["pendingDeposit"] or "reject" in msg_l or "fail" in msg_l)) else (sit["pendingDeposit"] or sit["latestDeposit"])
+        if sit["pendingDeposit"] and asks_deposit:
+            pd = sit["pendingDeposit"]
+            tag = "DEPOSIT_IN_PROCESS"
+            parts.append(f"⏳ Pending Deposit Detected: {pd['id']} for ₹{pd['amount']:,.2f} (UTR: {pd['utr']} via {pd['method']}) is currently IN PROCESS in the Admin verification queue.")
+            parts.append(f"Current Admin UPI Gateway: {sit['upiId']} ({sit['bankName']}). Once Admin verifies the UTR, balance credits automatically.")
+        elif sit["failedDeposit"] and (asks_deposit or not parts):
+            fd = sit["failedDeposit"]
+            tag = "DEPOSIT_REJECTED"
+            parts.append(f"❌ Recent Deposit {fd['id']} (₹{fd['amount']:,.2f}, UTR: {fd['utr']}) was REJECTED (FAIL). Reason: {fd['reason'] or 'Verification failed'}.")
+            parts.append(f"Please double-check your payment UTR and pay to current UPI ID: {sit['upiId']} ({sit['bankName']}), or wait for Admin custom assistance below.")
+        elif dep and asks_deposit:
+            tag = "DEPOSIT_STATUS"
+            parts.append(f"💳 Latest Deposit {dep['id']}: ₹{dep['amount']:,.2f} (UTR: {dep['utr']}) • Status: {dep['status']}. Active UPI ID: {sit['upiId']} (Min ₹{sit['minDeposit']}).")
+        elif asks_deposit:
+            tag = "DEPOSIT_GUIDE"
+            parts.append(f"💳 Deposit Help: Send ₹{sit['minDeposit']}–₹{sit['maxDeposit']} via UPI ({sit['upiId']}) or {sit['bankName']}, then submit your 12-digit UTR in Wallet → Deposit.")
+
+    # 3. Withdrawal / Payout situation
+    asks_wd = cat_u == "WITHDRAWAL" or any(k in msg_l for k in ("withdraw", "payout", "bank", "cashout", "refund", "imps"))
+    if asks_wd or (not msg_l and not parts and (sit["failedWithdrawal"] or sit["pendingWithdrawal"])):
+        wd = sit["pendingWithdrawal"] or sit["failedWithdrawal"] or sit["latestWithdrawal"]
+        if sit["pendingWithdrawal"] and asks_wd:
+            pw = sit["pendingWithdrawal"]
+            tag = "WITHDRAWAL_IN_PROCESS"
+            parts.append(f"⏳ Pending Withdrawal {pw['id']}: ₹{pw['amount']:,.2f} is IN PROCESS in the Admin escrow payout queue ({pw['destination']}).")
+        elif sit["failedWithdrawal"] and (asks_wd or not parts):
+            fw = sit["failedWithdrawal"]
+            tag = "WITHDRAWAL_REJECTED_REFUNDED"
+            parts.append(f"↩️ Withdrawal {fw['id']} (₹{fw['amount']:,.2f}) was REJECTED (FAIL). Reason: {fw['reason'] or 'Bank details mismatch'}. The full ₹{fw['amount']:,.2f} has been refunded to your wallet (Current Balance: {bal_str}).")
+        elif wd and asks_wd:
+            tag = "WITHDRAWAL_STATUS"
+            parts.append(f"🏦 Latest Withdrawal {wd['id']}: ₹{wd['amount']:,.2f} • Status: {wd['status']}. Current Wallet Balance: {bal_str}.")
+        elif asks_wd:
+            tag = "WITHDRAWAL_GUIDE"
+            parts.append(f"🏦 Withdrawal Help: Current Wallet Balance is {bal_str}. You can submit IMPS/UPI payouts from Wallet → Withdraw and track live Admin approval status.")
+
+    # 4. Bet / Draw / 3% Platform Fee
+    asks_bet = cat_u == "BET" or any(k in msg_l for k in ("bet", "win", "loss", "result", "draw", "period", "fee", "multiplier", "round"))
+    if asks_bet:
+        tag = "BET_STATUS"
+        if sit["latestBet"]:
+            lb = sit["latestBet"]
+            parts.append(f"🎲 Latest Bet {lb['id']}: {lb['market']} #{lb['period']} on {lb['target']} for ₹{lb['amount']:,.2f} • Status: {lb['status']} ({lb['result']}). Active open bets: {sit['activeBetsCount']}.")
+        parts.append("Note: Every wager carries a 3% platform fee (97% active stake × decided multiplier), locks in the final 30 seconds of each 3-minute round, and settles via Provably Fair SHA-256 / Admin draw.")
+
+    # 5. Fallback / General Greeting with live snapshot
+    if not parts:
+        tag = "SUPPORT_OVERVIEW"
+        summary_bits = [f"Account: {sit['accountStatus']}", f"Balance: {bal_str}"]
+        if sit["pendingDeposit"]:
+            summary_bits.append(f"Pending Deposit ₹{sit['pendingDeposit']['amount']:,.2f}")
+        elif sit["failedDeposit"]:
+            summary_bits.append(f"Rejected Deposit {sit['failedDeposit']['id']}")
+        if sit["pendingWithdrawal"]:
+            summary_bits.append(f"Pending Withdrawal ₹{sit['pendingWithdrawal']['amount']:,.2f}")
+        elif sit["failedWithdrawal"]:
+            summary_bits.append(f"Rejected Withdrawal {sit['failedWithdrawal']['id']} (Refunded)")
+        if sit["lastAdjustment"]:
+            adj = sit["lastAdjustment"]
+            summary_bits.append(f"Last Admin Adj: {adj['amount']:+.2f} ({adj['ref']})")
+        parts.append(f"🤖 24/7 Live Auto-Support for {sit['userName']} ({sit['userId']}) — " + " • ".join(summary_bits) + ".")
+        parts.append("Your message has been delivered to Admin Support. An Admin agent can send a custom reply directly in this chat anytime.")
+    elif cat_u != "WELCOME":
+        parts.append("💬 Delivered to 24/7 Admin Desk — an Admin can also send a custom reply right here.")
+
+    return tag, "\n".join(parts)
+
+def ensure_support_ticket_and_add_message(conn, uid, user_name, sender_type, sender_name, message, category="GENERAL", is_auto=0, situation_tag="", now_ms=None):
+    if now_ms is None:
+        now_ms = int(time.time() * 1000)
+    c = conn.cursor()
+    c.execute("SELECT * FROM support_tickets WHERE user_id = ? ORDER BY updated_at_ms DESC LIMIT 1", (uid,))
+    trow = c.fetchone()
+    if trow:
+        ticket_id = trow["ticket_id"]
+    else:
+        ticket_id = f"TKT-{uid}"
+        c.execute("""
+            INSERT INTO support_tickets (ticket_id, user_id, user_name, status, category, last_message, last_sender, unread_admin, unread_user, updated_at_ms)
+            VALUES (?, ?, ?, 'OPEN', ?, ?, ?, 0, 0, ?)
+        """, (ticket_id, uid, user_name, category, message[:200], sender_type, now_ms))
+
+    msg_id = f"MSG-{int(now_ms)}-{random.randint(1000, 9999)}"
+    c.execute("""
+        INSERT INTO support_messages (id, ticket_id, user_id, sender_type, sender_name, category, message, is_auto, situation_tag, created_at_ms)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (msg_id, ticket_id, uid, sender_type, sender_name, category, message, 1 if is_auto else 0, situation_tag, now_ms))
+
+    if sender_type == "USER":
+        c.execute("""
+            UPDATE support_tickets
+            SET user_name = ?, status = 'OPEN', category = ?, last_message = ?, last_sender = ?,
+                unread_admin = unread_admin + 1, updated_at = CURRENT_TIMESTAMP, updated_at_ms = ?
+            WHERE ticket_id = ?
+        """, (user_name, category, message[:200], sender_type, now_ms, ticket_id))
+    elif sender_type == "ADMIN":
+        c.execute("""
+            UPDATE support_tickets
+            SET user_name = ?, status = 'OPEN', last_message = ?, last_sender = 'ADMIN',
+                unread_admin = 0, unread_user = unread_user + 1, updated_at = CURRENT_TIMESTAMP, updated_at_ms = ?
+            WHERE ticket_id = ?
+        """, (user_name, message[:200], now_ms, ticket_id))
+    else:  # AUTO_BOT
+        c.execute("""
+            UPDATE support_tickets
+            SET user_name = ?, last_message = ?, last_sender = 'AUTO_BOT',
+                unread_user = unread_user + 1, updated_at = CURRENT_TIMESTAMP, updated_at_ms = ?
+            WHERE ticket_id = ?
+        """, (user_name, message[:200], now_ms, ticket_id))
+
+    return ticket_id, msg_id
+
+def record_admin_situation_support_message(conn, uid, situation_tag, message, category="ADMIN_ALERT", create_if_missing=True, now_ms=None):
+    if not uid:
+        return None
+    c = conn.cursor()
+    c.execute("SELECT id, name FROM users WHERE id = ?", (uid,))
+    u = c.fetchone()
+    if not u:
+        return None
+    if not create_if_missing:
+        c.execute("SELECT 1 FROM support_tickets WHERE user_id = ? LIMIT 1", (uid,))
+        if not c.fetchone():
+            return None
+    tid, _ = ensure_support_ticket_and_add_message(
+        conn,
+        uid=uid,
+        user_name=u["name"],
+        sender_type="AUTO_BOT",
+        sender_name="Colour King 24/7 Support Bot",
+        message=message,
+        category=category,
+        is_auto=1,
+        situation_tag=situation_tag,
+        now_ms=now_ms,
+    )
+    return tid
+
+def fetch_support_thread_payload(conn, uid, mark_read_for=None, auto_welcome=False):
+    c = conn.cursor()
+    c.execute("SELECT * FROM users WHERE id = ?", (uid,))
+    u = c.fetchone()
+    if not u:
+        return None
+
+    c.execute("SELECT * FROM support_tickets WHERE user_id = ? ORDER BY updated_at_ms DESC LIMIT 1", (uid,))
+    trow = c.fetchone()
+    if not trow and auto_welcome:
+        tag, greeting = generate_support_auto_reply(conn, uid, "", category="WELCOME")
+        ensure_support_ticket_and_add_message(
+            conn,
+            uid=uid,
+            user_name=u["name"],
+            sender_type="AUTO_BOT",
+            sender_name="Colour King 24/7 Support Bot",
+            message=greeting,
+            category="WELCOME",
+            is_auto=1,
+            situation_tag=tag,
+        )
+        # Do not leave initial welcome counted as unread if user is opening it right now
+        if mark_read_for == "USER":
+            c.execute("UPDATE support_tickets SET unread_user = 0 WHERE user_id = ?", (uid,))
+        conn.commit()
+        c.execute("SELECT * FROM support_tickets WHERE user_id = ? ORDER BY updated_at_ms DESC LIMIT 1", (uid,))
+        trow = c.fetchone()
+    elif trow and mark_read_for == "USER" and int(trow["unread_user"] or 0) > 0:
+        c.execute("UPDATE support_tickets SET unread_user = 0 WHERE ticket_id = ?", (trow["ticket_id"],))
+        conn.commit()
+        c.execute("SELECT * FROM support_tickets WHERE ticket_id = ?", (trow["ticket_id"],))
+        trow = c.fetchone()
+
+    ticket_dict = None
+    messages = []
+    if trow:
+        ticket_dict = {
+            "ticketId": trow["ticket_id"],
+            "userId": trow["user_id"],
+            "userName": trow["user_name"] or u["name"],
+            "status": trow["status"] or "OPEN",
+            "category": trow["category"] or "GENERAL",
+            "lastMessage": trow["last_message"] or "",
+            "lastSender": trow["last_sender"] or "AUTO_BOT",
+            "unreadAdmin": int(trow["unread_admin"] or 0),
+            "unreadUser": int(trow["unread_user"] or 0),
+            "updatedAt": trow["updated_at"] or "",
+            "updatedAtMs": int(trow["updated_at_ms"] or 0),
+        }
+        c.execute("""
+            SELECT * FROM support_messages
+            WHERE ticket_id = ?
+            ORDER BY created_at_ms ASC, id ASC
+        """, (trow["ticket_id"],))
+        messages = [{
+            "id": m["id"],
+            "ticketId": m["ticket_id"],
+            "userId": m["user_id"],
+            "senderType": m["sender_type"],
+            "senderName": m["sender_name"],
+            "category": m["category"] or "GENERAL",
+            "message": m["message"],
+            "isAuto": bool(m["is_auto"]),
+            "situationTag": m["situation_tag"] or "",
+            "createdAt": m["created_at"] or "",
+            "createdAtMs": int(m["created_at_ms"] or 0),
+        } for m in c.fetchall()]
+
+    situation = build_user_support_situation(conn, uid)
+    return {
+        "success": True,
+        "ticket": ticket_dict,
+        "messages": messages,
+        "situation": situation,
+        "unreadUser": ticket_dict["unreadUser"] if ticket_dict else 0,
+    }
+
+def list_admin_support_tickets(conn):
+    c = conn.cursor()
+    c.execute("""
+        SELECT t.*, u.phone, u.balance, u.status AS user_status
+        FROM support_tickets t
+        LEFT JOIN users u ON u.id = t.user_id
+        ORDER BY (CASE WHEN UPPER(t.status) = 'OPEN' THEN 0 ELSE 1 END) ASC, t.unread_admin DESC, t.updated_at_ms DESC
+    """)
+    tickets = []
+    total_unread_admin = 0
+    for r in c.fetchall():
+        unread_a = int(r["unread_admin"] or 0)
+        total_unread_admin += unread_a
+        tid = r["ticket_id"]
+        uid = r["user_id"]
+        c.execute("""
+            SELECT * FROM support_messages
+            WHERE ticket_id = ?
+            ORDER BY created_at_ms ASC, id ASC
+            LIMIT 200
+        """, (tid,))
+        msgs = [{
+            "id": m["id"],
+            "ticketId": m["ticket_id"],
+            "userId": m["user_id"],
+            "senderType": m["sender_type"],
+            "senderName": m["sender_name"],
+            "category": m["category"] or "GENERAL",
+            "message": m["message"],
+            "isAuto": bool(m["is_auto"]),
+            "situationTag": m["situation_tag"] or "",
+            "createdAt": m["created_at"] or "",
+            "createdAtMs": int(m["created_at_ms"] or 0),
+        } for m in c.fetchall()]
+        sit = build_user_support_situation(conn, uid)
+        tickets.append({
+            "ticketId": tid,
+            "userId": uid,
+            "userName": r["user_name"] or (sit["userName"] if sit else uid),
+            "phone": r["phone"] or "",
+            "balance": round(float(r["balance"] or 0.0), 2) if r["balance"] is not None else 0.0,
+            "userStatus": str(r["user_status"] or "ACTIVE").upper(),
+            "status": str(r["status"] or "OPEN").upper(),
+            "category": r["category"] or "GENERAL",
+            "lastMessage": r["last_message"] or "",
+            "lastSender": r["last_sender"] or "AUTO_BOT",
+            "unreadAdmin": unread_a,
+            "unreadUser": int(r["unread_user"] or 0),
+            "updatedAt": r["updated_at"] or "",
+            "updatedAtMs": int(r["updated_at_ms"] or 0),
+            "situation": sit,
+            "messages": msgs,
+        })
+    return tickets, total_unread_admin
+
 class AppHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=DIRECTORY, **kwargs)
@@ -1754,16 +2367,17 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 c = conn.cursor()
                 state_ver = get_state_version(conn)
 
-                c.execute("SELECT * FROM users")
+                c.execute("SELECT * FROM users ORDER BY COALESCE(created_at, '') ASC, id ASC")
                 all_user_rows = c.fetchall()
                 default_pw_sha = hashlib.sha256(b"password123").hexdigest()
                 users_list = {}
+                users_array = []
                 for r in all_user_rows:
                     r_plain = (r["password_plain"] if "password_plain" in r.keys() and r["password_plain"] else "")
                     r_hash = (r["password_hash"] if "password_hash" in r.keys() and r["password_hash"] else "")
                     if not r_plain and r_hash == default_pw_sha:
                         r_plain = "password123"
-                    users_list[r["id"]] = {
+                    u_obj = {
                         "id": r["id"],
                         "name": r["name"],
                         "phone": r["phone"] or "",
@@ -1775,17 +2389,20 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                         "betsCount": int(r["bets_count"] or 0),
                         "status": r["status"] or "ACTIVE",
                         "referralCode": (r["referral_code"] if "referral_code" in r.keys() and r["referral_code"] else r["id"][-6:].upper()),
-                        "referredBy": (r["referred_by"] if "referred_by" in r.keys() else None)
+                        "referredBy": (r["referred_by"] if "referred_by" in r.keys() else None),
+                        "createdAt": r["created_at"] or ""
                     }
+                    users_list[r["id"]] = u_obj
+                    users_array.append(u_obj)
 
-                c.execute("SELECT * FROM deposits ORDER BY created_at_ms DESC, created_at DESC LIMIT 100")
+                c.execute("SELECT * FROM deposits ORDER BY created_at_ms DESC, created_at DESC LIMIT 500")
                 deposits_list = [{
                     "id": r["id"], "userId": r["user_id"], "userName": r["user_name"],
                     "amount": round(float(r["amount"] or 0.0), 2), "method": r["method"], "utr": r["utr"],
                     "time": r["time_str"] or r["created_at"] or "", "status": r["status"], "reason": r["reason"]
                 } for r in c.fetchall()]
 
-                c.execute("SELECT * FROM withdrawals ORDER BY created_at_ms DESC, created_at DESC LIMIT 100")
+                c.execute("SELECT * FROM withdrawals ORDER BY created_at_ms DESC, created_at DESC LIMIT 500")
                 withdrawals_list = [{
                     "id": r["id"], "userId": r["user_id"], "userName": r["user_name"],
                     "amount": round(float(r["amount"] or 0.0), 2), "upiId": r["upi_id"], "bankName": r["bank_name"],
@@ -1855,7 +2472,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                             "time": rr["declared_at"] or ""
                         })
 
-                c.execute("SELECT * FROM bets ORDER BY created_at_ms DESC LIMIT 200")
+                c.execute("SELECT * FROM bets ORDER BY created_at_ms DESC LIMIT 1000")
                 bets_list = [{
                     "id": r["bet_id"],
                     "market": r["market"],
@@ -1916,6 +2533,10 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                         "members": members_arr
                     })
 
+                live_wagers, market_stats = compute_live_wagers_and_market_stats(conn, now_ms)
+                admin_kpis = compute_admin_kpis(conn)
+                support_tickets, support_unread_admin = list_admin_support_tickets(conn)
+
                 conn.close()
 
             self._send_json({
@@ -1924,6 +2545,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 "bank_config": bank_cfg,
                 "platform_settings": platform_cfg,
                 "users": users_list,
+                "users_list": users_array,
                 "deposits": deposits_list,
                 "withdrawals": withdrawals_list,
                 "draw_overrides": draw_overrides,
@@ -1931,7 +2553,62 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 "declared_results_list": declared_results_list,
                 "bets": bets_list,
                 "audit_logs": audit_logs,
-                "affiliates": affiliates_list
+                "affiliates": affiliates_list,
+                "live_wagers": live_wagers,
+                "market_stats": market_stats,
+                "admin_kpis": admin_kpis,
+                "support_tickets": support_tickets,
+                "support_unread_admin": support_unread_admin,
+            })
+            return
+
+        if path == "/api/admin/live-wagers":
+            now_ms = int(time.time() * 1000)
+            with db_lock:
+                conn = get_db()
+                live_wagers, market_stats = compute_live_wagers_and_market_stats(conn, now_ms)
+                admin_kpis = compute_admin_kpis(conn)
+                conn.close()
+            self._send_json({
+                "success": True,
+                "server_time_ms": now_ms,
+                "live_wagers": live_wagers,
+                "market_stats": market_stats,
+                "admin_kpis": admin_kpis,
+            })
+            return
+
+        if path == "/api/support/thread":
+            uid = (qs.get("userId", [None])[0] or self._get_cookie_uid() or "").strip()
+            if not uid or uid == "Guest":
+                self._send_json({ "success": False, "error": "Missing userId" }, status=400)
+                return
+            mark_read = qs.get("markRead", ["0"])[0] in ("1", "true", "yes")
+            auto_welcome = qs.get("init", ["0"])[0] in ("1", "true", "yes")
+            with db_lock:
+                conn = get_db()
+                payload_out = fetch_support_thread_payload(
+                    conn,
+                    uid,
+                    mark_read_for="USER" if mark_read else None,
+                    auto_welcome=auto_welcome,
+                )
+                conn.close()
+            if not payload_out:
+                self._send_json({ "success": False, "error": "User not found" }, status=404)
+                return
+            self._send_json(payload_out)
+            return
+
+        if path == "/api/admin/support/tickets":
+            with db_lock:
+                conn = get_db()
+                tickets, unread_total = list_admin_support_tickets(conn)
+                conn.close()
+            self._send_json({
+                "success": True,
+                "tickets": tickets,
+                "unreadTotal": unread_total,
             })
             return
 
@@ -1950,11 +2627,11 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
-                c.execute("SELECT * FROM deposits ORDER BY created_at DESC LIMIT 50")
+                c.execute("SELECT * FROM deposits ORDER BY created_at_ms DESC, created_at DESC LIMIT 200")
                 deps = [{
                     "id": r["id"], "userId": r["user_id"], "userName": r["user_name"],
                     "amount": r["amount"], "method": r["method"], "utr": r["utr"],
-                    "time": r["time_str"], "status": r["status"], "reason": r["reason"]
+                    "time": r["time_str"] or r["created_at"] or "", "status": r["status"], "reason": r["reason"]
                 } for r in c.fetchall()]
                 conn.close()
             self._send_json(deps)
@@ -1964,12 +2641,12 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
-                c.execute("SELECT * FROM withdrawals ORDER BY created_at DESC LIMIT 50")
+                c.execute("SELECT * FROM withdrawals ORDER BY created_at_ms DESC, created_at DESC LIMIT 200")
                 wds = [{
                     "id": r["id"], "userId": r["user_id"], "userName": r["user_name"],
                     "amount": r["amount"], "upiId": r["upi_id"], "bankName": r["bank_name"],
                     "accNo": r["acc_no"], "ifsc": r["ifsc"], "bankingName": r["banking_name"],
-                    "destination": r["destination"], "time": r["time_str"], "status": r["status"],
+                    "destination": r["destination"], "time": r["time_str"] or r["created_at"] or "", "status": r["status"],
                     "reason": r["reason"]
                 } for r in c.fetchall()]
                 conn.close()
@@ -1998,7 +2675,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
-                c.execute("SELECT * FROM admin_audit_logs ORDER BY created_at DESC LIMIT 100")
+                c.execute("SELECT * FROM admin_audit_logs ORDER BY id DESC LIMIT 100")
                 logs = [{
                     "id": r["id"], "actor": r["actor"], "action": r["action"],
                     "entity": r["entity"], "desc": r["desc"], "time": r["created_at"]
@@ -2554,6 +3231,16 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     VALUES ('ColourPrince', 'USER_BALANCE_ADJUST', ?, ?)
                 """, (uid, f"{adj_type} ₹{amount:.2f} -> New balance ₹{new_bal:.2f} ({reason})"))
 
+                record_admin_situation_support_message(
+                    conn,
+                    uid,
+                    situation_tag=f"ADMIN_ADJUST_{adj_type}",
+                    message=f"⚖️ Admin Wallet Adjustment ({adj_type}): ₹{amount:,.2f} applied to your wallet. Reason: {reason}. Updated Balance: ₹{new_bal:,.2f}.",
+                    category="WALLET",
+                    create_if_missing=False,
+                    now_ms=now_ms,
+                )
+
                 _, sse_ev = bump_state_version(conn, "balance_adjusted", {"userId": uid, "balance": new_bal, "type": adj_type, "amount": amount})
                 conn.commit()
                 conn.close()
@@ -2573,6 +3260,22 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     INSERT INTO admin_audit_logs (actor, action, entity, desc)
                     VALUES ('ColourPrince', 'USER_STATUS_CHANGE', ?, ?)
                 """, (uid, f"Status updated to {new_status}"))
+
+                status_msg = (
+                    "⚠️ Account Notice: Your account has been BLOCKED by Admin security review. Reply here if you need review assistance."
+                    if new_status == "BLOCKED"
+                    else "✅ Account Notice: Your account has been REACTIVATED (ACTIVE) by Admin. Full betting and wallet access restored!"
+                )
+                record_admin_situation_support_message(
+                    conn,
+                    uid,
+                    situation_tag=f"ACCOUNT_{new_status}",
+                    message=status_msg,
+                    category="ACCOUNT",
+                    create_if_missing=(new_status == "BLOCKED"),
+                    now_ms=now_ms,
+                )
+
                 _, sse_ev = bump_state_version(conn, "user_status_changed", {"userId": uid, "status": new_status})
                 conn.commit()
                 conn.close()
@@ -2638,6 +3341,15 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                         INSERT INTO admin_audit_logs (actor, action, entity, desc)
                         VALUES ('ColourPrince', 'DEPOSIT_APPROVE', ?, ?)
                     """, (dep_id, f"Approved ₹{amt:.2f} for {uid}"))
+                    record_admin_situation_support_message(
+                        conn,
+                        uid,
+                        situation_tag="DEPOSIT_APPROVED",
+                        message=f"✅ Deposit {dep_id} Approved (SUCCESS)! ₹{amt:,.2f} (UTR: {d['utr']}) has been credited. Updated Wallet Balance: ₹{curr_bal:,.2f}.",
+                        category="DEPOSIT",
+                        create_if_missing=False,
+                        now_ms=now_ms,
+                    )
                 _, sse_ev = bump_state_version(conn, "deposit_approved", {"depositId": dep_id, "userId": affected_uid})
                 conn.commit()
                 conn.close()
@@ -2651,7 +3363,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
-                c.execute("SELECT user_id FROM deposits WHERE id = ?", (dep_id,))
+                c.execute("SELECT user_id, amount, utr FROM deposits WHERE id = ?", (dep_id,))
                 d = c.fetchone()
                 affected_uid = d["user_id"] if d else None
                 c.execute("UPDATE deposits SET status = 'FAIL', reason = ? WHERE id = ?", (reason, dep_id))
@@ -2659,6 +3371,16 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     INSERT INTO admin_audit_logs (actor, action, entity, desc)
                     VALUES ('ColourPrince', 'DEPOSIT_REJECT', ?, ?)
                 """, (dep_id, f"Rejected: {reason}"))
+                if affected_uid and d:
+                    record_admin_situation_support_message(
+                        conn,
+                        affected_uid,
+                        situation_tag="DEPOSIT_REJECTED",
+                        message=f"❌ Deposit {dep_id} (₹{float(d['amount'] or 0.0):,.2f}, UTR: {d['utr']}) marked FAIL by Admin. Reason: {reason}. Reply here if you have a valid payment screenshot or UTR.",
+                        category="DEPOSIT",
+                        create_if_missing=True,
+                        now_ms=now_ms,
+                    )
                 _, sse_ev = bump_state_version(conn, "deposit_rejected", {"depositId": dep_id, "userId": affected_uid, "reason": reason})
                 conn.commit()
                 conn.close()
@@ -2730,6 +3452,15 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                         INSERT INTO admin_audit_logs (actor, action, entity, desc)
                         VALUES ('ColourPrince', 'WITHDRAWAL_APPROVE', ?, ?)
                     """, (wd_id, f"Approved ₹{w['amount']:.2f} for {w['user_id']}"))
+                    record_admin_situation_support_message(
+                        conn,
+                        affected_uid,
+                        situation_tag="WITHDRAWAL_APPROVED",
+                        message=f"💸 Withdrawal {wd_id} Approved (SUCCESS)! ₹{float(w['amount'] or 0.0):,.2f} payout has been dispatched to {w['destination'] or 'your linked bank/UPI'}.",
+                        category="WITHDRAWAL",
+                        create_if_missing=False,
+                        now_ms=now_ms,
+                    )
                 _, sse_ev = bump_state_version(conn, "withdrawal_approved", {"withdrawalId": wd_id, "userId": affected_uid})
                 conn.commit()
                 conn.close()
@@ -2764,6 +3495,15 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                         INSERT INTO admin_audit_logs (actor, action, entity, desc)
                         VALUES ('ColourPrince', 'WITHDRAWAL_REJECT', ?, ?)
                     """, (wd_id, f"Rejected: {reason} (Refunded ₹{w['amount']:.2f})"))
+                    record_admin_situation_support_message(
+                        conn,
+                        affected_uid,
+                        situation_tag="WITHDRAWAL_REJECTED",
+                        message=f"↩️ Withdrawal {wd_id} (₹{float(w['amount'] or 0.0):,.2f}) was REJECTED (FAIL). Reason: {reason}. Full amount refunded to your wallet (Balance: ₹{new_bal:,.2f}).",
+                        category="WITHDRAWAL",
+                        create_if_missing=True,
+                        now_ms=now_ms,
+                    )
                 _, sse_ev = bump_state_version(conn, "withdrawal_rejected", {"withdrawalId": wd_id, "userId": affected_uid, "reason": reason})
                 conn.commit()
                 conn.close()
@@ -2834,6 +3574,164 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 conn.close()
             notify_sse_clients(sse_ev)
             self._send_json({ "success": True, "state_version": new_ver })
+            return
+
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        # 6. 24/7 LIVE SUPPORT SYSTEM (AUTO-REACTIVE & ADMIN CUSTOM)
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        if path == "/api/support/message":
+            uid = str(payload.get("userId") or self._get_cookie_uid() or "").strip()
+            message = str(payload.get("message") or "").strip()
+            category = str(payload.get("category") or "GENERAL").upper().strip()
+            if not uid or uid == "Guest":
+                self._send_json({ "success": False, "error": "Please login to send a support message" }, status=401)
+                return
+            if not message:
+                self._send_json({ "success": False, "error": "Support message cannot be empty" }, status=400)
+                return
+
+            with db_lock:
+                conn = get_db()
+                c = conn.cursor()
+                c.execute("SELECT id, name FROM users WHERE id = ?", (uid,))
+                u = c.fetchone()
+                if not u:
+                    conn.close()
+                    self._send_json({ "success": False, "error": "User not found" }, status=404)
+                    return
+
+                tid, _ = ensure_support_ticket_and_add_message(
+                    conn,
+                    uid=uid,
+                    user_name=u["name"],
+                    sender_type="USER",
+                    sender_name=u["name"],
+                    message=message,
+                    category=category,
+                    is_auto=0,
+                    situation_tag="USER_MESSAGE",
+                    now_ms=now_ms,
+                )
+                auto_tag, auto_reply = generate_support_auto_reply(conn, uid, message, category)
+                ensure_support_ticket_and_add_message(
+                    conn,
+                    uid=uid,
+                    user_name=u["name"],
+                    sender_type="AUTO_BOT",
+                    sender_name="Colour King 24/7 Support Bot",
+                    message=auto_reply,
+                    category=category,
+                    is_auto=1,
+                    situation_tag=auto_tag,
+                    now_ms=now_ms + 1,
+                )
+                # User is actively viewing chat when sending; clear unread_user right away
+                c.execute("UPDATE support_tickets SET unread_user = 0 WHERE ticket_id = ?", (tid,))
+                _, sse_ev = bump_state_version(conn, "support_message", {"userId": uid, "ticketId": tid, "category": category})
+                thread_data = fetch_support_thread_payload(conn, uid, mark_read_for="USER", auto_welcome=False)
+                conn.commit()
+                conn.close()
+            notify_sse_clients(sse_ev)
+            self._send_json({
+                **(thread_data or {"success": True}),
+                "autoReply": auto_reply,
+                "situationTag": auto_tag,
+            })
+            return
+
+        if path == "/api/support/mark-read":
+            uid = str(payload.get("userId") or self._get_cookie_uid() or "").strip()
+            role = str(payload.get("role") or "USER").upper().strip()
+            ticket_id = str(payload.get("ticketId") or "").strip()
+            with db_lock:
+                conn = get_db()
+                c = conn.cursor()
+                if role == "ADMIN" and ticket_id:
+                    c.execute("UPDATE support_tickets SET unread_admin = 0 WHERE ticket_id = ?", (ticket_id,))
+                elif uid:
+                    c.execute("UPDATE support_tickets SET unread_user = 0 WHERE user_id = ?", (uid,))
+                _, sse_ev = bump_state_version(conn, "support_read", {"userId": uid, "ticketId": ticket_id, "role": role})
+                conn.commit()
+                conn.close()
+            notify_sse_clients(sse_ev)
+            self._send_json({ "success": True })
+            return
+
+        if path == "/api/admin/support/reply":
+            ticket_id = str(payload.get("ticketId") or "").strip()
+            uid = str(payload.get("userId") or "").strip()
+            message = str(payload.get("message") or "").strip()
+            admin_name = str(payload.get("adminName") or "ColourPrince").strip() or "ColourPrince"
+            if not message:
+                self._send_json({ "success": False, "error": "Reply message cannot be empty" }, status=400)
+                return
+
+            with db_lock:
+                conn = get_db()
+                c = conn.cursor()
+                if not uid and ticket_id:
+                    c.execute("SELECT user_id FROM support_tickets WHERE ticket_id = ?", (ticket_id,))
+                    tr = c.fetchone()
+                    if tr:
+                        uid = tr["user_id"]
+                c.execute("SELECT id, name FROM users WHERE id = ?", (uid,))
+                u = c.fetchone()
+                if not u:
+                    conn.close()
+                    self._send_json({ "success": False, "error": "Target user not found" }, status=404)
+                    return
+
+                tid, msg_id = ensure_support_ticket_and_add_message(
+                    conn,
+                    uid=uid,
+                    user_name=u["name"],
+                    sender_type="ADMIN",
+                    sender_name=f"Admin ({admin_name})",
+                    message=message,
+                    category="ADMIN_CUSTOM",
+                    is_auto=0,
+                    situation_tag="ADMIN_CUSTOM_REPLY",
+                    now_ms=now_ms,
+                )
+                c.execute("""
+                    INSERT INTO admin_audit_logs (actor, action, entity, desc)
+                    VALUES (?, 'ADMIN_SUPPORT_REPLY', ?, ?)
+                """, (admin_name, f"{uid} ({tid})", message[:180]))
+                _, sse_ev = bump_state_version(conn, "support_reply", {"userId": uid, "ticketId": tid, "message": message})
+                thread_data = fetch_support_thread_payload(conn, uid, mark_read_for=None, auto_welcome=False)
+                conn.commit()
+                conn.close()
+            notify_sse_clients(sse_ev)
+            self._send_json({ "success": True, "ticketId": tid, "messageId": msg_id, "thread": thread_data })
+            return
+
+        if path == "/api/admin/support/status":
+            ticket_id = str(payload.get("ticketId") or "").strip()
+            new_status = str(payload.get("status") or "RESOLVED").upper().strip()
+            if new_status not in ("OPEN", "RESOLVED"):
+                new_status = "RESOLVED"
+            with db_lock:
+                conn = get_db()
+                c = conn.cursor()
+                c.execute("SELECT user_id FROM support_tickets WHERE ticket_id = ?", (ticket_id,))
+                trow = c.fetchone()
+                uid = trow["user_id"] if trow else ""
+                c.execute("UPDATE support_tickets SET status = ?, unread_admin = 0, updated_at = CURRENT_TIMESTAMP, updated_at_ms = ? WHERE ticket_id = ?", (new_status, now_ms, ticket_id))
+                if uid:
+                    record_admin_situation_support_message(
+                        conn,
+                        uid,
+                        situation_tag=f"TICKET_{new_status}",
+                        message=f"📌 Support Ticket {ticket_id} marked {new_status} by Admin." + (" Send a new message anytime to reopen 24/7 support." if new_status == "RESOLVED" else ""),
+                        category="SYSTEM",
+                        create_if_missing=False,
+                        now_ms=now_ms + 1,
+                    )
+                _, sse_ev = bump_state_version(conn, "support_updated", {"ticketId": ticket_id, "userId": uid, "status": new_status})
+                conn.commit()
+                conn.close()
+            notify_sse_clients(sse_ev)
+            self._send_json({ "success": True, "ticketId": ticket_id, "status": new_status })
             return
 
         self._send_json({ "error": "Endpoint not found" }, status=404)

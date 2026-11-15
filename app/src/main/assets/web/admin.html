@@ -456,13 +456,17 @@
       grid-template-columns: 1fr 1fr;
       gap: 20px;
     }
+    .support-split-grid {
+      grid-template-columns: 340px 1fr;
+      align-items: start;
+    }
     .grid-3 {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
       gap: 16px;
     }
     @media (max-width: 960px) {
-      .grid-2 { grid-template-columns: 1fr; }
+      .grid-2, .support-split-grid { grid-template-columns: 1fr; }
       aside { display: none; }
       .mobile-menu-btn { display: block !important; }
     }
@@ -705,6 +709,12 @@
         </button>
       </li>
       <li>
+        <button class="nav-btn" onclick="switchAdminTab('support')" id="nav-support">
+          <span class="nav-left"><span>💬</span> 24/7 Live Support</span>
+          <span class="nav-badge badge-warn" id="navSupportBadge">0 OPEN</span>
+        </button>
+      </li>
+      <li>
         <button class="nav-btn" onclick="switchAdminTab('audit')" id="nav-audit">
           <span class="nav-left"><span>📋</span> System Audit Trail</span>
         </button>
@@ -754,10 +764,10 @@
             <span class="kpi-title">All Users Total Deposit</span>
             <span class="kpi-icon">💰</span>
           </div>
-          <div class="kpi-value" id="kpiTotalDeposits" style="color:var(--green);">₹5,480,000.00</div>
+          <div class="kpi-value" id="kpiTotalDeposits" style="color:var(--green);">₹0.00</div>
           <div class="kpi-footer">
-            <span class="trend-up">▲ +18.4%</span>
-            <span>Total 148 approved requests</span>
+            <span class="trend-up" id="kpiDepositPendingNote">● 0 Pending</span>
+            <span id="kpiApprovedDepositsCount">0 approved requests</span>
           </div>
         </div>
 
@@ -766,9 +776,9 @@
             <span class="kpi-title">All Users Total Withdrawal</span>
             <span class="kpi-icon">🏦</span>
           </div>
-          <div class="kpi-value" id="kpiTotalWithdrawals" style="color:var(--gold);">₹2,610,000.00</div>
+          <div class="kpi-value" id="kpiTotalWithdrawals" style="color:var(--gold);">₹0.00</div>
           <div class="kpi-footer">
-            <span style="color:var(--amber);">● 2 Pending Queue</span>
+            <span style="color:var(--amber);" id="kpiPendingWithdrawals">● 0 Pending Queue</span>
             <span>Escrow vault protected</span>
           </div>
         </div>
@@ -778,9 +788,9 @@
             <span class="kpi-title">Net Platform House Profit</span>
             <span class="kpi-icon">📈</span>
           </div>
-          <div class="kpi-value" id="kpiTotalProfit" style="color:var(--gold);">+₹2,870,000.00</div>
+          <div class="kpi-value" id="kpiTotalProfit" style="color:var(--gold);">₹0.00</div>
           <div class="kpi-footer">
-            <span class="trend-up">▲ 52.37% Margin</span>
+            <span class="trend-up" id="kpiProfitMargin">0.00% Margin</span>
             <span>Deposits minus withdrawals</span>
           </div>
         </div>
@@ -790,10 +800,10 @@
             <span class="kpi-title">Total Bets Turnover</span>
             <span class="kpi-icon">🎲</span>
           </div>
-          <div class="kpi-value" id="kpiTotalTurnover" style="color:var(--cyan);">₹14,892,400.00</div>
+          <div class="kpi-value" id="kpiTotalTurnover" style="color:var(--cyan);">₹0.00</div>
           <div class="kpi-footer">
-            <span>Users: <strong id="kpiActiveUsers" style="color:#FFF;">1,420 Active</strong></span>
-            <span>• <span id="kpiBlockedUsers" style="color:var(--red);">18 Blocked</span></span>
+            <span>Users: <strong id="kpiActiveUsers" style="color:#FFF;">0 Active</strong></span>
+            <span>• <span id="kpiBlockedUsers" style="color:var(--red);">0 Blocked</span></span>
           </div>
         </div>
       </div>
@@ -806,7 +816,7 @@
         <div class="panel">
           <div class="panel-header">
             <div class="panel-header-left">
-              <span class="panel-title">🌐 4 Live Game Markets Status (30s Round / 3m Duration)</span>
+              <span class="panel-title">🌐 4 Live Game Markets Status (30s Lock / 3m Duration)</span>
             </div>
             <button class="btn btn-gold btn-sm" onclick="switchAdminTab('results')">Open Result Decider ➔</button>
           </div>
@@ -818,14 +828,14 @@
                 <h4 style="font-size:14px; color:#FF007F;">🌴 MIAMI ARENA</h4>
                 <span class="badge badge-approved" id="market-badge-MIAMI">BET OPEN</span>
               </div>
-              <p style="font-size:11px; color:var(--text-muted); margin-top:4px;">Period #<span id="market-period-MIAMI">202610311025</span></p>
+              <p style="font-size:11px; color:var(--text-muted); margin-top:4px;">Period #<span id="market-period-MIAMI">—</span></p>
               <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:10px;">
                 <span style="font-size:11px; color:var(--text-muted);">Countdown:</span>
-                <strong style="font-size:18px; color:#FFF;" id="market-timer-MIAMI">02:45</strong>
+                <strong style="font-size:18px; color:#FFF;" id="market-timer-MIAMI">03:00</strong>
               </div>
               <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--cyan); margin-top:6px;">
-                <span>Turnover: ₹3,410,000</span>
-                <span>Margin: +48.2%</span>
+                <span id="market-turnover-MIAMI">Turnover: ₹0.00</span>
+                <span id="market-margin-MIAMI">Active Pool: ₹0</span>
               </div>
             </div>
 
@@ -835,14 +845,14 @@
                 <h4 style="font-size:14px; color:#FFD700;">🎰 VEGAS HIGH ROLLER</h4>
                 <span class="badge badge-approved" id="market-badge-VEGAS">BET OPEN</span>
               </div>
-              <p style="font-size:11px; color:var(--text-muted); margin-top:4px;">Period #<span id="market-period-VEGAS">202610312025</span></p>
+              <p style="font-size:11px; color:var(--text-muted); margin-top:4px;">Period #<span id="market-period-VEGAS">—</span></p>
               <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:10px;">
                 <span style="font-size:11px; color:var(--text-muted);">Countdown:</span>
-                <strong style="font-size:18px; color:#FFF;" id="market-timer-VEGAS">02:20</strong>
+                <strong style="font-size:18px; color:#FFF;" id="market-timer-VEGAS">03:00</strong>
               </div>
               <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--cyan); margin-top:6px;">
-                <span>Turnover: ₹5,120,000</span>
-                <span>Margin: +51.6%</span>
+                <span id="market-turnover-VEGAS">Turnover: ₹0.00</span>
+                <span id="market-margin-VEGAS">Active Pool: ₹0</span>
               </div>
             </div>
 
@@ -852,14 +862,14 @@
                 <h4 style="font-size:14px; color:#BA68C8;">🗼 PARIS ROYALE</h4>
                 <span class="badge badge-approved" id="market-badge-PARIS">BET OPEN</span>
               </div>
-              <p style="font-size:11px; color:var(--text-muted); margin-top:4px;">Period #<span id="market-period-PARIS">202610313025</span></p>
+              <p style="font-size:11px; color:var(--text-muted); margin-top:4px;">Period #<span id="market-period-PARIS">—</span></p>
               <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:10px;">
                 <span style="font-size:11px; color:var(--text-muted);">Countdown:</span>
-                <strong style="font-size:18px; color:#FFF;" id="market-timer-PARIS">01:35</strong>
+                <strong style="font-size:18px; color:#FFF;" id="market-timer-PARIS">03:00</strong>
               </div>
               <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--cyan); margin-top:6px;">
-                <span>Turnover: ₹2,890,000</span>
-                <span>Margin: +49.1%</span>
+                <span id="market-turnover-PARIS">Turnover: ₹0.00</span>
+                <span id="market-margin-PARIS">Active Pool: ₹0</span>
               </div>
             </div>
 
@@ -869,14 +879,14 @@
                 <h4 style="font-size:14px; color:#00E5FF;">🏙️ DUBAI OASIS</h4>
                 <span class="badge badge-approved" id="market-badge-DUBAI">BET OPEN</span>
               </div>
-              <p style="font-size:11px; color:var(--text-muted); margin-top:4px;">Period #<span id="market-period-DUBAI">202610314025</span></p>
+              <p style="font-size:11px; color:var(--text-muted); margin-top:4px;">Period #<span id="market-period-DUBAI">—</span></p>
               <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:10px;">
                 <span style="font-size:11px; color:var(--text-muted);">Countdown:</span>
-                <strong style="font-size:18px; color:#FFF;" id="market-timer-DUBAI">02:50</strong>
+                <strong style="font-size:18px; color:#FFF;" id="market-timer-DUBAI">03:00</strong>
               </div>
               <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--cyan); margin-top:6px;">
-                <span>Turnover: ₹3,472,400</span>
-                <span>Margin: +53.4%</span>
+                <span id="market-turnover-DUBAI">Turnover: ₹0.00</span>
+                <span id="market-margin-DUBAI">Active Pool: ₹0</span>
               </div>
             </div>
           </div>
@@ -1047,11 +1057,11 @@
                   <h4 style="font-size:13px; font-weight:800; color:#FFD700; display:flex; align-items:center; gap:6px;">
                     <span>📊</span> Live Wager Breakdown (<span id="liveMarketNameLabel">MIAMI</span>)
                   </h4>
-                  <p style="font-size:11px; color:#8E9DB2;">Live total wager amounts placed across all betting positions</p>
+                  <p style="font-size:11px; color:#8E9DB2;">Real-time SQLite wagers placed for current round (<span id="liveTotalBetsCount">0 bets</span>)</p>
                 </div>
                 <div style="text-align:right;">
                   <span style="font-size:10px; color:#8E9DB2; text-transform:uppercase;">Active Round Pool</span>
-                  <div style="font-size:16px; font-weight:900; color:#00E5FF;" id="liveTotalPoolDisplay">₹189,500.00</div>
+                  <div style="font-size:16px; font-weight:900; color:#00E5FF;" id="liveTotalPoolDisplay">₹0.00</div>
                 </div>
               </div>
 
@@ -1059,32 +1069,32 @@
               <div style="display:grid; grid-template-columns:repeat(5, 1fr); gap:8px; margin-bottom:10px;">
                 <div style="background:rgba(0,230,118,0.1); border:1px solid #00E676; border-radius:8px; padding:8px 6px; text-align:center;">
                   <div style="font-size:10px; font-weight:800; color:#00E676;">🟢 GREEN 2X</div>
-                  <div style="font-size:13px; font-weight:900; color:#FFF; margin-top:2px;" id="liveBetGreenAmt">₹34,500</div>
-                  <div style="font-size:9px; color:#8E9DB2;" id="liveBetGreenCount">26 bets</div>
+                  <div style="font-size:13px; font-weight:900; color:#FFF; margin-top:2px;" id="liveBetGreenAmt">₹0</div>
+                  <div style="font-size:9px; color:#8E9DB2;" id="liveBetGreenCount">0 bets</div>
                 </div>
 
                 <div style="background:rgba(213,0,249,0.12); border:1px solid #D500F9; border-radius:8px; padding:8px 6px; text-align:center;">
-                  <div style="font-size:10px; font-weight:800; color:#D500F9;">🟣 VIOLET 3X</div>
-                  <div style="font-size:13px; font-weight:900; color:#FFF; margin-top:2px;" id="liveBetVioletAmt">₹16,200</div>
-                  <div style="font-size:9px; color:#8E9DB2;" id="liveBetVioletCount">12 bets</div>
+                  <div style="font-size:10px; font-weight:800; color:#D500F9;">🟣 VIOLET 4.5X</div>
+                  <div style="font-size:13px; font-weight:900; color:#FFF; margin-top:2px;" id="liveBetVioletAmt">₹0</div>
+                  <div style="font-size:9px; color:#8E9DB2;" id="liveBetVioletCount">0 bets</div>
                 </div>
 
                 <div style="background:rgba(255,23,68,0.1); border:1px solid #FF1744; border-radius:8px; padding:8px 6px; text-align:center;">
                   <div style="font-size:10px; font-weight:800; color:#FF1744;">🔴 RED 2X</div>
-                  <div style="font-size:13px; font-weight:900; color:#FFF; margin-top:2px;" id="liveBetRedAmt">₹42,800</div>
-                  <div style="font-size:9px; color:#8E9DB2;" id="liveBetRedCount">31 bets</div>
+                  <div style="font-size:13px; font-weight:900; color:#FFF; margin-top:2px;" id="liveBetRedAmt">₹0</div>
+                  <div style="font-size:9px; color:#8E9DB2;" id="liveBetRedCount">0 bets</div>
                 </div>
 
                 <div style="background:rgba(255,215,0,0.1); border:1px solid #FFD700; border-radius:8px; padding:8px 6px; text-align:center;">
                   <div style="font-size:10px; font-weight:800; color:#FFD700;">🔼 BIG 2X</div>
-                  <div style="font-size:13px; font-weight:900; color:#FFF; margin-top:2px;" id="liveBetBigAmt">₹48,200</div>
-                  <div style="font-size:9px; color:#8E9DB2;" id="liveBetBigCount">34 bets</div>
+                  <div style="font-size:13px; font-weight:900; color:#FFF; margin-top:2px;" id="liveBetBigAmt">₹0</div>
+                  <div style="font-size:9px; color:#8E9DB2;" id="liveBetBigCount">0 bets</div>
                 </div>
 
                 <div style="background:rgba(0,229,255,0.1); border:1px solid #00E5FF; border-radius:8px; padding:8px 6px; text-align:center;">
                   <div style="font-size:10px; font-weight:800; color:#00E5FF;">🔽 SMALL 2X</div>
-                  <div style="font-size:13px; font-weight:900; color:#FFF; margin-top:2px;" id="liveBetSmallAmt">₹47,800</div>
-                  <div style="font-size:9px; color:#8E9DB2;" id="liveBetSmallCount">33 bets</div>
+                  <div style="font-size:13px; font-weight:900; color:#FFF; margin-top:2px;" id="liveBetSmallAmt">₹0</div>
+                  <div style="font-size:9px; color:#8E9DB2;" id="liveBetSmallCount">0 bets</div>
                 </div>
               </div>
 
@@ -1130,7 +1140,7 @@
                   <h4 style="font-size:16px; font-weight:800; color:#FFF;" id="previewResultLabel">GREEN • BIG (7)</h4>
                 </div>
               </div>
-              <span class="badge badge-warn" id="previewPayoutRisk">House Projected Net: +₹14,500</span>
+              <span class="badge badge-approved" id="previewPayoutRisk">House Projected Net: ₹0</span>
             </div>
 
             <!-- Action Buttons -->
@@ -1190,11 +1200,11 @@
 
           <div class="filter-bar">
             <div class="filter-pills">
-              <button class="filter-pill active" onclick="filterUsers('ALL', this)">All (6)</button>
-              <button class="filter-pill" onclick="filterUsers('ACTIVE', this)">Active (5)</button>
-              <button class="filter-pill" onclick="filterUsers('BLOCKED', this)">Blocked (1)</button>
+              <button class="filter-pill active" onclick="filterUsers('ALL', this)" id="userFilterAllBtn">All (0)</button>
+              <button class="filter-pill" onclick="filterUsers('ACTIVE', this)" id="userFilterActiveBtn">Active (0)</button>
+              <button class="filter-pill" onclick="filterUsers('BLOCKED', this)" id="userFilterBlockedBtn">Blocked (0)</button>
             </div>
-            <input type="text" class="search-input" placeholder="Search by Username, Phone or ID..." id="searchUsersInput" oninput="renderUsersTable()" />
+            <input type="text" class="search-input" placeholder="Search by Username, Phone, Email or ID..." id="searchUsersInput" oninput="renderUsersTable()" />
           </div>
 
           <div class="table-responsive">
@@ -1239,20 +1249,20 @@
           <div class="grid-3" style="margin-bottom:8px;">
             <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px;">
               <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase;">Total Network Affiliates</div>
-              <div style="font-size:22px; font-weight:900; color:var(--gold); margin-top:4px;" id="affiliateTotalMembersCount">625 Members</div>
+              <div style="font-size:22px; font-weight:900; color:var(--gold); margin-top:4px;" id="affiliateTotalMembersCount">0 Members</div>
               <div style="font-size:11px; color:var(--cyan); margin-top:2px;">Across 6 Multi-tier Levels</div>
             </div>
 
             <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px;">
               <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase;">Total Refer-to-Earn Paid</div>
-              <div style="font-size:22px; font-weight:900; color:var(--green); margin-top:4px;" id="affiliateTotalCommissionsPaid">₹241,550.00</div>
+              <div style="font-size:22px; font-weight:900; color:var(--green); margin-top:4px;" id="affiliateTotalCommissionsPaid">₹0.00</div>
               <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Credited directly to user wallets</div>
             </div>
 
             <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px;">
               <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase;">Top Affiliate Promoter</div>
-              <div style="font-size:22px; font-weight:900; color:#FFF; margin-top:4px;">Priya_VIP</div>
-              <div style="font-size:11px; color:var(--gold); margin-top:2px;">310 Team Members • ₹128,900 Earned</div>
+              <div style="font-size:22px; font-weight:900; color:#FFF; margin-top:4px;" id="affiliateTopPromoterName">—</div>
+              <div style="font-size:11px; color:var(--gold); margin-top:2px;" id="affiliateTopPromoterMeta">0 Team Members • ₹0.00 Earned</div>
             </div>
           </div>
 
@@ -1480,6 +1490,71 @@
                 <!-- Dynamically populated -->
               </tbody>
             </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- TAB: 24/7 LIVE SUPPORT CONSOLE -->
+      <!-- ========================================== -->
+      <section class="tab-section" id="sec-support">
+        <div class="grid-2 support-split-grid">
+          <!-- Left: Ticket Queue -->
+          <div class="panel" style="padding:14px;">
+            <div class="panel-header" style="margin-bottom:6px;">
+              <div>
+                <h3 class="panel-title">💬 24/7 Support Tickets</h3>
+                <p class="panel-subtitle">Auto-bot & live user threads</p>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="refreshAdminSupportTickets()">↻ Refresh</button>
+            </div>
+            <div class="filter-bar" style="gap:6px; margin-bottom:8px;">
+              <div class="filter-pills">
+                <button class="filter-pill active" onclick="filterSupportTickets('ALL', this)">All</button>
+                <button class="filter-pill" onclick="filterSupportTickets('OPEN', this)">Open</button>
+                <button class="filter-pill" onclick="filterSupportTickets('RESOLVED', this)">Resolved</button>
+              </div>
+              <input type="text" class="search-input" id="searchSupportInput" placeholder="Search user, ID or phone..." style="width:100%;" oninput="renderSupportTicketList()" />
+            </div>
+            <div id="adminSupportTicketList" style="display:flex; flex-direction:column; gap:8px; max-height:540px; overflow-y:auto;">
+              <p style="font-size:12px; color:var(--text-muted); text-align:center; padding:20px;">No support tickets yet.</p>
+            </div>
+          </div>
+
+          <!-- Right: Active Conversation & Situation Inspector -->
+          <div class="panel" id="adminSupportThreadPanel">
+            <div class="panel-header" style="border-bottom:1px solid var(--border); padding-bottom:10px;">
+              <div>
+                <h3 class="panel-title" id="supportThreadHeaderTitle">Select a User Support Ticket</h3>
+                <p class="panel-subtitle" id="supportThreadHeaderMeta">Click any ticket on the left to inspect live user situation & send a custom Admin reply.</p>
+              </div>
+              <div style="display:flex; gap:6px;" id="supportTicketActionBtns"></div>
+            </div>
+
+            <!-- Live Situation Telemetry Banner -->
+            <div id="supportUserSituationCard" style="display:none; background:rgba(0,229,255,0.06); border:1px solid rgba(0,229,255,0.28); border-radius:10px; padding:10px 12px; font-size:12px; gap:8px; flex-wrap:wrap; justify-content:space-between;"></div>
+
+            <!-- Messages Scroll Box -->
+            <div id="adminSupportMessagesBox" style="background:rgba(0,0,0,0.28); border:1px solid var(--border); border-radius:10px; padding:12px; min-height:280px; max-height:380px; overflow-y:auto; display:flex; flex-direction:column; gap:8px;">
+              <div style="text-align:center; color:var(--text-muted); font-size:12px; margin:auto 0;">No ticket selected.</div>
+            </div>
+
+            <!-- Quick Admin Custom Reply Chips -->
+            <div id="supportQuickChipsRow" style="display:none; gap:6px; flex-wrap:wrap;">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="fillAdminSupportQuickReply('Your deposit has been verified and credited to your wallet. Good luck!')">✓ Deposit Credited</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="fillAdminSupportQuickReply('Please verify your 12-digit UTR and pay to our active UPI ID shown in Deposit.')">💳 Check UTR / UPI</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="fillAdminSupportQuickReply('Your withdrawal has been processed. If delayed over 15 mins, kindly share bank alert.')">🏦 Payout Dispatched</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="fillAdminSupportQuickReply('We have reviewed your account situation. Let us know if you need any further help!')">🛡️ Review Complete</button>
+            </div>
+
+            <!-- Custom Admin Reply Form -->
+            <div id="supportReplyComposer" style="display:none; flex-direction:column; gap:8px; margin-top:4px;">
+              <textarea class="form-control" id="adminSupportReplyInput" rows="2" placeholder="Write a custom Admin reply to the user (syncs live to Web & Android app)..."></textarea>
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                <span style="font-size:11px; color:var(--text-muted);">Replies appear instantly under the user's Profile → 24/7 Support chat.</span>
+                <button type="button" class="btn btn-gold" onclick="sendAdminSupportCustomReply()" id="adminSupportSendBtn">📨 Send Custom Reply</button>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -1814,213 +1889,24 @@
       instructions: "1. Scan QR code or pay to the UPI ID above.\n2. Enter the 12-digit UTR reference number in the app.\n3. Balance will be approved and credited within 2 minutes."
     };
 
-    let bankConfig = JSON.parse(localStorage.getItem(KEY_BANK)) || defaultBank;
+    const isOfflineFileMode = (window.location.protocol === 'file:');
 
-    // 2. USERS STATE
-    const defaultUsers = [
-      { id: "USR-1001", name: "Rahul_Player", phone: "+91 98765 43210", email: "rahul@gmail.com", balance: 50200.00, totalDeposit: 75000.00, totalWithdraw: 28000.00, betsCount: 142, status: "ACTIVE" },
-      { id: "USR-1002", name: "Aman_Trader", phone: "+91 98221 11223", email: "aman.trade@yahoo.com", balance: 14500.00, totalDeposit: 25000.00, totalWithdraw: 11000.00, betsCount: 68, status: "ACTIVE" },
-      { id: "USR-1003", name: "Priya_VIP", phone: "+91 97110 99887", email: "priya_queen@outlook.com", balance: 125000.00, totalDeposit: 200000.00, totalWithdraw: 95000.00, betsCount: 310, status: "ACTIVE" },
-      { id: "USR-1004", name: "Vikram_99", phone: "+91 96554 33221", email: "vikram99@gmail.com", balance: 3200.00, totalDeposit: 10000.00, totalWithdraw: 6000.00, betsCount: 45, status: "ACTIVE" },
-      { id: "USR-1005", name: "Suspicious_Bot1", phone: "+91 91234 56789", email: "bot_arb@mail.ru", balance: 0.00, totalDeposit: 5000.00, totalWithdraw: 0.00, betsCount: 8, status: "BLOCKED" },
-      { id: "USR-1006", name: "Karan_Pro", phone: "+91 99887 76655", email: "karan_pro@gmail.com", balance: 38400.00, totalDeposit: 60000.00, totalWithdraw: 24000.00, betsCount: 94, status: "ACTIVE" }
-    ];
+    let bankConfig = (isOfflineFileMode ? JSON.parse(localStorage.getItem(KEY_BANK)) : null) || defaultBank;
+    let usersList = (isOfflineFileMode ? JSON.parse(localStorage.getItem(KEY_USERS)) : null) || [];
+    let affiliateList = (isOfflineFileMode ? JSON.parse(localStorage.getItem(KEY_AFFILIATES)) : null) || [];
+    let depositRequests = (isOfflineFileMode ? JSON.parse(localStorage.getItem(KEY_DEPOSITS)) : null) || [];
+    let withdrawalRequests = (isOfflineFileMode ? JSON.parse(localStorage.getItem(KEY_WITHDRAWALS)) : null) || [];
+    let allBets = (isOfflineFileMode ? JSON.parse(localStorage.getItem(KEY_BETS)) : null) || [];
+    let declaredResults = (isOfflineFileMode ? JSON.parse(localStorage.getItem(KEY_DECLARED)) : null) || [];
+    let auditLogs = (isOfflineFileMode ? JSON.parse(localStorage.getItem(KEY_AUDIT)) : null) || [];
 
-    let usersList = JSON.parse(localStorage.getItem(KEY_USERS)) || defaultUsers;
-
-    // 3. AFFILIATE & REFER-TO-EARN STATE
-    const defaultAffiliates = [
-      {
-        userId: "USR-1001",
-        userName: "Rahul_Player",
-        phone: "+91 98765 43210",
-        refCode: "CK-RAHUL",
-        referredBy: "OFFICIAL_PROMO",
-        directMembersCount: 28,
-        teamMembersCount: 142,
-        totalEarnedCommission: 48650.00,
-        yesterdayCommission: 3420.00,
-        members: [
-          { id: "USR-2011", name: "Aarav_Sharma", tier: "Tier 1 (Direct)", joinDate: "2026-10-15", totalDeposit: 25000, commission: 7500, status: "ACTIVE" },
-          { id: "USR-2012", name: "Neha_Kapoor", tier: "Tier 1 (Direct)", joinDate: "2026-10-18", totalDeposit: 18000, commission: 5400, status: "ACTIVE" },
-          { id: "USR-2013", name: "Mohit_Verma", tier: "Tier 1 (Direct)", joinDate: "2026-10-20", totalDeposit: 42000, commission: 12600, status: "ACTIVE" },
-          { id: "USR-2014", name: "Sunil_Roy", tier: "Tier 2 (Team)", joinDate: "2026-10-22", totalDeposit: 15000, commission: 3000, status: "ACTIVE" },
-          { id: "USR-2015", name: "Divya_Nair", tier: "Tier 2 (Team)", joinDate: "2026-10-25", totalDeposit: 30000, commission: 6000, status: "ACTIVE" },
-          { id: "USR-2016", name: "Rajat_Bansal", tier: "Tier 3 (Team)", joinDate: "2026-10-28", totalDeposit: 12000, commission: 1200, status: "ACTIVE" }
-        ]
-      },
-      {
-        userId: "USR-1002",
-        userName: "Aman_Trader",
-        phone: "+91 98221 11223",
-        refCode: "CK-AMAN",
-        referredBy: "USR-1001 (Rahul_Player)",
-        directMembersCount: 14,
-        teamMembersCount: 56,
-        totalEarnedCommission: 21400.00,
-        yesterdayCommission: 1850.00,
-        members: [
-          { id: "USR-2021", name: "Suraj_Singh", tier: "Tier 1 (Direct)", joinDate: "2026-10-16", totalDeposit: 20000, commission: 6000, status: "ACTIVE" },
-          { id: "USR-2022", name: "Pooja_Mehta", tier: "Tier 1 (Direct)", joinDate: "2026-10-21", totalDeposit: 14000, commission: 4200, status: "ACTIVE" },
-          { id: "USR-2023", name: "Kavita_Jain", tier: "Tier 2 (Team)", joinDate: "2026-10-24", totalDeposit: 10000, commission: 2000, status: "ACTIVE" }
-        ]
-      },
-      {
-        userId: "USR-1003",
-        userName: "Priya_VIP",
-        phone: "+91 97110 99887",
-        refCode: "CK-PRIYA",
-        referredBy: "OFFICIAL_PROMO",
-        directMembersCount: 45,
-        teamMembersCount: 310,
-        totalEarnedCommission: 128900.00,
-        yesterdayCommission: 9800.00,
-        members: [
-          { id: "USR-2031", name: "Ananya_Sen", tier: "Tier 1 (Direct)", joinDate: "2026-10-10", totalDeposit: 100000, commission: 30000, status: "ACTIVE" },
-          { id: "USR-2032", name: "Rohan_Das", tier: "Tier 1 (Direct)", joinDate: "2026-10-12", totalDeposit: 80000, commission: 24000, status: "ACTIVE" },
-          { id: "USR-2033", name: "Tanya_Malhotra", tier: "Tier 1 (Direct)", joinDate: "2026-10-15", totalDeposit: 55000, commission: 16500, status: "ACTIVE" },
-          { id: "USR-2034", name: "Vikas_Chopra", tier: "Tier 2 (Team)", joinDate: "2026-10-19", totalDeposit: 40000, commission: 8000, status: "ACTIVE" },
-          { id: "USR-2035", name: "Suresh_G", tier: "Tier 3 (Team)", joinDate: "2026-10-23", totalDeposit: 25000, commission: 2500, status: "ACTIVE" }
-        ]
-      },
-      {
-        userId: "USR-1004",
-        userName: "Vikram_99",
-        phone: "+91 96554 33221",
-        refCode: "CK-VIKRAM",
-        referredBy: "USR-1003 (Priya_VIP)",
-        directMembersCount: 8,
-        teamMembersCount: 19,
-        totalEarnedCommission: 8500.00,
-        yesterdayCommission: 620.00,
-        members: [
-          { id: "USR-2041", name: "Gaurav_Tyagi", tier: "Tier 1 (Direct)", joinDate: "2026-10-22", totalDeposit: 15000, commission: 4500, status: "ACTIVE" },
-          { id: "USR-2042", name: "Simran_K", tier: "Tier 1 (Direct)", joinDate: "2026-10-26", totalDeposit: 8000, commission: 2400, status: "ACTIVE" }
-        ]
-      },
-      {
-        userId: "USR-1006",
-        userName: "Karan_Pro",
-        phone: "+91 99887 76655",
-        refCode: "CK-KARAN",
-        referredBy: "USR-1001 (Rahul_Player)",
-        directMembersCount: 19,
-        teamMembersCount: 88,
-        totalEarnedCommission: 34100.00,
-        yesterdayCommission: 2950.00,
-        members: [
-          { id: "USR-2051", name: "Harish_Patel", tier: "Tier 1 (Direct)", joinDate: "2026-10-17", totalDeposit: 35000, commission: 10500, status: "ACTIVE" },
-          { id: "USR-2052", name: "Deepak_Soni", tier: "Tier 1 (Direct)", joinDate: "2026-10-23", totalDeposit: 22000, commission: 6600, status: "ACTIVE" }
-        ]
-      }
-    ];
-
-    let affiliateList = JSON.parse(localStorage.getItem(KEY_AFFILIATES)) || defaultAffiliates;
-
-    // 4. DEPOSIT REQUESTS
-    const defaultDeposits = [
-      { id: "DEP-88401", userId: "USR-1001", userName: "Rahul_Player", amount: 5000.00, method: "UPI (GooglePay)", utr: "429188402911", time: "Today, 11:24 AM", status: "IN PROCESS" },
-      { id: "DEP-88402", userId: "USR-1002", userName: "Aman_Trader", amount: 10000.00, method: "IMPS SBI NetBanking", utr: "902184716294", time: "Today, 11:18 AM", status: "IN PROCESS" },
-      { id: "DEP-88403", userId: "USR-1006", userName: "Karan_Pro", amount: 2500.00, method: "Paytm UPI QR", utr: "419082736184", time: "Today, 10:45 AM", status: "IN PROCESS" },
-      { id: "DEP-88399", userId: "USR-1003", userName: "Priya_VIP", amount: 50000.00, method: "HDFC IMPS", utr: "389271628190", time: "Today, 09:12 AM", status: "SUCCESS" },
-      { id: "DEP-88398", userId: "USR-1005", userName: "Suspicious_Bot1", amount: 15000.00, method: "UPI", utr: "000000000000", time: "Yesterday, 18:30 PM", status: "FAIL", reason: "Invalid / fake UTR" }
-    ];
-
-    let depositRequests = JSON.parse(localStorage.getItem(KEY_DEPOSITS)) || defaultDeposits;
-
-    // 5. WITHDRAWAL REQUESTS
-    const defaultWithdrawals = [
-      {
-        id: "WD-99412",
-        userId: "USR-1001",
-        userName: "Rahul_Player",
-        amount: 8000.00,
-        bankingName: "Rahul Kumar Sharma",
-        upiId: "rahul@oksbi",
-        bankName: "State Bank of India (SBI)",
-        accNo: "40928172901",
-        ifsc: "SBIN0001824",
-        destination: "Rahul Kumar Sharma • SBI (A/C: 40928172901, IFSC: SBIN0001824) • UPI: rahul@oksbi",
-        time: "Today, 11:32 AM",
-        status: "IN PROCESS"
-      },
-      {
-        id: "WD-99413",
-        userId: "USR-1004",
-        userName: "Vikram_99",
-        amount: 2500.00,
-        bankingName: "Vikram Sethi",
-        upiId: "vikram99@icici",
-        bankName: "HDFC Bank",
-        accNo: "5010049281729",
-        ifsc: "HDFC000124",
-        destination: "Vikram Sethi • HDFC (A/C: 5010049281729, IFSC: HDFC000124) • UPI: vikram99@icici",
-        time: "Today, 10:55 AM",
-        status: "IN PROCESS"
-      },
-      {
-        id: "WD-99410",
-        userId: "USR-1003",
-        userName: "Priya_VIP",
-        amount: 45000.00,
-        bankingName: "Priya Singhania",
-        upiId: "priya@axl",
-        bankName: "ICICI Bank",
-        accNo: "002101928374",
-        ifsc: "ICIC0000021",
-        destination: "Priya Singhania • ICICI (A/C: 002101928374, IFSC: ICIC0000021) • UPI: priya@axl",
-        time: "Today, 08:40 AM",
-        status: "APPROVED"
-      },
-      {
-        id: "WD-99408",
-        userId: "USR-1005",
-        userName: "Suspicious_Bot1",
-        amount: 12000.00,
-        bankingName: "Bot Player",
-        upiId: "bot@paytm",
-        bankName: "Paytm Payments Bank",
-        accNo: "919123456789",
-        ifsc: "PYTM0123456",
-        destination: "Bot Player • Paytm Bank (A/C: 919123456789, IFSC: PYTM0123456) • UPI: bot@paytm",
-        time: "Yesterday, 19:10 PM",
-        status: "REJECTED",
-        reason: "Account flagged for policy violation"
-      }
-    ];
-
-    let withdrawalRequests = JSON.parse(localStorage.getItem(KEY_WITHDRAWALS)) || defaultWithdrawals;
-
-    // 6. ALL USERS BET HISTORY (Violet multiplier is 3.0X)
-    const defaultBets = [
-      { id: "BET-78912", market: "MIAMI", period: 202610311024, userId: "USR-1001", userName: "Rahul_Player", target: "GREEN", amount: 1000.00, multiplier: 2.0, status: "WON", payout: 2000.00, time: "11:28 AM" },
-      { id: "BET-78913", market: "VEGAS", period: 202610312024, userId: "USR-1002", userName: "Aman_Trader", target: "RED", amount: 2500.00, multiplier: 2.0, status: "LOST", payout: 0.00, time: "11:27 AM" },
-      { id: "BET-78914", market: "PARIS", period: 202610313024, userId: "USR-1003", userName: "Priya_VIP", target: "BIG", amount: 10000.00, multiplier: 2.0, status: "WON", payout: 20000.00, time: "11:26 AM" },
-      { id: "BET-78915", market: "DUBAI", period: 202610314024, userId: "USR-1004", userName: "Vikram_99", target: "NUM 7", amount: 200.00, multiplier: 9.0, status: "WON", payout: 1800.00, time: "11:25 AM" },
-      { id: "BET-78916", market: "MIAMI", period: 202610311025, userId: "USR-1006", userName: "Karan_Pro", target: "SMALL", amount: 1500.00, multiplier: 2.0, status: "PENDING", payout: 0.00, time: "11:29 AM" },
-      { id: "BET-78917", market: "VEGAS", period: 202610312025, userId: "USR-1001", userName: "Rahul_Player", target: "VIOLET", amount: 500.00, multiplier: 3.0, status: "PENDING", payout: 0.00, time: "11:30 AM" }
-    ];
-
-    let allBets = JSON.parse(localStorage.getItem(KEY_BETS)) || defaultBets;
-
-    // 7. DECLARED RESULTS
-    const defaultDeclared = [
-      { market: "MIAMI", period: 202610311024, number: 7, color: "GREEN", isBig: true, mode: "MANUAL", payout: 12500.00 },
-      { market: "VEGAS", period: 202610312024, number: 2, color: "RED", isBig: false, mode: "AUTO", payout: 18400.00 },
-      { market: "PARIS", period: 202610313024, number: 9, color: "GREEN", isBig: true, mode: "AUTO", payout: 9800.00 },
-      { market: "DUBAI", period: 202610314024, number: 0, color: "VIOLET+RED", isBig: false, mode: "MANUAL", payout: 22100.00 }
-    ];
-
-    let declaredResults = JSON.parse(localStorage.getItem(KEY_DECLARED)) || defaultDeclared;
-
-    // 8. AUDIT LOGS
-    const defaultAudit = [
-      { time: "11:28:10", actor: "SuperAdmin", action: "RESULT_OVERRIDE", entity: "MIAMI #202610311024", desc: "Forced outcome to 7 GREEN BIG" },
-      { time: "10:50:22", actor: "FinanceAdmin", action: "DEPOSIT_APPROVE", entity: "DEP-88399", desc: "Approved ₹50,000 for Priya_VIP" },
-      { time: "09:30:15", actor: "SuperAdmin", action: "USER_BLOCK", entity: "USR-1005 (Suspicious_Bot1)", desc: "Blocked user due to arbitrage script" }
-    ];
-
-    let auditLogs = JSON.parse(localStorage.getItem(KEY_AUDIT)) || defaultAudit;
+    // Live SQLite-backed aggregates (zero mock/dummy baselines)
+    let serverAdminKpis = null;
+    let serverLiveWagers = {};
+    let serverMarketStats = {};
+    let supportTickets = [];
+    let activeSupportTicketId = null;
+    let currentSupportFilter = 'ALL';
 
     // Active Market Selection for Result Decider
     let selectedDeciderMarket = 'MIAMI';
@@ -2033,13 +1919,15 @@
     function saveAdminLocalCacheOnly() {
       try {
         localStorage.setItem(KEY_BANK, JSON.stringify(bankConfig));
-        localStorage.setItem(KEY_USERS, JSON.stringify(usersList));
-        localStorage.setItem(KEY_AFFILIATES, JSON.stringify(affiliateList));
-        localStorage.setItem(KEY_DEPOSITS, JSON.stringify(depositRequests));
-        localStorage.setItem(KEY_WITHDRAWALS, JSON.stringify(withdrawalRequests));
-        localStorage.setItem(KEY_BETS, JSON.stringify(allBets));
-        localStorage.setItem(KEY_DECLARED, JSON.stringify(declaredResults));
-        localStorage.setItem(KEY_AUDIT, JSON.stringify(auditLogs));
+        if (isOfflineFileMode) {
+          localStorage.setItem(KEY_USERS, JSON.stringify(usersList));
+          localStorage.setItem(KEY_AFFILIATES, JSON.stringify(affiliateList));
+          localStorage.setItem(KEY_DEPOSITS, JSON.stringify(depositRequests));
+          localStorage.setItem(KEY_WITHDRAWALS, JSON.stringify(withdrawalRequests));
+          localStorage.setItem(KEY_BETS, JSON.stringify(allBets));
+          localStorage.setItem(KEY_DECLARED, JSON.stringify(declaredResults));
+          localStorage.setItem(KEY_AUDIT, JSON.stringify(auditLogs));
+        }
       } catch (e) {}
       recalculateMasterKPIs();
     }
@@ -2059,26 +1947,47 @@
       }).catch(() => {});
     }
 
-    // Master Analytics Calculator
+    // Master Analytics Calculator (strictly from live SQLite data, zero fake baselines)
     function recalculateMasterKPIs() {
       let totalDep = 0;
-      depositRequests.forEach(d => {
-        if (d.status === 'SUCCESS' || d.status === 'APPROVED') totalDep += d.amount;
-      });
-
+      let approvedDepCount = 0;
+      let pendingDepCount = 0;
       let totalWd = 0;
-      withdrawalRequests.forEach(w => {
-        if (w.status === 'SUCCESS' || w.status === 'APPROVED') totalWd += w.amount;
-      });
-
-      let netProfit = totalDep - totalWd;
-      let marginPct = totalDep > 0 ? ((netProfit / totalDep) * 100).toFixed(2) : 0;
-
+      let pendingWdCount = 0;
       let turnover = 0;
-      allBets.forEach(b => turnover += b.amount);
+      let activeUsers = 0;
+      let blockedUsers = 0;
 
-      let activeUsers = usersList.filter(u => u.status === 'ACTIVE').length;
-      let blockedUsers = usersList.filter(u => u.status === 'BLOCKED').length;
+      if (serverAdminKpis) {
+        totalDep = Number(serverAdminKpis.totalDeposits || 0);
+        approvedDepCount = Number(serverAdminKpis.approvedDepositsCount || 0);
+        pendingDepCount = Number(serverAdminKpis.pendingDepositsCount || 0);
+        totalWd = Number(serverAdminKpis.totalWithdrawals || 0);
+        pendingWdCount = Number(serverAdminKpis.pendingWithdrawalsCount || 0);
+        turnover = Number(serverAdminKpis.totalTurnover || 0);
+        activeUsers = Number(serverAdminKpis.activeUsers || 0);
+        blockedUsers = Number(serverAdminKpis.blockedUsers || 0);
+      } else {
+        depositRequests.forEach(d => {
+          const st = String(d.status || '').toUpperCase();
+          if (st === 'SUCCESS' || st === 'APPROVED') { totalDep += Number(d.amount || 0); approvedDepCount++; }
+          else if (st === 'IN PROCESS' || st === 'PENDING') pendingDepCount++;
+        });
+        withdrawalRequests.forEach(w => {
+          const st = String(w.status || '').toUpperCase();
+          if (st === 'SUCCESS' || st === 'APPROVED') totalWd += Number(w.amount || 0);
+          else if (st === 'IN PROCESS' || st === 'PENDING') pendingWdCount++;
+        });
+        allBets.forEach(b => {
+          const st = String(b.status || '').toUpperCase();
+          if (st !== 'CANCELLED' && st !== 'REFUNDED') turnover += Number(b.amount || 0);
+        });
+        activeUsers = usersList.filter(u => String(u.status || '').toUpperCase() === 'ACTIVE').length;
+        blockedUsers = usersList.filter(u => String(u.status || '').toUpperCase() === 'BLOCKED').length;
+      }
+
+      const netProfit = totalDep - totalWd;
+      const marginPct = totalDep > 0 ? ((netProfit / totalDep) * 100).toFixed(2) : '0.00';
 
       document.getElementById('kpiTotalDeposits').innerText = '₹' + totalDep.toLocaleString('en-IN', { minimumFractionDigits: 2 });
       document.getElementById('kpiTotalWithdrawals').innerText = '₹' + totalWd.toLocaleString('en-IN', { minimumFractionDigits: 2 });
@@ -2087,11 +1996,41 @@
       document.getElementById('kpiActiveUsers').innerText = `${activeUsers} Active`;
       document.getElementById('kpiBlockedUsers').innerText = `${blockedUsers} Blocked`;
 
+      const depPendEl = document.getElementById('kpiDepositPendingNote');
+      if (depPendEl) depPendEl.innerText = `● ${pendingDepCount} Pending`;
+      const appDepEl = document.getElementById('kpiApprovedDepositsCount');
+      if (appDepEl) appDepEl.innerText = `${approvedDepCount} approved requests`;
+      const wdPendEl = document.getElementById('kpiPendingWithdrawals');
+      if (wdPendEl) wdPendEl.innerText = `● ${pendingWdCount} Pending Queue`;
+      const marginEl = document.getElementById('kpiProfitMargin');
+      if (marginEl) marginEl.innerText = `${marginPct}% Margin`;
+
+      // Update 4-Market Dashboard Turnover & Active Pool cards from real SQLite stats
+      ['MIAMI', 'VEGAS', 'PARIS', 'DUBAI'].forEach(mk => {
+        const ms = serverMarketStats && serverMarketStats[mk];
+        const tEl = document.getElementById('market-turnover-' + mk);
+        const mEl = document.getElementById('market-margin-' + mk);
+        if (tEl) {
+          const mTurnover = ms ? Number(ms.turnover || 0) : allBets.filter(b => b.market === mk && !['CANCELLED','REFUNDED'].includes(String(b.status||'').toUpperCase())).reduce((s, b) => s + Number(b.amount || 0), 0);
+          tEl.innerText = 'Turnover: ₹' + mTurnover.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+        }
+        if (mEl) {
+          const activePool = ms ? Number(ms.activePool || 0) : (serverLiveWagers && serverLiveWagers[mk] ? Number(serverLiveWagers[mk].totalPool || 0) : 0);
+          mEl.innerText = 'Active Pool: ₹' + activePool.toLocaleString('en-IN', { minimumFractionDigits: 0 });
+        }
+      });
+
       // Badge counts in sidebar
-      const pendingDepCount = depositRequests.filter(d => d.status === 'IN PROCESS' || d.status === 'PENDING').length;
-      const pendingWdCount = withdrawalRequests.filter(w => w.status === 'IN PROCESS' || w.status === 'PENDING').length;
       document.getElementById('navDepositCount').innerText = `${pendingDepCount} IN PROCESS`;
       document.getElementById('navWithdrawCount').innerText = `${pendingWdCount} IN PROCESS`;
+
+      const openSupportCount = (supportTickets || []).filter(t => String(t.status || '').toUpperCase() === 'OPEN').length;
+      const unreadSupportCount = (supportTickets || []).reduce((acc, t) => acc + Number(t.unreadAdmin || 0), 0);
+      const supBadge = document.getElementById('navSupportBadge');
+      if (supBadge) {
+        supBadge.innerText = unreadSupportCount > 0 ? `${unreadSupportCount} NEW` : `${openSupportCount} OPEN`;
+        supBadge.className = unreadSupportCount > 0 ? 'nav-badge badge-alert' : 'nav-badge badge-warn';
+      }
     }
 
     // Navigation Switcher
@@ -2241,7 +2180,8 @@
         <div><strong>UTR NUMBER:</strong> <span style="background:#FFFF00; padding:1px 4px;">${dep.utr}</span></div>
         <div><strong>CHANNEL:</strong> ${dep.method}</div>
         <div><strong>TIMESTAMP:</strong> ${dep.time}</div>
-        <div><strong>STATUS:</strong> <span style="font-weight:900; color:${dep.status==='APPROVED'?'green':dep.status==='REJECTED'?'red':'orange'}">${dep.status}</span></div>
+        <div><strong>STATUS:</strong> <span style="font-weight:900; color:${(dep.status==='SUCCESS'||dep.status==='APPROVED')?'green':(dep.status==='FAIL'||dep.status==='REJECTED')?'red':'orange'}">${dep.status}</span></div>
+        ${dep.reason ? `<div><strong>REASON:</strong> <span style="color:red;">${escapeAdminHtml(dep.reason)}</span></div>` : ''}
         <div style="margin-top:12px; text-align:center; font-size:10px; color:#888;">
           Bank verification code: CK-VERIFIED-HASH-9981
         </div>
@@ -2275,7 +2215,7 @@
 
     function renderQuickDepositList() {
       const el = document.getElementById('quickDepositList');
-      const pending = depositRequests.filter(d => d.status === 'PENDING').slice(0, 3);
+      const pending = depositRequests.filter(d => d.status === 'IN PROCESS' || d.status === 'PENDING').slice(0, 3);
       if (pending.length === 0) {
         el.innerHTML = `<p style="font-size:12px; color:var(--text-muted); text-align:center; padding:16px;">All deposit requests have been processed! No pending slips.</p>`;
         return;
@@ -2578,7 +2518,7 @@
       const sync = getGlobalSyncedRoundState();
       const currentPeriodNum = sync.fullPeriodId;
 
-      // Add to declared results
+      // Add optimistically (actual settled payout updates immediately from server pull)
       declaredResults.unshift({
         market: selectedDeciderMarket,
         period: currentPeriodNum,
@@ -2586,7 +2526,7 @@
         color: color,
         isBig: isBig,
         mode: "MANUAL_OVERRIDE",
-        payout: 14200.00
+        payout: 0.00
       });
 
       // Post to database backend so user side reflects immediately in real-time
@@ -2736,19 +2676,44 @@
     }
 
     function renderUsersTable() {
+      const allCount = usersList.length;
+      const activeCount = usersList.filter(u => u.status === 'ACTIVE').length;
+      const blockedCount = usersList.filter(u => u.status === 'BLOCKED').length;
+      const pillAll = document.getElementById('userFilterAllBtn');
+      const pillActive = document.getElementById('userFilterActiveBtn');
+      const pillBlocked = document.getElementById('userFilterBlockedBtn');
+      if (pillAll) pillAll.innerText = `All (${allCount})`;
+      if (pillActive) pillActive.innerText = `Active (${activeCount})`;
+      if (pillBlocked) pillBlocked.innerText = `Blocked (${blockedCount})`;
+
       const q = (document.getElementById('searchUsersInput')?.value || '').toLowerCase();
       const tbody = document.getElementById('usersTableBody');
       const filtered = usersList.filter(u => {
         const matchesStatus = (currentUserFilter === 'ALL' || u.status === currentUserFilter);
-        const matchesQuery = (!q || String(u.name || '').toLowerCase().includes(q) || String(u.id || '').toLowerCase().includes(q) || String(u.phone || '').toLowerCase().includes(q));
+        const matchesQuery = (
+          !q ||
+          String(u.name || '').toLowerCase().includes(q) ||
+          String(u.id || '').toLowerCase().includes(q) ||
+          String(u.phone || '').toLowerCase().includes(q) ||
+          String(u.email || '').toLowerCase().includes(q) ||
+          String(u.referralCode || '').toLowerCase().includes(q)
+        );
         return matchesStatus && matchesQuery;
       });
 
+      if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:24px; color:var(--text-muted);">No matching user accounts found in SQLite database.</td></tr>`;
+        return;
+      }
+
       tbody.innerHTML = filtered.map(u => {
-        const netPL = u.totalDeposit - u.totalWithdraw - u.balance;
+        const netPL = Number(u.totalDeposit || 0) - Number(u.totalWithdraw || 0) - Number(u.balance || 0);
         const safeName = escapeAdminHtml(u.name);
         const safeId = escapeAdminHtml(u.id);
         const safePhone = escapeAdminHtml(u.phone);
+        const safeEmail = escapeAdminHtml(u.email || '');
+        const safeRef = escapeAdminHtml(u.referralCode || '');
+        const safeCreated = u.createdAt ? escapeAdminHtml(String(u.createdAt).slice(0, 16)) : '';
         const rawPw = u.password || '';
         const safePw = rawPw ? escapeAdminHtml(rawPw) : '••••••••';
         return `
@@ -2757,6 +2722,9 @@
               <strong style="font-size:14px; color:#FFF;">${safeName}</strong><br/>
               <span style="font-size:11px; color:var(--cyan); font-family:monospace;">${safeId}</span> • 
               <span style="font-size:11px; color:var(--text-muted);">${safePhone}</span>
+              ${safeEmail ? `<br/><span style="font-size:10px; color:var(--text-muted);">${safeEmail}</span>` : ''}
+              ${safeRef ? ` • <span style="font-size:10px; color:var(--gold);">Ref: ${safeRef}</span>` : ''}
+              ${safeCreated ? `<br/><span style="font-size:9px; color:var(--text-muted);">Joined: ${safeCreated}</span>` : ''}
             </td>
             <td>
               <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(255,215,0,0.08); border:1px solid rgba(255,215,0,0.28); padding:4px 8px; border-radius:6px;">
@@ -3035,142 +3003,168 @@
     }
 
     // ----------------------------------------------------
-    // LIVE BET VOLUME BREAKDOWN & HOUSE NET ENGINE
+    // LIVE BET VOLUME BREAKDOWN & HOUSE NET ENGINE (REAL SQLITE DATA ONLY)
     // ----------------------------------------------------
-    const marketBaseWagers = {
-      MIAMI: { green: 34500, greenBets: 26, violet: 16200, violetBets: 12, red: 42800, redBets: 31, big: 48200, bigBets: 34, small: 47800, smallBets: 33, numbers: [3200, 5400, 2800, 4100, 3600, 6500, 2900, 8700, 3400, 4900] },
-      VEGAS: { green: 58200, greenBets: 42, violet: 24600, violetBets: 18, red: 69400, redBets: 49, big: 82000, bigBets: 58, small: 75500, smallBets: 54, numbers: [5400, 8900, 4200, 6800, 5900, 11200, 4600, 14500, 5100, 8200] },
-      PARIS: { green: 28400, greenBets: 21, violet: 13500, violetBets: 9, red: 36200, redBets: 27, big: 39500, bigBets: 29, small: 41200, smallBets: 30, numbers: [2800, 4400, 2100, 3500, 3100, 5200, 2400, 7100, 2900, 4100] },
-      DUBAI: { green: 41200, greenBets: 31, violet: 19800, violetBets: 15, red: 51600, redBets: 37, big: 59400, bigBets: 43, small: 56800, smallBets: 41, numbers: [4100, 6800, 3500, 5200, 4700, 8400, 3800, 11200, 4200, 6500] }
-    };
+    function normalizeBetTargetNumber(target, btype) {
+      let t = String(target || '').toUpperCase().trim();
+      if (t.startsWith('NUM ')) t = t.slice(4).trim();
+      else if (t.startsWith('NUM_')) t = t.slice(4).trim();
+      else if (t.startsWith('NUMBER ')) t = t.slice(7).trim();
+      else if (t.startsWith('#')) t = t.slice(1).trim();
+      if (/^[0-9]$/.test(t)) return parseInt(t, 10);
+      if (String(btype || '').toUpperCase().trim() === 'NUMBER') {
+        const d = t.replace(/\D/g, '');
+        if (/^[0-9]$/.test(d)) return parseInt(d, 10);
+      }
+      return null;
+    }
 
-    function renderLiveBetVolumes(mKey) {
-      const sync = getGlobalSyncedRoundState();
-      const pool = marketBaseWagers[mKey] || marketBaseWagers.MIAMI;
+    function computeLiveWagersForMarket(mKey) {
+      const srv = serverLiveWagers && serverLiveWagers[mKey];
+      if (srv) {
+        return {
+          totGreen: Number(srv.green || 0),
+          greenBets: Number(srv.greenBets || 0),
+          totViolet: Number(srv.violet || 0),
+          violetBets: Number(srv.violetBets || 0),
+          totRed: Number(srv.red || 0),
+          redBets: Number(srv.redBets || 0),
+          totBig: Number(srv.big || 0),
+          bigBets: Number(srv.bigBets || 0),
+          totSmall: Number(srv.small || 0),
+          smallBets: Number(srv.smallBets || 0),
+          totNumbers: Array.isArray(srv.numbers) ? srv.numbers.map(v => Number(v || 0)) : [0,0,0,0,0,0,0,0,0,0],
+          numberBets: Array.isArray(srv.numberBets) ? srv.numberBets.map(v => Number(v || 0)) : [0,0,0,0,0,0,0,0,0,0],
+          totalPool: Number(srv.totalPool || 0),
+          totalBets: Number(srv.totalBets || 0),
+        };
+      }
 
-      let userGreen = 0, userViolet = 0, userRed = 0, userBig = 0, userSmall = 0;
-      let userNumbers = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+      const sync = getGlobalSyncedRoundState(mKey);
+      let totGreen = 0, greenBets = 0;
+      let totViolet = 0, violetBets = 0;
+      let totRed = 0, redBets = 0;
+      let totBig = 0, bigBets = 0;
+      let totSmall = 0, smallBets = 0;
+      const totNumbers = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+      const numberBets = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+      let totalPool = 0, totalBets = 0;
 
-      allBets.filter(b => b.market === mKey && (b.period == sync.fullPeriodId || b.status === 'PENDING')).forEach(b => {
-        if (b.target === 'GREEN') userGreen += b.amount;
-        else if (b.target === 'VIOLET') userViolet += b.amount;
-        else if (b.target === 'RED') userRed += b.amount;
-        else if (b.target === 'BIG') userBig += b.amount;
-        else if (b.target === 'SMALL') userSmall += b.amount;
-        else if (b.target.startsWith('NUM ')) {
-          const n = parseInt(b.target.replace('NUM ', ''));
-          if (n >= 0 && n <= 9) userNumbers[n] += b.amount;
-        }
+      allBets.filter(b => {
+        const st = String(b.status || '').toUpperCase();
+        return b.market === mKey && String(b.period) === String(sync.fullPeriodId) && (st === 'PENDING' || st === 'LOCKED');
+      }).forEach(b => {
+        const amt = Number(b.amount || 0);
+        const tgt = String(b.target || '').toUpperCase().trim();
+        const numIdx = normalizeBetTargetNumber(tgt, b.type);
+        if (numIdx !== null && numIdx >= 0 && numIdx <= 9) {
+          totNumbers[numIdx] += amt;
+          numberBets[numIdx] += 1;
+        } else if (tgt === 'GREEN') { totGreen += amt; greenBets += 1; }
+        else if (tgt === 'VIOLET') { totViolet += amt; violetBets += 1; }
+        else if (tgt === 'RED') { totRed += amt; redBets += 1; }
+        else if (tgt === 'BIG') { totBig += amt; bigBets += 1; }
+        else if (tgt === 'SMALL') { totSmall += amt; smallBets += 1; }
+        totalPool += amt;
+        totalBets += 1;
       });
 
-      const totGreen = pool.green + userGreen;
-      const totViolet = pool.violet + userViolet;
-      const totRed = pool.red + userRed;
-      const totBig = pool.big + userBig;
-      const totSmall = pool.small + userSmall;
-      const totNumbers = pool.numbers.map((amt, idx) => amt + userNumbers[idx]);
+      return { totGreen, greenBets, totViolet, violetBets, totRed, redBets, totBig, bigBets, totSmall, smallBets, totNumbers, numberBets, totalPool, totalBets };
+    }
 
-      const numSum = totNumbers.reduce((a, b) => a + b, 0);
-      const totalPool = totGreen + totViolet + totRed + totBig + totSmall + numSum;
+    function renderLiveBetVolumes(mKey) {
+      const w = computeLiveWagersForMarket(mKey);
 
       const lbl = document.getElementById('liveMarketNameLabel');
       if (lbl) lbl.innerText = mKey;
 
+      const totalCountEl = document.getElementById('liveTotalBetsCount');
+      if (totalCountEl) totalCountEl.innerText = `${w.totalBets} bet${w.totalBets === 1 ? '' : 's'}`;
+
       const poolDisplay = document.getElementById('liveTotalPoolDisplay');
-      if (poolDisplay) poolDisplay.innerText = '₹' + totalPool.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+      if (poolDisplay) poolDisplay.innerText = '₹' + w.totalPool.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+
+      const fmtAmt = (val) => '₹' + Number(val || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+      const fmtCnt = (cnt) => `${cnt} bet${cnt === 1 ? '' : 's'}`;
 
       const greenAmtEl = document.getElementById('liveBetGreenAmt');
-      if (greenAmtEl) greenAmtEl.innerText = '₹' + totGreen.toLocaleString('en-IN');
+      if (greenAmtEl) greenAmtEl.innerText = fmtAmt(w.totGreen);
       const greenCountEl = document.getElementById('liveBetGreenCount');
-      if (greenCountEl) greenCountEl.innerText = `${pool.greenBets} bets`;
+      if (greenCountEl) greenCountEl.innerText = fmtCnt(w.greenBets);
 
       const violetAmtEl = document.getElementById('liveBetVioletAmt');
-      if (violetAmtEl) violetAmtEl.innerText = '₹' + totViolet.toLocaleString('en-IN');
+      if (violetAmtEl) violetAmtEl.innerText = fmtAmt(w.totViolet);
       const violetCountEl = document.getElementById('liveBetVioletCount');
-      if (violetCountEl) violetCountEl.innerText = `${pool.violetBets} bets`;
+      if (violetCountEl) violetCountEl.innerText = fmtCnt(w.violetBets);
 
       const redAmtEl = document.getElementById('liveBetRedAmt');
-      if (redAmtEl) redAmtEl.innerText = '₹' + totRed.toLocaleString('en-IN');
+      if (redAmtEl) redAmtEl.innerText = fmtAmt(w.totRed);
       const redCountEl = document.getElementById('liveBetRedCount');
-      if (redCountEl) redCountEl.innerText = `${pool.redBets} bets`;
+      if (redCountEl) redCountEl.innerText = fmtCnt(w.redBets);
 
       const bigAmtEl = document.getElementById('liveBetBigAmt');
-      if (bigAmtEl) bigAmtEl.innerText = '₹' + totBig.toLocaleString('en-IN');
+      if (bigAmtEl) bigAmtEl.innerText = fmtAmt(w.totBig);
       const bigCountEl = document.getElementById('liveBetBigCount');
-      if (bigCountEl) bigCountEl.innerText = `${pool.bigBets} bets`;
+      if (bigCountEl) bigCountEl.innerText = fmtCnt(w.bigBets);
 
       const smallAmtEl = document.getElementById('liveBetSmallAmt');
-      if (smallAmtEl) smallAmtEl.innerText = '₹' + totSmall.toLocaleString('en-IN');
+      if (smallAmtEl) smallAmtEl.innerText = fmtAmt(w.totSmall);
       const smallCountEl = document.getElementById('liveBetSmallCount');
-      if (smallCountEl) smallCountEl.innerText = `${pool.smallBets} bets`;
+      if (smallCountEl) smallCountEl.innerText = fmtCnt(w.smallBets);
 
       // Render Numbers 0-9 Distribution Grid
       const gridEl = document.getElementById('liveNumbersBetGrid');
       if (gridEl) {
-        gridEl.innerHTML = totNumbers.map((amt, num) => {
+        gridEl.innerHTML = w.totNumbers.map((amt, num) => {
+          const cnt = w.numberBets[num] || 0;
           let colorClass = '#00E676';
-          if (num === 0) colorClass = '#D500F9';
-          else if (num === 5) colorClass = '#D500F9';
+          if (num === 0 || num === 5) colorClass = '#D500F9';
           else if ([2, 4, 6, 8].includes(num)) colorClass = '#FF1744';
 
           return `
-            <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(35,53,84,0.8); border-radius:6px; padding:6px 4px; text-align:center;">
-              <div style="font-size:11px; font-weight:900; color:${colorClass};">
-                #${num}
-              </div>
-              <div style="font-size:11px; font-weight:800; color:#FFF; margin-top:2px;">
-                ₹${amt.toLocaleString('en-IN')}
-              </div>
+            <div style="background:${amt > 0 ? 'rgba(255,215,0,0.09)' : 'rgba(255,255,255,0.04)'}; border:1px solid ${amt > 0 ? 'rgba(255,215,0,0.45)' : 'rgba(35,53,84,0.8)'}; border-radius:6px; padding:6px 4px; text-align:center;">
+              <div style="font-size:11px; font-weight:900; color:${colorClass};">#${num}</div>
+              <div style="font-size:11px; font-weight:800; color:#FFF; margin-top:2px;">${fmtAmt(amt)}</div>
+              <div style="font-size:9px; color:#8E9DB2; margin-top:1px;">${fmtCnt(cnt)}</div>
             </div>
           `;
         }).join('');
       }
 
-      updateHouseProjectedNet(selectedWinningNumber, { totGreen, totViolet, totRed, totBig, totSmall, totNumbers, totalPool });
+      updateHouseProjectedNet(selectedWinningNumber, w);
     }
 
     function updateHouseProjectedNet(num, wagers) {
       if (!wagers) {
-        const pool = marketBaseWagers[selectedDeciderMarket] || marketBaseWagers.MIAMI;
-        const numSum = pool.numbers.reduce((a, b) => a + b, 0);
-        const totalPool = pool.green + pool.violet + pool.red + pool.big + pool.small + numSum;
-        wagers = {
-          totGreen: pool.green,
-          totViolet: pool.violet,
-          totRed: pool.red,
-          totBig: pool.big,
-          totSmall: pool.small,
-          totNumbers: pool.numbers,
-          totalPool
-        };
+        wagers = computeLiveWagersForMarket(selectedDeciderMarket || 'MIAMI');
       }
 
+      // Compute payouts on net stakes (after 3% fee -> 0.97 factor) matching server settle_round_in_db
       let payout = 0;
-      // Violet multiplier is 3.0X; Green/Red is 2.0X
+      const net = 0.97;
       if (num === 0) {
-        payout += wagers.totRed * 1.5 + wagers.totViolet * 3.0;
+        payout += (wagers.totRed * net * 1.5) + (wagers.totViolet * net * 4.5);
       } else if (num === 5) {
-        payout += wagers.totGreen * 1.5 + wagers.totViolet * 3.0;
+        payout += (wagers.totGreen * net * 1.5) + (wagers.totViolet * net * 4.5);
       } else if ([1, 3, 7, 9].includes(num)) {
-        payout += wagers.totGreen * 2.0;
+        payout += (wagers.totGreen * net * 2.0);
       } else {
-        payout += wagers.totRed * 2.0;
+        payout += (wagers.totRed * net * 2.0);
       }
 
-      // Size payout (2.0X)
       if (num >= 5) {
-        payout += wagers.totBig * 2.0;
+        payout += (wagers.totBig * net * 2.0);
       } else {
-        payout += wagers.totSmall * 2.0;
+        payout += (wagers.totSmall * net * 2.0);
       }
 
-      // Number payout (9.0X)
-      payout += (wagers.totNumbers[num] || 0) * 9.0;
+      payout += ((wagers.totNumbers[num] || 0) * net * 9.0);
 
       const houseNet = wagers.totalPool - payout;
       const el = document.getElementById('previewPayoutRisk');
       if (el) {
-        el.innerText = `House Projected Net: ${houseNet >= 0 ? '+' : '-'}₹${Math.abs(Math.round(houseNet)).toLocaleString('en-IN')}`;
+        const sign = houseNet > 0 ? '+' : (houseNet < 0 ? '-' : '');
+        el.innerText = `House Projected Net: ${sign}₹${Math.abs(Math.round(houseNet)).toLocaleString('en-IN')}`;
         el.className = houseNet >= 0 ? 'badge badge-approved' : 'badge badge-alert';
       }
     }
@@ -3196,41 +3190,41 @@
         if (currentAffiliateFilter === 'ACTIVE_EARNERS') matchesFilter = (a.totalEarnedCommission >= 10000);
         else if (currentAffiliateFilter === 'TOP_TEAMS') matchesFilter = (a.teamMembersCount >= 50);
 
-        const matchesQ = (!q || a.userName.toLowerCase().includes(q) || a.userId.toLowerCase().includes(q) || a.refCode.toLowerCase().includes(q) || a.referredBy.toLowerCase().includes(q));
+        const matchesQ = (!q || String(a.userName || '').toLowerCase().includes(q) || String(a.userId || '').toLowerCase().includes(q) || String(a.refCode || '').toLowerCase().includes(q) || String(a.referredBy || '').toLowerCase().includes(q));
         return matchesFilter && matchesQ;
       });
 
       tbody.innerHTML = filtered.map(a => `
         <tr>
           <td>
-            <strong style="color:#FFF; font-size:14px;">${a.userName}</strong><br/>
-            <span style="font-size:11px; color:var(--cyan); font-family:monospace;">${a.userId}</span> • 
-            <span style="font-size:11px; color:var(--text-muted);">${a.phone}</span>
+            <strong style="color:#FFF; font-size:14px;">${escapeAdminHtml(a.userName)}</strong><br/>
+            <span style="font-size:11px; color:var(--cyan); font-family:monospace;">${escapeAdminHtml(a.userId)}</span> • 
+            <span style="font-size:11px; color:var(--text-muted);">${escapeAdminHtml(a.phone)}</span>
           </td>
           <td>
             <span style="background:rgba(255,215,0,0.15); border:1px solid var(--gold); color:var(--gold); padding:4px 8px; border-radius:6px; font-weight:800; font-family:monospace; font-size:12px;">
-              ${a.refCode}
+              ${escapeAdminHtml(a.refCode)}
             </span>
           </td>
           <td>
-            <strong style="color:var(--text-muted); font-size:12px;">${a.referredBy}</strong>
+            <strong style="color:var(--text-muted); font-size:12px;">${escapeAdminHtml(a.referredBy)}</strong>
           </td>
           <td>
             <strong style="color:var(--cyan); font-size:14px;">${a.directMembersCount} Direct</strong><br/>
-            <span style="font-size:10px; color:var(--text-muted);">Tier 1 (30%)</span>
+            <span style="font-size:10px; color:var(--text-muted);">Tier 1</span>
           </td>
           <td>
             <strong style="color:var(--gold); font-size:14px;">${a.teamMembersCount} Members</strong><br/>
-            <span style="font-size:10px; color:var(--text-muted);">Tier 2-6 Total</span>
+            <span style="font-size:10px; color:var(--text-muted);">Tier 1-6 Total</span>
           </td>
           <td>
-            <strong style="color:var(--green); font-size:15px;">₹${a.totalEarnedCommission.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+            <strong style="color:var(--green); font-size:15px;">₹${Number(a.totalEarnedCommission || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
           </td>
           <td style="color:var(--gold); font-weight:700;">
-            +₹${a.yesterdayCommission.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            +₹${Number(a.yesterdayCommission || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
           </td>
           <td>
-            <button class="btn btn-gold btn-sm" onclick="openAffiliateMembersModal('${a.userId}')">
+            <button class="btn btn-gold btn-sm" onclick="openAffiliateMembersModal('${escapeAdminHtml(a.userId)}')">
               👥 View Members (${a.members ? a.members.length : 0})
             </button>
           </td>
@@ -3238,14 +3232,24 @@
       `).join('');
 
       let totMembers = 0, totComm = 0;
+      let topPromoter = null;
       affiliateList.forEach(a => {
-        totMembers += a.teamMembersCount + a.directMembersCount;
-        totComm += a.totalEarnedCommission;
+        totMembers += Number(a.teamMembersCount || 0);
+        totComm += Number(a.totalEarnedCommission || 0);
+        if (!topPromoter || Number(a.totalEarnedCommission || 0) > Number(topPromoter.totalEarnedCommission || 0) || (Number(a.totalEarnedCommission || 0) === Number(topPromoter.totalEarnedCommission || 0) && Number(a.teamMembersCount || 0) > Number(topPromoter.teamMembersCount || 0))) {
+          topPromoter = a;
+        }
       });
       const totMemEl = document.getElementById('affiliateTotalMembersCount');
       if (totMemEl) totMemEl.innerText = `${totMembers.toLocaleString('en-IN')} Members`;
       const totCommEl = document.getElementById('affiliateTotalCommissionsPaid');
       if (totCommEl) totCommEl.innerText = '₹' + totComm.toLocaleString('en-IN', { minimumFractionDigits: 2 });
+      const topNameEl = document.getElementById('affiliateTopPromoterName');
+      const topMetaEl = document.getElementById('affiliateTopPromoterMeta');
+      if (topNameEl) topNameEl.innerText = topPromoter ? topPromoter.userName : '—';
+      if (topMetaEl) topMetaEl.innerText = topPromoter
+        ? `${Number(topPromoter.teamMembersCount || 0)} Team Members • ₹${Number(topPromoter.totalEarnedCommission || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })} Earned`
+        : '0 Team Members • ₹0.00 Earned';
     }
 
     function openAffiliateMembersModal(userId) {
@@ -3393,9 +3397,238 @@
       return !!(bankSec && active && bankSec.contains(active) && ['INPUT', 'TEXTAREA'].includes(active.tagName));
     }
 
+    // ----------------------------------------------------
+    // 24/7 SUPPORT ADMIN CONSOLE LOGIC
+    // ----------------------------------------------------
+    function filterSupportTickets(status, btn) {
+      currentSupportFilter = status;
+      if (btn && btn.parentElement) {
+        btn.parentElement.querySelectorAll('.filter-pill').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      }
+      renderSupportTicketList();
+    }
+
+    function refreshAdminSupportTickets() {
+      if (window.location.protocol === 'file:') return;
+      fetch('/api/admin/support/tickets?t=' + Date.now())
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (data && Array.isArray(data.tickets)) {
+            supportTickets = data.tickets;
+            recalculateMasterKPIs();
+            renderSupportTicketList();
+            renderActiveSupportTicket();
+          }
+        }).catch(() => {});
+    }
+
+    function selectSupportTicket(ticketId) {
+      activeSupportTicketId = ticketId;
+      const t = supportTickets.find(x => x.ticketId === ticketId);
+      if (t && Number(t.unreadAdmin || 0) > 0 && window.location.protocol !== 'file:') {
+        t.unreadAdmin = 0;
+        fetch('/api/support/mark-read', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ticketId, userId: t.userId, role: 'ADMIN' })
+        }).catch(() => {});
+      }
+      renderSupportTicketList();
+      renderActiveSupportTicket();
+    }
+
+    function renderSupportTicketList() {
+      const container = document.getElementById('adminSupportTicketList');
+      if (!container) return;
+      const q = (document.getElementById('searchSupportInput')?.value || '').toLowerCase();
+      const filtered = (supportTickets || []).filter(t => {
+        const st = String(t.status || 'OPEN').toUpperCase();
+        const matchesStatus = (currentSupportFilter === 'ALL' || st === currentSupportFilter);
+        const matchesQ = (
+          !q ||
+          String(t.userName || '').toLowerCase().includes(q) ||
+          String(t.userId || '').toLowerCase().includes(q) ||
+          String(t.phone || '').toLowerCase().includes(q) ||
+          String(t.ticketId || '').toLowerCase().includes(q)
+        );
+        return matchesStatus && matchesQ;
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = `<p style="font-size:12px; color:var(--text-muted); text-align:center; padding:24px;">No support tickets matching filter.</p>`;
+        return;
+      }
+
+      if (!activeSupportTicketId || !supportTickets.some(x => x.ticketId === activeSupportTicketId)) {
+        activeSupportTicketId = filtered[0].ticketId;
+      }
+
+      container.innerHTML = filtered.map(t => {
+        const isSelected = t.ticketId === activeSupportTicketId;
+        const unread = Number(t.unreadAdmin || 0);
+        const isResolved = String(t.status || '').toUpperCase() === 'RESOLVED';
+        return `
+          <div onclick="selectSupportTicket('${escapeAdminHtml(t.ticketId)}')" style="cursor:pointer; padding:10px 12px; border-radius:10px; border:1px solid ${isSelected ? 'var(--gold)' : 'var(--border)'}; background:${isSelected ? 'rgba(255,215,0,0.08)' : 'var(--card)'}; display:flex; flex-direction:column; gap:4px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:6px;">
+              <strong style="color:#FFF; font-size:13px;">${escapeAdminHtml(t.userName)}</strong>
+              <div style="display:flex; gap:4px; align-items:center;">
+                ${unread > 0 ? `<span class="badge badge-alert">${unread} NEW</span>` : ''}
+                <span class="badge ${isResolved ? 'badge-approved' : 'badge-warn'}">${escapeAdminHtml(t.status)}</span>
+              </div>
+            </div>
+            <div style="font-size:11px; color:var(--cyan); font-family:monospace;">${escapeAdminHtml(t.userId)} • ${escapeAdminHtml(t.userStatus || 'ACTIVE')} • ₹${Number(t.balance || 0).toLocaleString('en-IN')}</div>
+            <div style="font-size:11px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+              <strong style="color:${t.lastSender === 'USER' ? 'var(--gold)' : t.lastSender === 'ADMIN' ? 'var(--green)' : 'var(--cyan)'};">[${escapeAdminHtml(t.lastSender)}]</strong> ${escapeAdminHtml(t.lastMessage || '')}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderActiveSupportTicket() {
+      const t = (supportTickets || []).find(x => x.ticketId === activeSupportTicketId);
+      const headerTitle = document.getElementById('supportThreadHeaderTitle');
+      const headerMeta = document.getElementById('supportThreadHeaderMeta');
+      const actionsEl = document.getElementById('supportTicketActionBtns');
+      const sitEl = document.getElementById('supportUserSituationCard');
+      const boxEl = document.getElementById('adminSupportMessagesBox');
+      const chipsEl = document.getElementById('supportQuickChipsRow');
+      const composerEl = document.getElementById('supportReplyComposer');
+
+      if (!t) {
+        if (headerTitle) headerTitle.innerText = 'Select a User Support Ticket';
+        if (headerMeta) headerMeta.innerText = 'Click any ticket on the left to inspect live user situation & send a custom Admin reply.';
+        if (actionsEl) actionsEl.innerHTML = '';
+        if (sitEl) sitEl.style.display = 'none';
+        if (chipsEl) chipsEl.style.display = 'none';
+        if (composerEl) composerEl.style.display = 'none';
+        if (boxEl) boxEl.innerHTML = `<div style="text-align:center; color:var(--text-muted); font-size:12px; margin:auto 0;">No support ticket selected.</div>`;
+        return;
+      }
+
+      if (headerTitle) headerTitle.innerText = `${t.userName} (${t.userId})`;
+      if (headerMeta) headerMeta.innerText = `Ticket ${t.ticketId} • Phone: ${t.phone || 'N/A'} • Status: ${t.status}`;
+      const nextStatus = String(t.status || '').toUpperCase() === 'RESOLVED' ? 'OPEN' : 'RESOLVED';
+      if (actionsEl) {
+        actionsEl.innerHTML = `
+          <button class="btn ${nextStatus === 'RESOLVED' ? 'btn-green' : 'btn-secondary'} btn-sm" onclick="toggleSupportTicketStatus('${escapeAdminHtml(t.ticketId)}', '${nextStatus}')">
+            ${nextStatus === 'RESOLVED' ? '✓ Mark Resolved' : '↺ Reopen Ticket'}
+          </button>
+        `;
+      }
+
+      const sit = t.situation || {};
+      if (sitEl) {
+        sitEl.style.display = 'flex';
+        const depTxt = sit.pendingDeposit
+          ? `⏳ Pending Dep: ₹${Number(sit.pendingDeposit.amount).toLocaleString('en-IN')} (${sit.pendingDeposit.utr})`
+          : (sit.failedDeposit ? `✕ Failed Dep: ₹${Number(sit.failedDeposit.amount).toLocaleString('en-IN')} (${sit.failedDeposit.reason || 'FAIL'})` : (sit.latestDeposit ? `Last Dep: ₹${Number(sit.latestDeposit.amount).toLocaleString('en-IN')} (${sit.latestDeposit.status})` : 'No deposits'));
+        const wdTxt = sit.pendingWithdrawal
+          ? `⏳ Pending WD: ₹${Number(sit.pendingWithdrawal.amount).toLocaleString('en-IN')}`
+          : (sit.failedWithdrawal ? `↩ Rejected WD: ₹${Number(sit.failedWithdrawal.amount).toLocaleString('en-IN')} (${sit.failedWithdrawal.reason || 'FAIL'})` : (sit.latestWithdrawal ? `Last WD: ₹${Number(sit.latestWithdrawal.amount).toLocaleString('en-IN')} (${sit.latestWithdrawal.status})` : 'No withdrawals'));
+        sitEl.innerHTML = `
+          <div><strong>Account:</strong> <span class="badge ${sit.accountStatus === 'BLOCKED' ? 'badge-blocked' : 'badge-active'}">${escapeAdminHtml(sit.accountStatus || t.userStatus || 'ACTIVE')}</span></div>
+          <div><strong>Wallet:</strong> <span style="color:var(--gold); font-weight:900;">₹${Number(sit.balance ?? t.balance ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
+          <div style="color:var(--cyan);">${escapeAdminHtml(depTxt)}</div>
+          <div style="color:var(--amber);">${escapeAdminHtml(wdTxt)}</div>
+        `;
+      }
+
+      if (chipsEl) chipsEl.style.display = 'flex';
+      if (composerEl) composerEl.style.display = 'flex';
+
+      if (boxEl) {
+        const msgs = Array.isArray(t.messages) ? t.messages : [];
+        boxEl.innerHTML = msgs.map(m => {
+          const st = String(m.senderType || 'USER').toUpperCase();
+          const isAdmin = st === 'ADMIN';
+          const isBot = st === 'AUTO_BOT';
+          const align = isAdmin ? 'flex-end' : 'flex-start';
+          const bg = isAdmin ? 'rgba(0,230,118,0.12)' : (isBot ? 'rgba(0,229,255,0.08)' : 'rgba(255,215,0,0.08)');
+          const border = isAdmin ? 'rgba(0,230,118,0.4)' : (isBot ? 'rgba(0,229,255,0.35)' : 'rgba(255,215,0,0.35)');
+          const roleColor = isAdmin ? 'var(--green)' : (isBot ? 'var(--cyan)' : 'var(--gold)');
+          return `
+            <div style="align-self:${align}; max-width:85%; background:${bg}; border:1px solid ${border}; border-radius:10px; padding:8px 12px;">
+              <div style="display:flex; justify-content:space-between; gap:10px; font-size:10px; margin-bottom:4px;">
+                <strong style="color:${roleColor};">${escapeAdminHtml(m.senderName || st)}${m.situationTag ? ` • ${escapeAdminHtml(m.situationTag)}` : ''}</strong>
+                <span style="color:var(--text-muted);">${escapeAdminHtml(String(m.createdAt || '').slice(11, 19) || 'Live')}</span>
+              </div>
+              <div style="font-size:12px; color:#FFF; white-space:pre-line; line-height:1.45;">${escapeAdminHtml(m.message || '')}</div>
+            </div>
+          `;
+        }).join('');
+        boxEl.scrollTop = boxEl.scrollHeight;
+      }
+    }
+
+    function fillAdminSupportQuickReply(text) {
+      const inp = document.getElementById('adminSupportReplyInput');
+      if (inp) {
+        inp.value = text;
+        inp.focus();
+      }
+    }
+
+    function sendAdminSupportCustomReply() {
+      const t = (supportTickets || []).find(x => x.ticketId === activeSupportTicketId);
+      const inp = document.getElementById('adminSupportReplyInput');
+      const msg = (inp?.value || '').trim();
+      if (!t || !msg) {
+        showToast('⚠️ Select a ticket and type your reply first.');
+        return;
+      }
+      const btn = document.getElementById('adminSupportSendBtn');
+      if (btn) btn.disabled = true;
+      fetch('/api/admin/support/reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ticketId: t.ticketId,
+          userId: t.userId,
+          message: msg,
+          adminName: document.getElementById('adminUsernameDisplay')?.innerText || 'ColourPrince'
+        })
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (!data || !data.success) {
+          showToast('❌ ' + (data?.error || 'Failed to send reply'));
+          return;
+        }
+        if (inp) inp.value = '';
+        showToast(`📨 Custom Admin reply sent to ${t.userName}!`);
+        refreshAdminSupportTickets();
+        pullAdminStateFromServer();
+      })
+      .catch(() => showToast('❌ Network error sending reply'))
+      .finally(() => { if (btn) btn.disabled = false; });
+    }
+
+    function toggleSupportTicketStatus(ticketId, nextStatus) {
+      fetch('/api/admin/support/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticketId, status: nextStatus })
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data && data.success) {
+          showToast(`📌 Ticket marked ${nextStatus}`);
+          refreshAdminSupportTickets();
+          pullAdminStateFromServer();
+        }
+      }).catch(() => {});
+    }
+
     function applyServerStateToAdmin(data) {
       if (!data) return;
       if (data.state_version) lastAdminStateVersion = Number(data.state_version) || lastAdminStateVersion;
+
+      if (data.admin_kpis) serverAdminKpis = data.admin_kpis;
+      if (data.live_wagers) serverLiveWagers = data.live_wagers;
+      if (data.market_stats) serverMarketStats = data.market_stats;
+      if (Array.isArray(data.support_tickets)) supportTickets = data.support_tickets;
 
       if (data.bank_config) {
         bankConfig = data.bank_config;
@@ -3407,17 +3640,19 @@
       }
       if (Array.isArray(data.deposits)) depositRequests = data.deposits;
       if (Array.isArray(data.withdrawals)) withdrawalRequests = data.withdrawals;
-      if (data.users && typeof data.users === 'object') {
+      if (Array.isArray(data.users_list)) {
+        usersList = data.users_list;
+      } else if (data.users && typeof data.users === 'object') {
         usersList = Object.values(data.users);
       }
       if (Array.isArray(data.bets)) allBets = data.bets;
-      if (Array.isArray(data.declared_results_list) && data.declared_results_list.length) {
+      if (Array.isArray(data.declared_results_list)) {
         declaredResults = data.declared_results_list;
       }
       if (Array.isArray(data.audit_logs)) {
         auditLogs = data.audit_logs;
       }
-      if (Array.isArray(data.affiliates) && data.affiliates.length) {
+      if (Array.isArray(data.affiliates)) {
         affiliateList = data.affiliates;
       }
       if (data.draw_overrides) {
@@ -3443,11 +3678,13 @@
       renderBetsTable();
       renderAuditTable();
       renderLiveBetVolumes(selectedDeciderMarket);
+      renderSupportTicketList();
+      renderActiveSupportTicket();
     }
 
     function pullAdminStateFromServer() {
       if (window.location.protocol === 'file:') return Promise.resolve();
-      return fetch('/api/state')
+      return fetch('/api/state?t=' + Date.now(), { cache: 'no-store' })
         .then(r => r.ok ? r.json() : null)
         .then(data => { if (data) applyServerStateToAdmin(data); })
         .catch(() => {});
@@ -3491,6 +3728,8 @@
       updateDeciderPeriodDisplay();
       pickWinningNumber(7);
       startAdminTicker();
+      renderSupportTicketList();
+      renderActiveSupportTicket();
 
       // Hydrate live state from SQLite & attach real-time SSE stream + fallback polling
       pullAdminStateFromServer();

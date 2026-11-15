@@ -12,9 +12,13 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -33,9 +37,14 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.model.MoneyUtils
+import com.example.domain.ServerSupportMessage
+import com.example.domain.ServerSupportThread
 import com.example.ui.MainViewModel
 import com.example.ui.components.borderStroke
 import com.example.ui.theme.*
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun ProfileScreen(
@@ -48,12 +57,40 @@ fun ProfileScreen(
     val isSoundEnabled by viewModel.isSoundEnabled.collectAsState()
     val backendUrl by viewModel.backendUrl.collectAsState()
     val backendStatus by viewModel.backendConnectionStatus.collectAsState()
+    val supportThread by viewModel.supportThread.collectAsState()
+    val isSupportSending by viewModel.isSupportSending.collectAsState()
+    val supportError by viewModel.supportError.collectAsState()
     val context = LocalContext.current
 
     var twoFactorEnabled by remember { mutableStateOf(true) }
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showServerDialog by remember { mutableStateOf(false) }
+    var showSupportDialog by remember { mutableStateOf(false) }
     var serverUrlInput by remember(backendUrl) { mutableStateOf(backendUrl) }
+
+    LaunchedEffect(activeUser?.id) {
+        viewModel.refreshSupportThread(markRead = showSupportDialog, initWelcome = false)
+    }
+
+    DisposableEffect(showSupportDialog) {
+        viewModel.setSupportDialogOpen(showSupportDialog)
+        onDispose {
+            if (showSupportDialog) {
+                viewModel.setSupportDialogOpen(false)
+            }
+        }
+    }
+
+    if (showSupportDialog) {
+        SupportChatDialog(
+            supportThread = supportThread,
+            isSending = isSupportSending,
+            errorMessage = supportError,
+            onRefresh = { viewModel.refreshSupportThread(markRead = true, initWelcome = true) },
+            onSend = { msg, cat -> viewModel.sendSupportMessage(msg, cat) },
+            onDismiss = { showSupportDialog = false }
+        )
+    }
 
     if (showServerDialog) {
         AlertDialog(
@@ -636,6 +673,150 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            // 24/7 Live Support System Card
+            val supportSit = supportThread?.situation
+            val supportUnread = supportThread?.unreadUser ?: 0
+            val supportStatusLabel = when {
+                supportSit?.accountStatus == "BLOCKED" -> "PRIORITY"
+                supportThread?.ticket?.status == "RESOLVED" -> "RESOLVED"
+                else -> "24/7 LIVE"
+            }
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = SurfaceDark,
+                border = borderStroke(1.dp, ElectricCyan.copy(alpha = 0.45f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = 48.dp)
+                    .clickable { showSupportDialog = true }
+                    .testTag("profile_support_button")
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(CircleShape)
+                                    .background(ElectricCyan.copy(alpha = 0.16f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.SupportAgent,
+                                    contentDescription = "24/7 Live Support",
+                                    tint = ElectricCyan,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "24/7 Live Support",
+                                        color = TextPrimary,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(
+                                                if (supportSit?.accountStatus == "BLOCKED") NeonRed.copy(alpha = 0.2f)
+                                                else NeonGreen.copy(alpha = 0.18f)
+                                            )
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            text = supportStatusLabel,
+                                            color = if (supportSit?.accountStatus == "BLOCKED") NeonRed else NeonGreen,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    if (supportUnread > 0) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(NeonRed)
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = "$supportUnread NEW",
+                                                color = Color.White,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.ExtraBold
+                                            )
+                                        }
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                val summaryLine = buildString {
+                                    if (supportSit != null) {
+                                        append("Account ${supportSit.accountStatus}")
+                                        if (supportSit.pendingDeposit != null) {
+                                            append(" • Pending Deposit ₹${supportSit.pendingDeposit.amountRupees.toInt()}")
+                                        } else if (supportSit.failedDeposit != null) {
+                                            append(" • Rejected Deposit ${supportSit.failedDeposit.id}")
+                                        }
+                                        if (supportSit.pendingWithdrawal != null) {
+                                            append(" • Pending Payout ₹${supportSit.pendingWithdrawal.amountRupees.toInt()}")
+                                        } else if (supportSit.failedWithdrawal != null) {
+                                            append(" • Refunded Payout ${supportSit.failedWithdrawal.id}")
+                                        }
+                                    } else {
+                                        append("Instant situation-aware help & direct Admin chat")
+                                    }
+                                }
+                                Text(
+                                    text = summaryLine,
+                                    color = TextMuted,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = "Open Support Chat",
+                            tint = ElectricCyan
+                        )
+                    }
+
+                    val lastMsg = supportThread?.messages?.lastOrNull()
+                    if (lastMsg != null) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(CardHighlight)
+                                .padding(horizontal = 10.dp, vertical = 7.dp)
+                        ) {
+                            val prefix = when (lastMsg.senderType) {
+                                "ADMIN" -> "👑 Admin: "
+                                "AUTO_BOT" -> "🤖 24/7 Auto: "
+                                else -> "You: "
+                            }
+                            Text(
+                                text = prefix + lastMsg.message.take(110) + if (lastMsg.message.length > 110) "…" else "",
+                                color = TextSecondary,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
             // Logout Action Card
             Surface(
                 shape = RoundedCornerShape(14.dp),
@@ -693,3 +874,384 @@ fun ProfileScreen(
         }
     }
 }
+
+@Composable
+private fun SupportChatDialog(
+    supportThread: ServerSupportThread?,
+    isSending: Boolean,
+    errorMessage: String?,
+    onRefresh: () -> Unit,
+    onSend: (String, String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var messageInput by remember { mutableStateOf("") }
+    val listState = rememberLazyListState()
+    val messages = supportThread?.messages ?: emptyList()
+    val situation = supportThread?.situation
+    val ticketStatus = supportThread?.ticket?.status ?: "OPEN"
+
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.size - 1)
+        }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = SurfaceDark,
+            border = borderStroke(1.dp, ElectricCyan.copy(alpha = 0.45f)),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 20.dp)
+                .heightIn(max = 650.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.SupportAgent,
+                            contentDescription = "24/7 Support",
+                            tint = ElectricCyan,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "24/7 Live Support",
+                            color = TextPrimary,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 16.sp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(
+                                    if (ticketStatus == "RESOLVED") NeonGreen.copy(alpha = 0.2f)
+                                    else ElectricCyan.copy(alpha = 0.18f)
+                                )
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = ticketStatus,
+                                color = if (ticketStatus == "RESOLVED") NeonGreen else ElectricCyan,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = onRefresh,
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Refresh Support Thread",
+                                tint = ElectricCyan
+                            )
+                        }
+                        IconButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.size(48.dp).testTag("support_close_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close Support Chat",
+                                tint = TextSecondary
+                            )
+                        }
+                    }
+                }
+
+                // Live Account & Payment Situation Banner
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = ElectricCyan.copy(alpha = 0.08f),
+                    border = borderStroke(1.dp, ElectricCyan.copy(alpha = 0.28f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        if (situation == null) {
+                            Text(
+                                text = "Connected to 24/7 Situation-Aware Support. Tap a quick topic or send your message.",
+                                color = TextSecondary,
+                                fontSize = 11.sp
+                            )
+                        } else {
+                            val acctColor = if (situation.accountStatus == "BLOCKED") NeonRed else NeonGreen
+                            Text(
+                                text = "Account: ${situation.accountStatus} • Wallet: ₹${"%,.2f".format(situation.balanceRupees)}",
+                                color = acctColor,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp
+                            )
+                            situation.pendingDeposit?.let { dep ->
+                                Text(
+                                    text = "⏳ Pending Deposit ${dep.id}: ₹${"%,.2f".format(dep.amountRupees)} (UTR ${dep.utrOrDest})",
+                                    color = AmberGlow,
+                                    fontSize = 10.sp
+                                )
+                            } ?: situation.failedDeposit?.let { dep ->
+                                Text(
+                                    text = "❌ Rejected Deposit ${dep.id}: ${dep.reason.ifBlank { "Verification failed" }}",
+                                    color = NeonRed,
+                                    fontSize = 10.sp
+                                )
+                            }
+                            situation.pendingWithdrawal?.let { wd ->
+                                Text(
+                                    text = "⏳ Pending Withdrawal ${wd.id}: ₹${"%,.2f".format(wd.amountRupees)}",
+                                    color = AmberGlow,
+                                    fontSize = 10.sp
+                                )
+                            } ?: situation.failedWithdrawal?.let { wd ->
+                                Text(
+                                    text = "↩️ Refunded Withdrawal ${wd.id}: ${wd.reason.ifBlank { "Refunded to wallet" }}",
+                                    color = ElectricCyan,
+                                    fontSize = 10.sp
+                                )
+                            }
+                            if (situation.upiId.isNotBlank()) {
+                                Text(
+                                    text = "Active Gateway UPI: ${situation.upiId} (${situation.bankName})",
+                                    color = TextMuted,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Quick Situation Topics
+                val quickTopics = remember {
+                    listOf(
+                        Triple("💳 Deposit / UTR", "DEPOSIT", "Please check my deposit / UTR payment status"),
+                        Triple("🏦 Withdrawal", "WITHDRAWAL", "Please check my withdrawal / refund status"),
+                        Triple("🎲 Bet / Fee", "BET", "Explain my recent bet / result / 3% platform fee"),
+                        Triple("🛡️ Account", "ACCOUNT", "Check my account verification and status")
+                    )
+                }
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(quickTopics) { (label, cat, prompt) ->
+                        AssistChip(
+                            onClick = { if (!isSending) onSend(prompt, cat) },
+                            label = {
+                                Text(
+                                    text = label,
+                                    color = TextPrimary,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            },
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = CardHighlight
+                            ),
+                            border = borderStroke(1.dp, CardBorder),
+                            modifier = Modifier.defaultMinSize(minHeight = 40.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Message Timeline
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = false)
+                        .heightIn(min = 210.dp, max = 320.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(ObsidianBg)
+                        .border(1.dp, CardBorder, RoundedCornerShape(12.dp))
+                        .padding(10.dp)
+                ) {
+                    if (messages.isEmpty()) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Tap a quick topic or send a message below for instant 24/7 auto-help & Admin custom replies.",
+                                color = TextMuted,
+                                fontSize = 11.sp
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            state = listState,
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            items(messages, key = { it.id }) { msg ->
+                                SupportMessageBubble(msg = msg)
+                            }
+                        }
+                    }
+                }
+
+                if (!errorMessage.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = errorMessage,
+                        color = NeonRed,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Composer
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = messageInput,
+                        onValueChange = { messageInput = it },
+                        placeholder = {
+                            Text(
+                                text = "Ask about Deposit, Withdrawal, Bet...",
+                                color = TextMuted,
+                                fontSize = 12.sp
+                            )
+                        },
+                        singleLine = true,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("support_message_input"),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary,
+                            focusedBorderColor = ElectricCyan,
+                            unfocusedBorderColor = CardBorder,
+                            focusedContainerColor = CardHighlight,
+                            unfocusedContainerColor = CardHighlight
+                        )
+                    )
+                    Button(
+                        onClick = {
+                            val textToSend = messageInput.trim()
+                            if (textToSend.isNotEmpty() && !isSending) {
+                                messageInput = ""
+                                onSend(textToSend, "GENERAL")
+                            }
+                        },
+                        enabled = !isSending && messageInput.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(containerColor = GoldAccent),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .defaultMinSize(minWidth = 56.dp, minHeight = 48.dp)
+                            .testTag("support_send_button")
+                    ) {
+                        if (isSending) {
+                            CircularProgressIndicator(
+                                color = ObsidianBg,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "Send Support Message",
+                                tint = ObsidianBg
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SupportMessageBubble(msg: ServerSupportMessage) {
+    val isUser = msg.senderType == "USER"
+    val isAdmin = msg.senderType == "ADMIN"
+    val bubbleBg = when {
+        isUser -> GoldAccent.copy(alpha = 0.18f)
+        isAdmin -> NeonGreen.copy(alpha = 0.16f)
+        else -> ElectricCyan.copy(alpha = 0.11f)
+    }
+    val bubbleBorder = when {
+        isUser -> GoldAccent.copy(alpha = 0.45f)
+        isAdmin -> NeonGreen.copy(alpha = 0.5f)
+        else -> ElectricCyan.copy(alpha = 0.35f)
+    }
+    val timeFmt = remember(msg.createdAtMs) {
+        if (msg.createdAtMs > 0L) {
+            SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(msg.createdAtMs))
+        } else {
+            msg.createdAt.takeLast(8)
+        }
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            if (!isUser) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(
+                            if (isAdmin) NeonGreen.copy(alpha = 0.22f)
+                            else ElectricCyan.copy(alpha = 0.2f)
+                        )
+                        .padding(horizontal = 5.dp, vertical = 1.dp)
+                ) {
+                    Text(
+                        text = if (isAdmin) "ADMIN" else "24/7 AUTO",
+                        color = if (isAdmin) NeonGreen else ElectricCyan,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+            }
+            Text(
+                text = "${msg.senderName} • $timeFmt",
+                color = TextMuted,
+                fontSize = 9.sp
+            )
+        }
+        Spacer(modifier = Modifier.height(3.dp))
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = bubbleBg,
+            border = borderStroke(1.dp, bubbleBorder),
+            modifier = Modifier.widthIn(max = 300.dp)
+        ) {
+            Text(
+                text = msg.message,
+                color = TextPrimary,
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+                modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp)
+            )
+        }
+    }
+}
+

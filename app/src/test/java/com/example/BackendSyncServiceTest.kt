@@ -353,4 +353,156 @@ class BackendSyncServiceTest {
             server.stop(0)
         }
     }
+
+    @Test
+    fun parseStateSnapshotJson_preservesOldAndNewUsersFromUsersMapAndUsersList() {
+        val syncService = BackendSyncService(context, "http://127.0.0.1:3000")
+        val rawJson = """
+            {
+              "state_version": 99,
+              "server_time_ms": 1794600000000,
+              "users": {
+                "USR-1001": { "id": "USR-1001", "name": "Rahul_Player", "balance": 500.0, "status": "ACTIVE" }
+              },
+              "users_list": [
+                { "id": "USR-1001", "name": "Rahul_Player", "balance": 500.0, "status": "ACTIVE" },
+                { "id": "USR-1002", "name": "Vikram_L6", "balance": 2500.0, "status": "ACTIVE" },
+                { "id": "USR-888123", "name": "OldRegisteredUser", "balance": 100.0, "status": "ACTIVE" }
+              ]
+            }
+        """.trimIndent()
+
+        val snap = syncService.parseStateSnapshotJson(rawJson)
+        assertEquals(3, snap.usersById.size)
+        assertEquals("Rahul_Player", snap.usersById["USR-1001"]?.name)
+        assertEquals("Vikram_L6", snap.usersById["USR-1002"]?.name)
+        assertEquals("OldRegisteredUser", snap.usersById["USR-888123"]?.name)
+    }
+
+    @Test
+    fun supportThreadAndMessage_parsesSituationAutoReplyAndAdminCustomReply() = runBlocking {
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
+        val port = server.address.port
+
+        server.createContext("/api/support/thread") { ex ->
+            val respStr = org.json.JSONObject()
+                .put("success", true)
+                .put("unreadUser", 1)
+                .put(
+                    "ticket",
+                    org.json.JSONObject()
+                        .put("ticketId", "TKT-USR-1001")
+                        .put("userId", "USR-1001")
+                        .put("userName", "Rahul_Player")
+                        .put("status", "OPEN")
+                        .put("unreadUser", 1)
+                )
+                .put(
+                    "situation",
+                    org.json.JSONObject()
+                        .put("userId", "USR-1001")
+                        .put("userName", "Rahul_Player")
+                        .put("accountStatus", "ACTIVE")
+                        .put("balance", 1500.0)
+                        .put("upiId", "colourking@icici")
+                        .put("bankName", "SBI")
+                        .put(
+                            "pendingDeposit",
+                            org.json.JSONObject()
+                                .put("id", "DEP-101")
+                                .put("amount", 500.0)
+                                .put("status", "IN PROCESS")
+                                .put("utr", "998877665544")
+                        )
+                )
+                .put(
+                    "messages",
+                    org.json.JSONArray()
+                        .put(
+                            org.json.JSONObject()
+                                .put("id", "MSG-1")
+                                .put("ticketId", "TKT-USR-1001")
+                                .put("userId", "USR-1001")
+                                .put("senderType", "ADMIN")
+                                .put("senderName", "ColourPrince")
+                                .put("category", "DEPOSIT")
+                                .put("message", "Checking your UTR right now.")
+                                .put("isAuto", false)
+                        )
+                )
+                .toString()
+            val bytes = respStr.toByteArray()
+            ex.responseHeaders.add("Content-Type", "application/json")
+            ex.sendResponseHeaders(200, bytes.size.toLong())
+            ex.responseBody.use { it.write(bytes) }
+        }
+
+        server.createContext("/api/support/message") { ex ->
+            val req = org.json.JSONObject(ex.requestBody.bufferedReader().readText())
+            val msg = req.optString("message")
+            val respStr = org.json.JSONObject()
+                .put("success", true)
+                .put("unreadUser", 0)
+                .put(
+                    "ticket",
+                    org.json.JSONObject()
+                        .put("ticketId", "TKT-USR-1001")
+                        .put("userId", "USR-1001")
+                        .put("userName", "Rahul_Player")
+                        .put("status", "OPEN")
+                        .put("unreadUser", 0)
+                )
+                .put(
+                    "messages",
+                    org.json.JSONArray()
+                        .put(
+                            org.json.JSONObject()
+                                .put("id", "MSG-2")
+                                .put("ticketId", "TKT-USR-1001")
+                                .put("userId", "USR-1001")
+                                .put("senderType", "USER")
+                                .put("senderName", "Rahul_Player")
+                                .put("category", "DEPOSIT")
+                                .put("message", msg)
+                                .put("isAuto", false)
+                        )
+                        .put(
+                            org.json.JSONObject()
+                                .put("id", "MSG-3")
+                                .put("ticketId", "TKT-USR-1001")
+                                .put("userId", "USR-1001")
+                                .put("senderType", "AUTO_BOT")
+                                .put("senderName", "Colour King 24/7 Support Bot")
+                                .put("category", "DEPOSIT")
+                                .put("message", "Pending Deposit DEP-101 detected for ₹500.00.")
+                                .put("isAuto", true)
+                                .put("situationTag", "DEPOSIT_IN_PROCESS")
+                        )
+                )
+                .toString()
+            val bytes = respStr.toByteArray()
+            ex.responseHeaders.add("Content-Type", "application/json")
+            ex.sendResponseHeaders(200, bytes.size.toLong())
+            ex.responseBody.use { it.write(bytes) }
+        }
+
+        server.start()
+        try {
+            val sync = BackendSyncService(context, "http://127.0.0.1:$port")
+            val fetched = sync.fetchSupportThread("USR-1001", markRead = false, initWelcome = true)
+            assertNotNull(fetched)
+            assertEquals(1, fetched!!.unreadUser)
+            assertEquals("DEP-101", fetched.situation?.pendingDeposit?.id)
+            assertEquals("ADMIN", fetched.messages.first().senderType)
+
+            val (sent, err) = sync.sendSupportMessage("USR-1001", "Check my deposit UTR", "DEPOSIT")
+            assertEquals(null, err)
+            assertNotNull(sent)
+            assertEquals(2, sent!!.messages.size)
+            assertEquals("AUTO_BOT", sent.messages.last().senderType)
+            assertEquals("DEPOSIT_IN_PROCESS", sent.messages.last().situationTag)
+        } finally {
+            server.stop(0)
+        }
+    }
 }

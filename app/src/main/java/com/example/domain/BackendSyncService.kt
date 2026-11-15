@@ -173,6 +173,66 @@ data class ServerAuthResult(
     val isNetworkError: Boolean = false
 )
 
+data class ServerSupportTxBrief(
+    val id: String,
+    val amountRupees: Double,
+    val status: String,
+    val utrOrDest: String = "",
+    val reason: String = "",
+    val time: String = ""
+)
+
+data class ServerSupportSituation(
+    val userId: String,
+    val userName: String,
+    val accountStatus: String = "ACTIVE",
+    val balanceRupees: Double = 0.0,
+    val activeBetsCount: Int = 0,
+    val pendingDeposit: ServerSupportTxBrief? = null,
+    val failedDeposit: ServerSupportTxBrief? = null,
+    val pendingWithdrawal: ServerSupportTxBrief? = null,
+    val failedWithdrawal: ServerSupportTxBrief? = null,
+    val upiId: String = "",
+    val bankName: String = "",
+    val minDeposit: Long = 100L,
+    val maxDeposit: Long = 100000L
+)
+
+data class ServerSupportMessage(
+    val id: String,
+    val ticketId: String,
+    val userId: String,
+    val senderType: String,
+    val senderName: String,
+    val category: String,
+    val message: String,
+    val isAuto: Boolean,
+    val situationTag: String = "",
+    val createdAt: String = "",
+    val createdAtMs: Long = 0L
+)
+
+data class ServerSupportTicket(
+    val ticketId: String,
+    val userId: String,
+    val userName: String,
+    val status: String = "OPEN",
+    val category: String = "GENERAL",
+    val lastMessage: String = "",
+    val lastSender: String = "AUTO_BOT",
+    val unreadAdmin: Int = 0,
+    val unreadUser: Int = 0,
+    val updatedAt: String = "",
+    val updatedAtMs: Long = 0L
+)
+
+data class ServerSupportThread(
+    val ticket: ServerSupportTicket? = null,
+    val messages: List<ServerSupportMessage> = emptyList(),
+    val situation: ServerSupportSituation? = null,
+    val unreadUser: Int = 0
+)
+
 class BackendSyncService(
     private val context: Context? = null,
     initialBaseUrl: String? = null
@@ -602,7 +662,7 @@ class BackendSyncService(
             }
         }
 
-        // 4. Users
+        // 4. Users (prefer users map + supplement from users_list array so no user is missed)
         val usersMap = mutableMapOf<String, ServerUserState>()
         val usersObj = root.optJSONObject("users")
         if (usersObj != null) {
@@ -610,19 +670,17 @@ class BackendSyncService(
             while (uKeys.hasNext()) {
                 val uId = uKeys.next()
                 val uObj = usersObj.optJSONObject(uId) ?: continue
-                usersMap[uId] = ServerUserState(
-                    id = uObj.optString("id", uId),
-                    name = uObj.optString("name", uId),
-                    phone = uObj.optString("phone", ""),
-                    email = uObj.optString("email", ""),
-                    balanceRupees = uObj.optDouble("balance", 0.0),
-                    totalDepositRupees = uObj.optDouble("totalDeposit", 0.0),
-                    totalWithdrawRupees = uObj.optDouble("totalWithdraw", 0.0),
-                    betsCount = uObj.optInt("betsCount", 0),
-                    status = uObj.optString("status", "ACTIVE").uppercase(),
-                    referralCode = uObj.optString("referralCode", ""),
-                    referredBy = uObj.optString("referredBy").takeIf { it.isNotBlank() && it != "null" }
-                )
+                usersMap[uId] = parseServerUser(uObj.apply { if (!has("id")) put("id", uId) })
+            }
+        }
+        val usersArr = root.optJSONArray("users_list")
+        if (usersArr != null) {
+            for (i in 0 until usersArr.length()) {
+                val uObj = usersArr.optJSONObject(i) ?: continue
+                val uId = uObj.optString("id")
+                if (uId.isNotBlank() && !usersMap.containsKey(uId)) {
+                    usersMap[uId] = parseServerUser(uObj)
+                }
             }
         }
 
@@ -1050,6 +1108,134 @@ class BackendSyncService(
         } else {
             false to resp?.optString("error")
         }
+    }
+
+    private fun parseSupportTxBrief(obj: JSONObject?, extraKey: String): ServerSupportTxBrief? {
+        if (obj == null) return null
+        val id = obj.optString("id")
+        if (id.isBlank()) return null
+        return ServerSupportTxBrief(
+            id = id,
+            amountRupees = obj.optDouble("amount", 0.0),
+            status = obj.optString("status", "IN PROCESS").uppercase(),
+            utrOrDest = obj.optString(extraKey, ""),
+            reason = obj.optString("reason", "").let { if (it == "null") "" else it },
+            time = obj.optString("time", "")
+        )
+    }
+
+    private fun parseSupportThreadPayload(root: JSONObject): ServerSupportThread {
+        val tObj = root.optJSONObject("ticket")
+        val ticket = if (tObj != null && tObj.optString("ticketId").isNotBlank()) {
+            ServerSupportTicket(
+                ticketId = tObj.optString("ticketId"),
+                userId = tObj.optString("userId"),
+                userName = tObj.optString("userName", ""),
+                status = tObj.optString("status", "OPEN").uppercase(),
+                category = tObj.optString("category", "GENERAL").uppercase(),
+                lastMessage = tObj.optString("lastMessage", ""),
+                lastSender = tObj.optString("lastSender", "AUTO_BOT").uppercase(),
+                unreadAdmin = tObj.optInt("unreadAdmin", 0),
+                unreadUser = tObj.optInt("unreadUser", 0),
+                updatedAt = tObj.optString("updatedAt", ""),
+                updatedAtMs = tObj.optLong("updatedAtMs", 0L)
+            )
+        } else null
+
+        val msgs = mutableListOf<ServerSupportMessage>()
+        val mArr = root.optJSONArray("messages") ?: JSONArray()
+        for (i in 0 until mArr.length()) {
+            val m = mArr.optJSONObject(i) ?: continue
+            msgs.add(
+                ServerSupportMessage(
+                    id = m.optString("id"),
+                    ticketId = m.optString("ticketId"),
+                    userId = m.optString("userId"),
+                    senderType = m.optString("senderType", "AUTO_BOT").uppercase(),
+                    senderName = m.optString("senderName", "Support"),
+                    category = m.optString("category", "GENERAL").uppercase(),
+                    message = m.optString("message", ""),
+                    isAuto = m.optBoolean("isAuto", false),
+                    situationTag = m.optString("situationTag", ""),
+                    createdAt = m.optString("createdAt", ""),
+                    createdAtMs = m.optLong("createdAtMs", 0L)
+                )
+            )
+        }
+
+        val sObj = root.optJSONObject("situation")
+        val situation = if (sObj != null && sObj.optString("userId").isNotBlank()) {
+            ServerSupportSituation(
+                userId = sObj.optString("userId"),
+                userName = sObj.optString("userName", ""),
+                accountStatus = sObj.optString("accountStatus", "ACTIVE").uppercase(),
+                balanceRupees = sObj.optDouble("balance", 0.0),
+                activeBetsCount = sObj.optInt("activeBetsCount", 0),
+                pendingDeposit = parseSupportTxBrief(sObj.optJSONObject("pendingDeposit"), "utr"),
+                failedDeposit = parseSupportTxBrief(sObj.optJSONObject("failedDeposit"), "utr"),
+                pendingWithdrawal = parseSupportTxBrief(sObj.optJSONObject("pendingWithdrawal"), "destination"),
+                failedWithdrawal = parseSupportTxBrief(sObj.optJSONObject("failedWithdrawal"), "destination"),
+                upiId = sObj.optString("upiId", ""),
+                bankName = sObj.optString("bankName", ""),
+                minDeposit = sObj.optLong("minDeposit", 100L),
+                maxDeposit = sObj.optLong("maxDeposit", 100000L)
+            )
+        } else null
+
+        val unread = root.optInt("unreadUser", ticket?.unreadUser ?: 0)
+        return ServerSupportThread(
+            ticket = ticket,
+            messages = msgs,
+            situation = situation,
+            unreadUser = unread
+        )
+    }
+
+    suspend fun fetchSupportThread(
+        serverUserId: String,
+        markRead: Boolean = false,
+        initWelcome: Boolean = false
+    ): ServerSupportThread? = withContext(Dispatchers.IO) {
+        if (serverUserId.isBlank()) return@withContext null
+        val baseUrl = _activeBackendUrl.value
+        val encodedUid = java.net.URLEncoder.encode(serverUserId, "UTF-8")
+        val url = "$baseUrl/api/support/thread?userId=$encodedUid&markRead=${if (markRead) "1" else "0"}&init=${if (initWelcome) "1" else "0"}&t=${System.currentTimeMillis()}"
+        return@withContext try {
+            val req = Request.Builder()
+                .url(url)
+                .header("Cache-Control", "no-store")
+                .get()
+                .build()
+            httpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                val raw = resp.body?.string() ?: return@use null
+                val root = JSONObject(raw)
+                if (!root.optBoolean("success", false)) return@use null
+                parseSupportThreadPayload(root)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    suspend fun sendSupportMessage(
+        serverUserId: String,
+        message: String,
+        category: String = "GENERAL"
+    ): Pair<ServerSupportThread?, String?> = withContext(Dispatchers.IO) {
+        if (serverUserId.isBlank()) return@withContext null to "User ID is required"
+        if (message.isBlank()) return@withContext null to "Support message cannot be empty"
+        val payload = JSONObject().apply {
+            put("userId", serverUserId)
+            put("message", message.trim())
+            put("category", category.uppercase())
+        }
+        val resp = postJsonWithRetry("/api/support/message", payload)
+            ?: return@withContext null to "Unable to reach support server"
+        if (!resp.optBoolean("success", false)) {
+            return@withContext null to (resp.optString("error").takeIf { it.isNotBlank() } ?: "Failed to send message")
+        }
+        return@withContext parseSupportThreadPayload(resp) to null
     }
 
     private fun postJson(path: String, payload: JSONObject): JSONObject? {

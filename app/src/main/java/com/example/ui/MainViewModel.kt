@@ -76,6 +76,74 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _serverAffiliateStats = MutableStateFlow<ServerAffiliateStats?>(null)
     val serverAffiliateStats = _serverAffiliateStats.asStateFlow()
 
+    private val _supportThread = MutableStateFlow<ServerSupportThread?>(null)
+    val supportThread = _supportThread.asStateFlow()
+
+    private val _isSupportSending = MutableStateFlow(false)
+    val isSupportSending = _isSupportSending.asStateFlow()
+
+    private val _supportError = MutableStateFlow<String?>(null)
+    val supportError = _supportError.asStateFlow()
+
+    @Volatile
+    private var isSupportDialogOpen: Boolean = false
+
+    fun setSupportDialogOpen(open: Boolean) {
+        isSupportDialogOpen = open
+        if (open) {
+            refreshSupportThread(markRead = true, initWelcome = true)
+        }
+    }
+
+    fun refreshSupportThread(markRead: Boolean = isSupportDialogOpen, initWelcome: Boolean = false) {
+        if (!_isLoggedIn.value) return
+        val serverUid = getServerUserId()
+        if (serverUid.isBlank()) return
+        viewModelScope.launch {
+            val thread = backendSyncService.fetchSupportThread(
+                serverUserId = serverUid,
+                markRead = markRead,
+                initWelcome = initWelcome
+            )
+            if (thread != null) {
+                _supportThread.value = thread
+                _supportError.value = null
+            }
+        }
+    }
+
+    fun sendSupportMessage(message: String, category: String = "GENERAL") {
+        val clean = message.trim()
+        if (clean.isBlank()) {
+            _supportError.value = "Please enter a message for support."
+            return
+        }
+        val serverUid = getServerUserId()
+        if (serverUid.isBlank()) {
+            _supportError.value = "Please log in first."
+            return
+        }
+        viewModelScope.launch {
+            _isSupportSending.value = true
+            _supportError.value = null
+            try {
+                val (thread, err) = backendSyncService.sendSupportMessage(
+                    serverUserId = serverUid,
+                    message = clean,
+                    category = category
+                )
+                if (thread != null) {
+                    _supportThread.value = thread
+                } else {
+                    _supportError.value = err ?: "Failed to send support message"
+                    postNotification("⚠️ ${err ?: "Failed to send support message"}", false)
+                }
+            } finally {
+                _isSupportSending.value = false
+            }
+        }
+    }
+
     private fun saveAuthSession(userId: String, tenantId: String) {
         authPrefs.edit()
             .putBoolean("is_logged_in", true)
@@ -425,6 +493,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     "user_status_changed" -> if (ev.targetUserId == targetUid) {
                         backendSyncService.forceSyncNow()
                     }
+                    "support_reply", "support_updated", "support_message" -> {
+                        if (ev.targetUserId == null || ev.targetUserId == targetUid) {
+                            refreshSupportThread(markRead = isSupportDialogOpen, initWelcome = false)
+                            if (ev.eventType == "support_reply" && ev.targetUserId == targetUid && !isSupportDialogOpen) {
+                                postNotification("💬 Admin replied to your 24/7 Support ticket!", true)
+                            }
+                        }
+                    }
+                }
+                if (ev.eventType in listOf(
+                        "balance_adjusted",
+                        "user_status_changed",
+                        "deposit_approved",
+                        "deposit_rejected",
+                        "withdrawal_approved",
+                        "withdrawal_rejected"
+                    ) && (ev.targetUserId == null || ev.targetUserId == targetUid)
+                ) {
+                    refreshSupportThread(markRead = isSupportDialogOpen, initWelcome = false)
                 }
             }
         }
@@ -716,6 +803,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (affStats != null) {
             _serverAffiliateStats.value = affStats
         }
+
+        // 6. Sync 24/7 Live Support thread & situation telemetry
+        val supportData = backendSyncService.fetchSupportThread(
+            serverUserId = serverUserId,
+            markRead = isSupportDialogOpen,
+            initWelcome = false
+        )
+        if (supportData != null) {
+            _supportThread.value = supportData
+        }
     }
 
     fun dismissNotification() {
@@ -761,6 +858,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _isLoggedIn.value = false
         _activeUser.value = null
         _serverAffiliateStats.value = null
+        _supportThread.value = null
+        _supportError.value = null
+        _isSupportSending.value = false
+        isSupportDialogOpen = false
         clearAuthSession()
         postNotification("Logged out from Colour King", true)
     }
@@ -845,7 +946,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _isLoggedIn.value = true
                     saveAuthSession(syncedUser.id, syncedUser.tenantId)
                     lastLocalMutationAtMs = System.currentTimeMillis()
-                    viewModelScope.launch { backendSyncService.forceSyncNow() }
+                    viewModelScope.launch {
+                        backendSyncService.forceSyncNow()
+                        refreshSupportThread(markRead = false, initWelcome = false)
+                    }
                     postNotification("Welcome back, ${syncedUser.username}!", true)
                     onResult(true, null)
                     return@launch
@@ -1041,7 +1145,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _isLoggedIn.value = true
                 saveAuthSession(canonicalUserId, tenantId)
                 lastLocalMutationAtMs = System.currentTimeMillis()
-                viewModelScope.launch { backendSyncService.forceSyncNow() }
+                viewModelScope.launch {
+                    backendSyncService.forceSyncNow()
+                    refreshSupportThread(markRead = false, initWelcome = false)
+                }
 
                 postNotification("🎉 Welcome ${newUser.username}! ₹100 welcome bonus credited to your wallet!", true)
                 onResult(true, null)
