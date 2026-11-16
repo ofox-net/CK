@@ -355,6 +355,117 @@ class BackendSyncServiceTest {
     }
 
     @Test
+    fun recoveryToken_isPersistedOnRegisterAndSentOnSubsequentLoginAndRestore() = runBlocking {
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
+        val port = server.address.port
+        var sawRecoveryTokenOnLogin = false
+        var sawRecoveryTokenOnRestore = false
+        val expectedTok = "CKT1.demo_payload.demo_sig"
+
+        server.createContext("/api/users/register") { ex ->
+            val respStr = org.json.JSONObject()
+                .put("success", true)
+                .put("recoveryToken", expectedTok)
+                .put(
+                    "user",
+                    org.json.JSONObject()
+                        .put("id", "USR-999856")
+                        .put("name", "Player9998")
+                        .put("phone", "+919998565941")
+                        .put("email", "p9998@colourking.in")
+                        .put("balance", 100.0)
+                        .put("status", "ACTIVE")
+                        .put("referralCode", "PLAY999")
+                )
+                .toString()
+            val bytes = respStr.toByteArray()
+            ex.responseHeaders.add("Content-Type", "application/json")
+            ex.sendResponseHeaders(200, bytes.size.toLong())
+            ex.responseBody.use { it.write(bytes) }
+        }
+
+        server.createContext("/api/users/login") { ex ->
+            val req = org.json.JSONObject(ex.requestBody.bufferedReader().readText())
+            if (req.optString("recoveryToken") == expectedTok) {
+                sawRecoveryTokenOnLogin = true
+            }
+            val respStr = org.json.JSONObject()
+                .put("success", true)
+                .put("restored", true)
+                .put("recoveryToken", expectedTok)
+                .put(
+                    "user",
+                    org.json.JSONObject()
+                        .put("id", "USR-999856")
+                        .put("name", "Player9998")
+                        .put("phone", "+919998565941")
+                        .put("balance", 100.0)
+                        .put("status", "ACTIVE")
+                        .put("referralCode", "PLAY999")
+                )
+                .toString()
+            val bytes = respStr.toByteArray()
+            ex.responseHeaders.add("Content-Type", "application/json")
+            ex.sendResponseHeaders(200, bytes.size.toLong())
+            ex.responseBody.use { it.write(bytes) }
+        }
+
+        server.createContext("/api/users/restore-session") { ex ->
+            val req = org.json.JSONObject(ex.requestBody.bufferedReader().readText())
+            if (req.optString("recoveryToken") == expectedTok) {
+                sawRecoveryTokenOnRestore = true
+            }
+            val respStr = org.json.JSONObject()
+                .put("success", true)
+                .put("authenticated", true)
+                .put("restored", true)
+                .put("recoveryToken", expectedTok)
+                .put(
+                    "user",
+                    org.json.JSONObject()
+                        .put("id", "USR-999856")
+                        .put("name", "Player9998")
+                        .put("phone", "+919998565941")
+                        .put("balance", 100.0)
+                        .put("status", "ACTIVE")
+                        .put("referralCode", "PLAY999")
+                )
+                .toString()
+            val bytes = respStr.toByteArray()
+            ex.responseHeaders.add("Content-Type", "application/json")
+            ex.sendResponseHeaders(200, bytes.size.toLong())
+            ex.responseBody.use { it.write(bytes) }
+        }
+
+        server.start()
+        try {
+            val sync = BackendSyncService(context, "http://127.0.0.1:$port")
+            val reg = sync.registerUserWithResult(
+                userId = "USR-999856",
+                username = "Player9998",
+                phone = "+919998565941",
+                email = "",
+                balanceRupees = 100.0,
+                password = "secret"
+            )
+            assertNotNull(reg.user)
+            assertEquals(expectedTok, reg.recoveryToken)
+            assertEquals(expectedTok, sync.findRecoveryToken("9998565941"))
+
+            // Subsequent login using 10-digit phone sends stored recoveryToken
+            val login = sync.loginUserWithResult("9998565941", "secret")
+            assertNotNull(login.user)
+            assertTrue(sawRecoveryTokenOnLogin)
+
+            val restored = sync.restoreSessionWithRecovery("9998565941")
+            assertNotNull(restored.user)
+            assertTrue(sawRecoveryTokenOnRestore)
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
     fun parseStateSnapshotJson_preservesOldAndNewUsersFromUsersMapAndUsersList() {
         val syncService = BackendSyncService(context, "http://127.0.0.1:3000")
         val rawJson = """

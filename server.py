@@ -6,14 +6,37 @@ import sqlite3
 import threading
 import time
 import urllib.parse
+import urllib.request
 import hashlib
 import hmac
+import base64
+import zlib
+import shutil
+import signal
+import ssl
+import sys
+import tempfile
 import random
 import math
 import csv
 import io
 import queue
 from datetime import datetime, timezone, timedelta
+
+try:
+    import pg8000.dbapi as _pg8000
+except Exception:
+    _pg8000 = None
+
+try:
+    import psycopg as _psycopg3
+except Exception:
+    _psycopg3 = None
+
+try:
+    import psycopg2 as _psycopg2
+except Exception:
+    _psycopg2 = None
 
 PBKDF2_ITERATIONS = 100_000
 
@@ -48,14 +71,63 @@ def verify_password_secure(raw_password, stored_hash, stored_plain=""):
         return True
     return False
 
-PORT = 3000
-DIRECTORY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
-DB_FILE = os.path.join(DIRECTORY, "colour_king.db")
+PORT = int(os.environ.get("PORT", 3000))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DIRECTORY = os.path.join(BASE_DIR, "web")
+LEGACY_DB_FILE = os.path.join(DIRECTORY, "colour_king.db")
 RETENTION_DAYS = 90
+CK_AUTH_SECRET = os.environ.get("CK_AUTH_SECRET") or os.environ.get("SECRET_KEY") or "ck-prod-persistent-hmac-v1-2026-anchor"
+
+def resolve_db_file():
+    env_db = (os.environ.get("DB_PATH") or os.environ.get("SQLITE_DB_PATH") or "").strip()
+    if env_db:
+        try:
+            parent = os.path.dirname(os.path.abspath(env_db))
+            os.makedirs(parent, exist_ok=True)
+            return env_db
+        except Exception:
+            pass
+    for mount_dir in ("/var/data", "/data"):
+        try:
+            if os.path.isdir(mount_dir) and os.access(mount_dir, os.W_OK):
+                candidate = os.path.join(mount_dir, "colour_king.db")
+                if not os.path.exists(candidate) and os.path.exists(LEGACY_DB_FILE):
+                    try:
+                        shutil.copy2(LEGACY_DB_FILE, candidate)
+                    except Exception:
+                        pass
+                return candidate
+        except Exception:
+            pass
+    return LEGACY_DB_FILE
+
+DB_FILE = resolve_db_file()
+DATABASE_URL = (
+    os.environ.get("DATABASE_URL")
+    or os.environ.get("RENDER_POSTGRES_URL")
+    or os.environ.get("POSTGRES_URL")
+    or ""
+).strip()
+FIREBASE_DB_URL = (os.environ.get("FIREBASE_DB_URL") or "").strip().rstrip("/")
+FIREBASE_DB_SECRET = (os.environ.get("FIREBASE_DB_SECRET") or "").strip()
 
 db_lock = threading.Lock()
+cloud_sync_lock = threading.Lock()
 sse_lock = threading.Lock()
 sse_subscribers = []
+_cloud_status = {
+    "pgConfigured": bool(DATABASE_URL),
+    "pgDriver": "pg8000" if _pg8000 else ("psycopg3" if _psycopg3 else ("psycopg2" if _psycopg2 else "none")),
+    "pgConnected": False,
+    "pgLastSyncMs": 0,
+    "pgLastError": "",
+    "firebaseConfigured": bool(FIREBASE_DB_URL),
+    "firebaseConnected": False,
+    "firebaseLastSyncMs": 0,
+    "lastSnapshotVersion": 0,
+    "lastSnapshotTimeMs": 0,
+    "persistentDisk": (DB_FILE != LEGACY_DB_FILE),
+}
 
 # Supported Markets
 MARKET_KEYS = ["MIAMI", "VEGAS", "PARIS", "DUBAI"]
@@ -101,9 +173,513 @@ DEFAULT_USERS = [
 ]
 
 def get_db():
-    conn = sqlite3.connect(DB_FILE, check_same_thread=False, timeout=10.0)
+    conn = sqlite3.connect(DB_FILE, check_same_thread=False, timeout=15.0)
     conn.row_factory = sqlite3.Row
     return conn
+
+def _b64u_encode(raw_bytes):
+    return base64.urlsafe_b64encode(raw_bytes).rstrip(b"=").decode("ascii")
+
+def _b64u_decode(text_str):
+    pad = "=" * ((4 - len(text_str) % 4) % 4)
+    return base64.urlsafe_b64decode((text_str + pad).encode("ascii"))
+
+def build_user_recovery_token(u_row):
+    if not u_row:
+        return ""
+    keys = u_row.keys() if hasattr(u_row, "keys") else u_row
+    def _val(k, default=None):
+        try:
+            return u_row[k] if k in keys else default
+        except Exception:
+            return default
+    payload = {
+        "v": 1,
+        "id": str(_val("id", "")),
+        "name": str(_val("name", "")),
+        "phone": str(_val("phone", "") or ""),
+        "email": str(_val("email", "") or ""),
+        "pwh": str(_val("password_hash", "") or ""),
+        "bal": round(float(_val("balance", 0.0) or 0.0), 2),
+        "td": round(float(_val("total_deposit", 0.0) or 0.0), 2),
+        "tw": round(float(_val("total_withdraw", 0.0) or 0.0), 2),
+        "bc": int(_val("bets_count", 0) or 0),
+        "st": str(_val("status", "ACTIVE") or "ACTIVE"),
+        "rc": str(_val("referral_code", "") or ""),
+        "rb": _val("referred_by", None),
+        "ts": int(time.time() * 1000),
+    }
+    raw_json = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    body_b64 = _b64u_encode(raw_json)
+    sig = hmac.new(CK_AUTH_SECRET.encode("utf-8"), body_b64.encode("ascii"), hashlib.sha256).digest()
+    return f"CKT1.{body_b64}.{_b64u_encode(sig)}"
+
+def verify_user_recovery_token(token_str):
+    if not token_str or not isinstance(token_str, str):
+        return None
+    parts = token_str.strip().split(".")
+    if len(parts) != 3 or parts[0] != "CKT1":
+        return None
+    body_b64, sig_b64 = parts[1], parts[2]
+    try:
+        expected_sig = _b64u_encode(
+            hmac.new(CK_AUTH_SECRET.encode("utf-8"), body_b64.encode("ascii"), hashlib.sha256).digest()
+        )
+        if not hmac.compare_digest(sig_b64, expected_sig):
+            return None
+        payload = json.loads(_b64u_decode(body_b64).decode("utf-8"))
+        if not isinstance(payload, dict) or not payload.get("id") or not payload.get("name"):
+            return None
+        return payload
+    except Exception:
+        return None
+
+def _find_user_matching_identifier(c, identifier):
+    ident = str(identifier or "").strip()
+    if not ident:
+        return None
+    c.execute("""
+        SELECT * FROM users
+        WHERE UPPER(TRIM(id)) = UPPER(?) OR LOWER(TRIM(name)) = LOWER(?) OR LOWER(TRIM(email)) = LOWER(?) OR TRIM(phone) = ?
+        LIMIT 1
+    """, (ident, ident, ident, ident))
+    u = c.fetchone()
+    if u:
+        return u
+    digits = "".join(ch for ch in ident if ch.isdigit())
+    last10 = digits[-10:] if len(digits) >= 10 else ""
+    if last10:
+        c.execute("SELECT * FROM users")
+        for row in c.fetchall():
+            r_digits = "".join(ch for ch in str(row["phone"] or "") if ch.isdigit())
+            if len(r_digits) >= 10 and r_digits[-10:] == last10:
+                return row
+    return None
+
+def _token_matches_identifier(token_data, identifier):
+    ident = str(identifier or "").strip()
+    if not ident or not token_data:
+        return False
+    ident_l = ident.lower()
+    if (
+        str(token_data.get("id", "")).strip().lower() == ident_l
+        or str(token_data.get("name", "")).strip().lower() == ident_l
+        or str(token_data.get("email", "")).strip().lower() == ident_l
+        or str(token_data.get("phone", "")).strip().lower() == ident_l
+    ):
+        return True
+    i_digits = "".join(ch for ch in ident if ch.isdigit())
+    t_digits = "".join(ch for ch in str(token_data.get("phone", "")) if ch.isdigit())
+    if len(i_digits) >= 10 and len(t_digits) >= 10 and i_digits[-10:] == t_digits[-10:]:
+        return True
+    return False
+
+def restore_user_from_token_if_missing(conn, token_data, now_ms, verified_plain_pw=""):
+    if not token_data:
+        return None, False
+    c = conn.cursor()
+    uid = str(token_data.get("id", "")).strip()
+    uname = str(token_data.get("name", "")).strip()
+    uphone = str(token_data.get("phone", "") or "").strip()
+    c.execute("SELECT * FROM users WHERE id = ?", (uid,))
+    existing = c.fetchone()
+    if existing:
+        return existing, False
+    existing = _find_user_matching_identifier(c, uname)
+    if existing:
+        return existing, False
+    if uphone:
+        existing = _find_user_matching_identifier(c, uphone)
+        if existing:
+            return existing, False
+
+    pw_hash = str(token_data.get("pwh") or "").strip()
+    if not pw_hash and verified_plain_pw:
+        pw_hash = hash_password_secure(verified_plain_pw)
+    bal = round(float(token_data.get("bal") or 100.0), 2)
+    td = round(float(token_data.get("td") or bal), 2)
+    tw = round(float(token_data.get("tw") or 0.0), 2)
+    bc = int(token_data.get("bc") or 0)
+    st = str(token_data.get("st") or "ACTIVE").upper()
+    rc = str(token_data.get("rc") or uid[-6:]).upper()
+    rb = token_data.get("rb")
+    email = str(token_data.get("email") or f"{uname.lower().replace(' ', '_')}@colourking.in")
+
+    # Resolve referral code uniqueness cleanly
+    c.execute("SELECT 1 FROM users WHERE UPPER(referral_code) = ?", (rc,))
+    if c.fetchone():
+        rc = f"{rc[:4]}{random.randint(1000, 9999)}"
+
+    c.execute("""
+        INSERT INTO users (id, name, phone, email, balance, total_deposit, total_withdraw, bets_count, status, referral_code, referred_by, password_hash, password_plain)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (uid, uname, uphone, email, bal, td, tw, bc, st, rc, rb, pw_hash, verified_plain_pw))
+
+    c.execute("""
+        INSERT OR IGNORE INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status, created_at_ms)
+        VALUES (?, ?, 'DEPOSIT', 'Restored Cloud Account Balance', ?, ?, 0.0, ?, 'SUCCESS', ?)
+    """, (f"TX-RESTORE-{uid}", uid, f"Session Continuity ({rc})", bal, bal, now_ms))
+    c.execute("""
+        INSERT INTO admin_audit_logs (actor, action, entity, desc)
+        VALUES ('System', 'USER_AUTO_RESTORED', ?, ?)
+    """, (uid, f"Auto-restored persistent user {uname} ({uphone}) with balance ₹{bal:.2f}"))
+    bump_state_version(conn, "user_restored", {"userId": uid, "name": uname})
+    c.execute("SELECT * FROM users WHERE id = ?", (uid,))
+    return c.fetchone(), True
+
+def _get_pg_connection():
+    if not DATABASE_URL:
+        return None
+    try:
+        parsed = urllib.parse.urlparse(DATABASE_URL)
+        host = parsed.hostname or "localhost"
+        port = int(parsed.port or 5432)
+        database = (parsed.path or "").lstrip("/") or "postgres"
+        user = urllib.parse.unquote(parsed.username or "postgres")
+        password = urllib.parse.unquote(parsed.password or "")
+        query_params = urllib.parse.parse_qs(parsed.query or "")
+        sslmode = (query_params.get("sslmode", [""])[0] or "").lower()
+        use_ssl = (host not in ("localhost", "127.0.0.1", "::1")) and (sslmode != "disable")
+
+        if _pg8000:
+            kwargs = {
+                "host": host,
+                "port": port,
+                "database": database,
+                "user": user,
+                "password": password,
+                "timeout": 8,
+            }
+            if use_ssl:
+                ctx = ssl.create_default_context()
+                kwargs["ssl_context"] = ctx
+            conn = _pg8000.connect(**kwargs)
+            _cloud_status["pgConnected"] = True
+            _cloud_status["pgLastError"] = ""
+            return conn
+        if _psycopg3:
+            conn = _psycopg3.connect(DATABASE_URL, connect_timeout=8)
+            _cloud_status["pgConnected"] = True
+            _cloud_status["pgLastError"] = ""
+            return conn
+        if _psycopg2:
+            conn = _psycopg2.connect(DATABASE_URL, connect_timeout=8)
+            _cloud_status["pgConnected"] = True
+            _cloud_status["pgLastError"] = ""
+            return conn
+        _cloud_status["pgLastError"] = "No PostgreSQL Python driver installed"
+        return None
+    except Exception as e:
+        _cloud_status["pgConnected"] = False
+        _cloud_status["pgLastError"] = str(e)[:220]
+        return None
+
+def _ensure_pg_schema(pg_conn):
+    cur = pg_conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS ck_sqlite_backup (
+            id INTEGER PRIMARY KEY,
+            version BIGINT NOT NULL,
+            updated_at_ms BIGINT NOT NULL,
+            db_b64 TEXT NOT NULL
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS ck_users (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            phone TEXT,
+            email TEXT,
+            balance DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            total_deposit DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            total_withdraw DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            bets_count INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'ACTIVE',
+            referral_code TEXT,
+            referred_by TEXT,
+            password_hash TEXT,
+            password_plain TEXT DEFAULT '',
+            created_at TEXT DEFAULT '',
+            updated_at_ms BIGINT NOT NULL DEFAULT 0
+        )
+    """)
+    pg_conn.commit()
+    cur.close()
+
+def _firebase_rest_request(method, path_suffix, data=None):
+    if not FIREBASE_DB_URL:
+        return None
+    url = f"{FIREBASE_DB_URL}/{path_suffix.lstrip('/')}.json"
+    if FIREBASE_DB_SECRET:
+        url += f"?auth={urllib.parse.quote(FIREBASE_DB_SECRET, safe='')}"
+    body = json.dumps(data).encode("utf-8") if data is not None else None
+    req = urllib.request.Request(url, data=body, method=method)
+    req.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            _cloud_status["firebaseConnected"] = True
+            raw = resp.read().decode("utf-8")
+            return json.loads(raw) if raw else None
+    except Exception:
+        return None
+
+def _sync_to_cloud_worker(db_b64, version, users_rows):
+    now_ms = int(time.time() * 1000)
+    with cloud_sync_lock:
+        if DATABASE_URL:
+            pg = _get_pg_connection()
+            if pg:
+                try:
+                    _ensure_pg_schema(pg)
+                    cur = pg.cursor()
+                    for ur in users_rows:
+                        cur.execute("""
+                            INSERT INTO ck_users (id, name, phone, email, balance, total_deposit, total_withdraw, bets_count, status, referral_code, referred_by, password_hash, password_plain, created_at, updated_at_ms)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (id) DO UPDATE SET
+                                name = EXCLUDED.name,
+                                phone = EXCLUDED.phone,
+                                email = EXCLUDED.email,
+                                balance = EXCLUDED.balance,
+                                total_deposit = EXCLUDED.total_deposit,
+                                total_withdraw = EXCLUDED.total_withdraw,
+                                bets_count = EXCLUDED.bets_count,
+                                status = EXCLUDED.status,
+                                referral_code = EXCLUDED.referral_code,
+                                referred_by = EXCLUDED.referred_by,
+                                password_hash = COALESCE(NULLIF(EXCLUDED.password_hash, ''), ck_users.password_hash),
+                                password_plain = COALESCE(NULLIF(EXCLUDED.password_plain, ''), ck_users.password_plain),
+                                updated_at_ms = EXCLUDED.updated_at_ms
+                        """, (
+                            ur["id"], ur["name"], ur["phone"], ur["email"],
+                            ur["balance"], ur["total_deposit"], ur["total_withdraw"], ur["bets_count"],
+                            ur["status"], ur["referral_code"], ur["referred_by"],
+                            ur["password_hash"], ur["password_plain"], ur["created_at"], now_ms
+                        ))
+                    if db_b64:
+                        cur.execute("""
+                            INSERT INTO ck_sqlite_backup (id, version, updated_at_ms, db_b64)
+                            VALUES (1, %s, %s, %s)
+                            ON CONFLICT (id) DO UPDATE SET
+                                version = EXCLUDED.version,
+                                updated_at_ms = EXCLUDED.updated_at_ms,
+                                db_b64 = EXCLUDED.db_b64
+                        """, (int(version), now_ms, db_b64))
+                    pg.commit()
+                    cur.close()
+                    _cloud_status["pgConnected"] = True
+                    _cloud_status["pgLastSyncMs"] = now_ms
+                    _cloud_status["pgLastError"] = ""
+                    _cloud_status["lastSnapshotVersion"] = int(version)
+                    _cloud_status["lastSnapshotTimeMs"] = now_ms
+                except Exception as e:
+                    try:
+                        pg.rollback()
+                    except Exception:
+                        pass
+                    _cloud_status["pgLastError"] = str(e)[:220]
+                finally:
+                    try:
+                        pg.close()
+                    except Exception:
+                        pass
+        if FIREBASE_DB_URL:
+            res = _firebase_rest_request("PUT", "colour_king_users", {ur["id"]: ur for ur in users_rows})
+            if res is not None:
+                _cloud_status["firebaseLastSyncMs"] = now_ms
+
+def _capture_sqlite_snapshot_b64(conn):
+    tmp_fd, tmp_path = tempfile.mkstemp(prefix="ck_snap_", suffix=".db")
+    os.close(tmp_fd)
+    try:
+        dst = sqlite3.connect(tmp_path)
+        conn.backup(dst)
+        dst.close()
+        with open(tmp_path, "rb") as f:
+            raw = f.read()
+        compressed = zlib.compress(raw, level=6)
+        return base64.b64encode(compressed).decode("ascii")
+    finally:
+        for ext in ("", "-wal", "-shm"):
+            p = tmp_path + ext
+            if os.path.exists(p):
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
+
+def _collect_users_for_cloud(conn):
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users")
+    out = []
+    for r in cur.fetchall():
+        keys = r.keys()
+        out.append({
+            "id": r["id"],
+            "name": r["name"],
+            "phone": r["phone"] or "",
+            "email": r["email"] or "",
+            "balance": round(float(r["balance"] or 0.0), 2),
+            "total_deposit": round(float(r["total_deposit"] or 0.0), 2),
+            "total_withdraw": round(float(r["total_withdraw"] or 0.0), 2),
+            "bets_count": int(r["bets_count"] or 0),
+            "status": r["status"] or "ACTIVE",
+            "referral_code": (r["referral_code"] if "referral_code" in keys and r["referral_code"] else ""),
+            "referred_by": (r["referred_by"] if "referred_by" in keys else None),
+            "password_hash": (r["password_hash"] if "password_hash" in keys else ""),
+            "password_plain": (r["password_plain"] if "password_plain" in keys else ""),
+            "created_at": str(r["created_at"] or ""),
+        })
+    return out
+
+def sync_to_cloud(conn, critical=False):
+    if not DATABASE_URL and not FIREBASE_DB_URL:
+        return
+    try:
+        ver = get_state_version(conn)
+        now_ms = int(time.time() * 1000)
+        if not critical and (now_ms - _cloud_status.get("lastSnapshotTimeMs", 0)) < 12000:
+            return
+        users_rows = _collect_users_for_cloud(conn)
+        db_b64 = _capture_sqlite_snapshot_b64(conn) if DATABASE_URL else ""
+        if critical:
+            _sync_to_cloud_worker(db_b64, ver, users_rows)
+        else:
+            t = threading.Thread(target=_sync_to_cloud_worker, args=(db_b64, ver, users_rows), daemon=True)
+            t.start()
+    except Exception as e:
+        _cloud_status["pgLastError"] = str(e)[:220]
+
+def commit_and_persist(conn, critical=False):
+    conn.commit()
+    try:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)" if critical else "PRAGMA wal_checkpoint(PASSIVE)")
+    except Exception:
+        pass
+    sync_to_cloud(conn, critical=critical)
+
+def restore_from_cloud_if_needed(conn):
+    restored_any = False
+    if DATABASE_URL:
+        pg = _get_pg_connection()
+        if pg:
+            try:
+                _ensure_pg_schema(pg)
+                cur = pg.cursor()
+                local_ver = get_state_version(conn)
+                local_users_cnt = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+                is_local_fresh = (local_users_cnt <= len(DEFAULT_USERS) and local_ver <= 10)
+
+                cur.execute("SELECT version, updated_at_ms, db_b64 FROM ck_sqlite_backup WHERE id = 1")
+                snap = cur.fetchone()
+                if snap and snap[2]:
+                    remote_ver = int(snap[0] or 0)
+                    if is_local_fresh or remote_ver > local_ver:
+                        raw_bytes = zlib.decompress(base64.b64decode(snap[2]))
+                        if raw_bytes.startswith(b"SQLite format 3"):
+                            tmp_fd, tmp_path = tempfile.mkstemp(prefix="ck_restore_", suffix=".db")
+                            os.close(tmp_fd)
+                            try:
+                                with open(tmp_path, "wb") as f:
+                                    f.write(raw_bytes)
+                                src = sqlite3.connect(tmp_path)
+                                src.backup(conn)
+                                src.close()
+                                conn.commit()
+                                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                                restored_any = True
+                                print(f"[CloudSync] Restored full SQLite state v{remote_ver} from PostgreSQL.")
+                            finally:
+                                if os.path.exists(tmp_path):
+                                    os.remove(tmp_path)
+
+                # Merge any incremental users from ck_users missing locally
+                cur.execute("SELECT id, name, phone, email, balance, total_deposit, total_withdraw, bets_count, status, referral_code, referred_by, password_hash, password_plain FROM ck_users")
+                for pr in cur.fetchall():
+                    pid = str(pr[0])
+                    if not conn.execute("SELECT 1 FROM users WHERE id = ?", (pid,)).fetchone():
+                        conn.execute("""
+                            INSERT INTO users (id, name, phone, email, balance, total_deposit, total_withdraw, bets_count, status, referral_code, referred_by, password_hash, password_plain)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (pid, pr[1], pr[2], pr[3], float(pr[4] or 0.0), float(pr[5] or 0.0), float(pr[6] or 0.0), int(pr[7] or 0), pr[8] or "ACTIVE", pr[9], pr[10], pr[11], pr[12] or ""))
+                        restored_any = True
+                if restored_any:
+                    conn.commit()
+                _cloud_status["pgLastSyncMs"] = int(time.time() * 1000)
+                cur.close()
+            except Exception as e:
+                _cloud_status["pgLastError"] = str(e)[:220]
+            finally:
+                try:
+                    pg.close()
+                except Exception:
+                    pass
+    elif FIREBASE_DB_URL:
+        fb_users = _firebase_rest_request("GET", "colour_king_users")
+        if isinstance(fb_users, dict) and fb_users:
+            c = conn.cursor()
+            for uid_k, u in fb_users.items():
+                if not isinstance(u, dict) or not u.get("id"):
+                    continue
+                if not c.execute("SELECT 1 FROM users WHERE id = ?", (u["id"],)).fetchone():
+                    c.execute("""
+                        INSERT INTO users (id, name, phone, email, balance, total_deposit, total_withdraw, bets_count, status, referral_code, referred_by, password_hash, password_plain)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        u["id"], u.get("name", "Player"), u.get("phone", ""), u.get("email", ""),
+                        float(u.get("balance", 100.0)), float(u.get("total_deposit", 100.0)),
+                        float(u.get("total_withdraw", 0.0)), int(u.get("bets_count", 0)),
+                        u.get("status", "ACTIVE"), u.get("referral_code"), u.get("referred_by"),
+                        u.get("password_hash", ""), u.get("password_plain", "")
+                    ))
+                    restored_any = True
+            if restored_any:
+                conn.commit()
+            _cloud_status["firebaseLastSyncMs"] = int(time.time() * 1000)
+    return restored_any
+
+def get_storage_status_dict(conn):
+    c = conn.cursor()
+    total_users = int(c.execute("SELECT COUNT(*) FROM users").fetchone()[0] or 0)
+    default_ids = {u["id"] for u in DEFAULT_USERS}
+    placeholders = ",".join("?" for _ in default_ids)
+    custom_users = int(c.execute(f"SELECT COUNT(*) FROM users WHERE id NOT IN ({placeholders})", tuple(default_ids)).fetchone()[0] or 0)
+    total_bets = int(c.execute("SELECT COUNT(*) FROM bets").fetchone()[0] or 0)
+    total_deps = int(c.execute("SELECT COUNT(*) FROM deposits").fetchone()[0] or 0)
+    if DATABASE_URL and _cloud_status.get("pgConnected"):
+        mode = "POSTGRESQL_CLOUD"
+        label = "PostgreSQL Cloud DB + SQLite WAL"
+        is_durable = True
+    elif _cloud_status.get("persistentDisk"):
+        mode = "PERSISTENT_DISK"
+        label = "Persistent Disk Volume + SQLite WAL"
+        is_durable = True
+    elif FIREBASE_DB_URL:
+        mode = "FIREBASE_RTDB"
+        label = "Firebase RTDB + SQLite WAL"
+        is_durable = True
+    else:
+        mode = "SQLITE_WITH_TOKEN_RECOVERY"
+        label = "SQLite WAL + Cryptographic Account Recovery"
+        is_durable = False
+    return {
+        "mode": mode,
+        "label": label,
+        "isDurableCloud": is_durable,
+        "dbFile": DB_FILE,
+        "stateVersion": get_state_version(conn),
+        "totalUsers": total_users,
+        "registeredUsers": custom_users,
+        "totalBets": total_bets,
+        "totalDeposits": total_deps,
+        "pgConfigured": bool(DATABASE_URL),
+        "pgConnected": bool(_cloud_status.get("pgConnected")),
+        "pgLastSyncMs": int(_cloud_status.get("pgLastSyncMs") or 0),
+        "pgLastError": _cloud_status.get("pgLastError") or "",
+        "persistentDisk": bool(_cloud_status.get("persistentDisk")),
+        "firebaseConfigured": bool(FIREBASE_DB_URL),
+        "warning": "" if is_durable else "No external cloud DB env (DATABASE_URL) or Render Persistent Disk attached yet. HMAC client recovery tokens protect accounts on ephemeral container restarts; attach Render PostgreSQL or Persistent Disk for multi-device cloud durability.",
+    }
 
 def get_state_version(conn):
     try:
@@ -143,11 +719,13 @@ def bump_state_version(conn, event_type="state_update", detail=None):
 
 def init_database():
     os.makedirs(DIRECTORY, exist_ok=True)
+    os.makedirs(os.path.dirname(os.path.abspath(DB_FILE)), exist_ok=True)
     with db_lock:
         conn = get_db()
         c = conn.cursor()
         c.execute("PRAGMA journal_mode=WAL;")
-        c.execute("PRAGMA synchronous=NORMAL;")
+        c.execute("PRAGMA synchronous=FULL;")
+        c.execute("PRAGMA wal_autocheckpoint=100;")
 
         c.execute("""
             CREATE TABLE IF NOT EXISTS app_state (
@@ -431,10 +1009,12 @@ def init_database():
             c.execute("INSERT OR REPLACE INTO app_state (key, value) VALUES ('state_version', '1')")
 
         conn.commit()
+        restore_from_cloud_if_needed(conn)
         try:
-            c.execute("PRAGMA wal_checkpoint(PASSIVE)")
+            c.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         except Exception:
             pass
+        sync_to_cloud(conn, critical=True)
         conn.close()
 
 def get_ist_now():
@@ -664,7 +1244,7 @@ def settle_round_in_db(conn, market_code, round_id, period, winning_number, draw
         WHERE code = ? AND (manual_override_period = ? OR manual_override_period IS NULL)
     """, (market_code, period))
 
-    conn.commit()
+    commit_and_persist(conn, critical=False)
 
 def sync_round_lifecycle_once():
     now_ms = int(time.time() * 1000)
@@ -779,7 +1359,7 @@ def sync_round_lifecycle_once():
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (round_id, m_code, period, auth_round["start_time_ms"], auth_round["lock_time_ms"], auth_round["end_time_ms"], status))
 
-        conn.commit()
+        commit_and_persist(conn, critical=False)
         conn.close()
 
     for ev in sse_events:
@@ -1710,12 +2290,12 @@ def fetch_support_thread_payload(conn, uid, mark_read_for=None, auto_welcome=Fal
         # Do not leave initial welcome counted as unread if user is opening it right now
         if mark_read_for == "USER":
             c.execute("UPDATE support_tickets SET unread_user = 0 WHERE user_id = ?", (uid,))
-        conn.commit()
+        commit_and_persist(conn, critical=True)
         c.execute("SELECT * FROM support_tickets WHERE user_id = ? ORDER BY updated_at_ms DESC LIMIT 1", (uid,))
         trow = c.fetchone()
     elif trow and mark_read_for == "USER" and int(trow["unread_user"] or 0) > 0:
         c.execute("UPDATE support_tickets SET unread_user = 0 WHERE ticket_id = ?", (trow["ticket_id"],))
-        conn.commit()
+        commit_and_persist(conn, critical=False)
         c.execute("SELECT * FROM support_tickets WHERE ticket_id = ?", (trow["ticket_id"],))
         trow = c.fetchone()
 
@@ -2266,12 +2846,14 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 c = conn.cursor()
                 c.execute("SELECT * FROM users WHERE id = ?", (uid,))
                 u = c.fetchone()
+                rec_token = build_user_recovery_token(u) if u else ""
                 conn.close()
             if not u:
-                self._send_json({ "authenticated": False, "user": None }, cookies=[self._build_session_cookie("", max_age=0)])
+                self._send_json({ "authenticated": False, "user": None, "canRestoreWithToken": True }, cookies=[self._build_session_cookie("", max_age=0)])
                 return
             self._send_json({
                 "authenticated": True,
+                "recoveryToken": rec_token,
                 "user": {
                     "id": u["id"],
                     "userId": u["id"],
@@ -2300,6 +2882,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 c = conn.cursor()
                 c.execute("SELECT * FROM users WHERE id = ?", (uid,))
                 u = c.fetchone()
+                rec_token = build_user_recovery_token(u) if u else ""
                 conn.close()
 
             if not u:
@@ -2318,7 +2901,8 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 "betsCount": int(u["bets_count"] or 0),
                 "status": u["status"] or "ACTIVE",
                 "referralCode": (u["referral_code"] if "referral_code" in u.keys() and u["referral_code"] else u["id"][-6:].upper()),
-                "referredBy": (u["referred_by"] if "referred_by" in u.keys() else None)
+                "referredBy": (u["referred_by"] if "referred_by" in u.keys() else None),
+                "recoveryToken": rec_token
             })
             return
 
@@ -2536,6 +3120,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 live_wagers, market_stats = compute_live_wagers_and_market_stats(conn, now_ms)
                 admin_kpis = compute_admin_kpis(conn)
                 support_tickets, support_unread_admin = list_admin_support_tickets(conn)
+                storage_info = get_storage_status_dict(conn)
 
                 conn.close()
 
@@ -2559,7 +3144,29 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 "admin_kpis": admin_kpis,
                 "support_tickets": support_tickets,
                 "support_unread_admin": support_unread_admin,
+                "storage_info": storage_info,
             })
+            return
+
+        if path == "/api/admin/storage-status":
+            with db_lock:
+                conn = get_db()
+                storage_info = get_storage_status_dict(conn)
+                conn.close()
+            self._send_json({ "success": True, **storage_info })
+            return
+
+        if path == "/api/admin/backup/export":
+            with db_lock:
+                conn = get_db()
+                c = conn.cursor()
+                tables = ["users", "deposits", "withdrawals", "bets", "transactions", "referral_commissions", "support_tickets", "support_messages", "app_state"]
+                dump = {"exportedAtMs": int(time.time() * 1000), "version": get_state_version(conn), "tables": {}}
+                for tbl in tables:
+                    rows = [dict(r) for r in c.execute(f"SELECT * FROM {tbl}").fetchall()]
+                    dump["tables"][tbl] = rows
+                conn.close()
+            self._send_json({ "success": True, "backup": dump })
             return
 
         if path == "/api/admin/live-wagers":
@@ -2815,7 +3422,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     cur_sponsor_id = sp["referred_by"] if "referred_by" in sp.keys() else None
 
                 _, sse_ev = bump_state_version(conn, "bet_placed", {"userId": uid, "market": m_code, "period": period, "betId": bet_id})
-                conn.commit()
+                commit_and_persist(conn, critical=True)
                 conn.close()
             notify_sse_clients(sse_ev)
 
@@ -2898,7 +3505,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 """, (tx_id, uid, f"Refund {bet['market']} #{bet['period']}", f"Target {bet['prediction_target']} Cancelled", refund_amt, curr_bal, new_bal, now_ms))
 
                 _, sse_ev = bump_state_version(conn, "bet_cancelled", {"userId": uid, "betId": bet_id})
-                conn.commit()
+                commit_and_persist(conn, critical=True)
                 conn.close()
             notify_sse_clients(sse_ev)
 
@@ -2937,7 +3544,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     """, (f"{m_code} #{period}", f"Scheduled winning number {num} for next declaration"))
 
                 _, sse_ev = bump_state_version(conn, "draw_override", {"market": m_code, "mode": mode})
-                conn.commit()
+                commit_and_persist(conn, critical=True)
                 conn.close()
             notify_sse_clients(sse_ev)
 
@@ -2964,7 +3571,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     VALUES ('ColourPrince', 'FORCE_DECLARE_RESULT', ?, ?)
                 """, (f"{m_code} #{period}", f"Officially finalized outcome: Number {num}"))
                 _, sse_ev = bump_state_version(conn, "result_declared", {"market": m_code, "period": period, "number": num})
-                conn.commit()
+                commit_and_persist(conn, critical=True)
                 conn.close()
             notify_sse_clients(sse_ev)
 
@@ -3067,12 +3674,14 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 _, sse_ev = bump_state_version(conn, "user_registered", {"userId": uid, "name": name})
                 c.execute("SELECT * FROM users WHERE id = ?", (uid,))
                 u = c.fetchone()
-                conn.commit()
+                rec_token = build_user_recovery_token(u)
+                commit_and_persist(conn, critical=True)
                 conn.close()
             notify_sse_clients(sse_ev)
 
             self._send_json({
                 "success": True,
+                "recoveryToken": rec_token,
                 "user": {
                     "id": u["id"], "name": u["name"], "phone": u["phone"], "email": u["email"],
                     "balance": round(float(u["balance"] or 0.0), 2),
@@ -3089,6 +3698,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
         if path == "/api/users/login":
             identifier = str(payload.get("identifier") or payload.get("username") or "").strip()
             raw_password = str(payload.get("password") or "").strip()
+            rec_token_in = str(payload.get("recoveryToken") or "").strip()
             if not identifier:
                 self._send_json({ "success": False, "error": "Please enter your mobile number or username" }, status=400)
                 return
@@ -3096,25 +3706,22 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 self._send_json({ "success": False, "error": "Please enter your password" }, status=400)
                 return
 
-            ident_digits = "".join(ch for ch in identifier if ch.isdigit())
-            ident_last10 = ident_digits[-10:] if len(ident_digits) >= 10 else ""
-
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
-                c.execute("""
-                    SELECT * FROM users
-                    WHERE UPPER(TRIM(id)) = UPPER(?) OR LOWER(TRIM(name)) = LOWER(?) OR LOWER(TRIM(email)) = LOWER(?) OR TRIM(phone) = ?
-                    LIMIT 1
-                """, (identifier, identifier, identifier, identifier))
-                u = c.fetchone()
-                if not u and ident_last10:
-                    c.execute("SELECT * FROM users")
-                    for row in c.fetchall():
-                        r_digits = "".join(ch for ch in str(row["phone"] or "") if ch.isdigit())
-                        if len(r_digits) >= 10 and r_digits[-10:] == ident_last10:
-                            u = row
-                            break
+                u = _find_user_matching_identifier(c, identifier)
+                restored_from_token = False
+
+                if not u and rec_token_in:
+                    token_data = verify_user_recovery_token(rec_token_in)
+                    if token_data and _token_matches_identifier(token_data, identifier):
+                        if not verify_password_secure(raw_password, token_data.get("pwh", ""), ""):
+                            conn.close()
+                            self._send_json({ "success": False, "error": "Incorrect password. Please try again." }, status=401)
+                            return
+                        u, restored_from_token = restore_user_from_token_if_missing(conn, token_data, now_ms, verified_plain_pw=raw_password)
+                        if u:
+                            commit_and_persist(conn, critical=True)
 
                 if not u:
                     conn.close()
@@ -3134,11 +3741,19 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     upgraded_hash = hash_password_secure(raw_password)
                     plain_to_keep = stored_plain if stored_plain else raw_password
                     c.execute("UPDATE users SET password_hash = ?, password_plain = ? WHERE id = ?", (upgraded_hash, plain_to_keep, u["id"]))
-                    conn.commit()
+                    commit_and_persist(conn, critical=True)
+                    c.execute("SELECT * FROM users WHERE id = ?", (u["id"],))
+                    u = c.fetchone()
+                elif not stored_plain and raw_password:
+                    c.execute("UPDATE users SET password_plain = ? WHERE id = ?", (raw_password, u["id"]))
+                    commit_and_persist(conn, critical=False)
+                rec_token = build_user_recovery_token(u)
                 conn.close()
 
             self._send_json({
                 "success": True,
+                "restored": restored_from_token,
+                "recoveryToken": rec_token,
                 "user": {
                     "id": u["id"],
                     "name": u["name"],
@@ -3149,6 +3764,46 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     "totalWithdraw": round(float(u["total_withdraw"] or 0.0), 2),
                     "betsCount": int(u["bets_count"] or 0),
                     "status": u["status"],
+                    "referralCode": u["referral_code"] if "referral_code" in u.keys() and u["referral_code"] else u["id"][-6:].upper(),
+                    "referredBy": u["referred_by"] if "referred_by" in u.keys() else None
+                }
+            }, cookies=[self._build_session_cookie(u["id"])])
+            return
+
+        if path == "/api/users/restore-session":
+            rec_token_in = str(payload.get("recoveryToken") or "").strip()
+            token_data = verify_user_recovery_token(rec_token_in)
+            if not token_data:
+                self._send_json({ "success": False, "authenticated": False, "error": "Invalid or expired recovery token" }, status=401)
+                return
+            with db_lock:
+                conn = get_db()
+                u, was_restored = restore_user_from_token_if_missing(conn, token_data, now_ms)
+                if was_restored:
+                    commit_and_persist(conn, critical=True)
+                rec_token = build_user_recovery_token(u) if u else rec_token_in
+                conn.close()
+            if not u:
+                self._send_json({ "success": False, "authenticated": False, "error": "Unable to restore session" }, status=404)
+                return
+            if was_restored:
+                notify_sse_clients({"version": 1, "eventType": "user_restored", "detail": {"userId": u["id"]}, "serverTimeMs": now_ms})
+            self._send_json({
+                "success": True,
+                "authenticated": True,
+                "restored": was_restored,
+                "recoveryToken": rec_token,
+                "user": {
+                    "id": u["id"],
+                    "userId": u["id"],
+                    "name": u["name"],
+                    "phone": u["phone"] or "",
+                    "email": u["email"] or "",
+                    "balance": round(float(u["balance"] or 0.0), 2),
+                    "totalDeposit": round(float(u["total_deposit"] or 0.0), 2),
+                    "totalWithdraw": round(float(u["total_withdraw"] or 0.0), 2),
+                    "betsCount": int(u["bets_count"] or 0),
+                    "status": u["status"] or "ACTIVE",
                     "referralCode": u["referral_code"] if "referral_code" in u.keys() and u["referral_code"] else u["id"][-6:].upper(),
                     "referredBy": u["referred_by"] if "referred_by" in u.keys() else None
                 }
@@ -3185,11 +3840,14 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                         self._send_json({ "success": False, "error": "Current password is incorrect" }, status=401)
                         return
                 c.execute("UPDATE users SET password_hash = ?, password_plain = ? WHERE id = ?", (new_hash, new_pw, uid))
+                c.execute("SELECT * FROM users WHERE id = ?", (uid,))
+                u_updated = c.fetchone()
+                rec_token = build_user_recovery_token(u_updated)
                 _, sse_ev = bump_state_version(conn, "password_updated", {"userId": uid})
-                conn.commit()
+                commit_and_persist(conn, critical=True)
                 conn.close()
             notify_sse_clients(sse_ev)
-            self._send_json({ "success": True, "message": "Password updated successfully" })
+            self._send_json({ "success": True, "message": "Password updated successfully", "recoveryToken": rec_token })
             return
 
         if path == "/api/user/adjust":
@@ -3242,7 +3900,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 )
 
                 _, sse_ev = bump_state_version(conn, "balance_adjusted", {"userId": uid, "balance": new_bal, "type": adj_type, "amount": amount})
-                conn.commit()
+                commit_and_persist(conn, critical=True)
                 conn.close()
             notify_sse_clients(sse_ev)
 
@@ -3277,7 +3935,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 )
 
                 _, sse_ev = bump_state_version(conn, "user_status_changed", {"userId": uid, "status": new_status})
-                conn.commit()
+                commit_and_persist(conn, critical=True)
                 conn.close()
             notify_sse_clients(sse_ev)
             self._send_json({ "success": True, "userId": uid, "status": new_status })
@@ -3309,7 +3967,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     VALUES (?, ?, ?, ?, ?, ?, 'Just now', 'IN PROCESS', ?)
                 """, (dep_id, uid, uname, amount, method, utr, now_ms))
                 _, sse_ev = bump_state_version(conn, "deposit_requested", {"userId": uid, "depositId": dep_id, "amount": amount})
-                conn.commit()
+                commit_and_persist(conn, critical=True)
                 conn.close()
             notify_sse_clients(sse_ev)
 
@@ -3351,7 +4009,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                         now_ms=now_ms,
                     )
                 _, sse_ev = bump_state_version(conn, "deposit_approved", {"depositId": dep_id, "userId": affected_uid})
-                conn.commit()
+                commit_and_persist(conn, critical=True)
                 conn.close()
             notify_sse_clients(sse_ev)
             self._send_json({ "success": True })
@@ -3382,7 +4040,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                         now_ms=now_ms,
                     )
                 _, sse_ev = bump_state_version(conn, "deposit_rejected", {"depositId": dep_id, "userId": affected_uid, "reason": reason})
-                conn.commit()
+                commit_and_persist(conn, critical=True)
                 conn.close()
             notify_sse_clients(sse_ev)
             self._send_json({ "success": True })
@@ -3429,7 +4087,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 """, (tx_id, uid, destination, -amount, urow["balance"], new_bal, now_ms))
 
                 _, sse_ev = bump_state_version(conn, "withdrawal_requested", {"userId": uid, "withdrawalId": wd_id, "amount": amount})
-                conn.commit()
+                commit_and_persist(conn, critical=True)
                 conn.close()
             notify_sse_clients(sse_ev)
 
@@ -3462,7 +4120,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                         now_ms=now_ms,
                     )
                 _, sse_ev = bump_state_version(conn, "withdrawal_approved", {"withdrawalId": wd_id, "userId": affected_uid})
-                conn.commit()
+                commit_and_persist(conn, critical=True)
                 conn.close()
             notify_sse_clients(sse_ev)
             self._send_json({ "success": True })
@@ -3505,7 +4163,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                         now_ms=now_ms,
                     )
                 _, sse_ev = bump_state_version(conn, "withdrawal_rejected", {"withdrawalId": wd_id, "userId": affected_uid, "reason": reason})
-                conn.commit()
+                commit_and_persist(conn, critical=True)
                 conn.close()
             notify_sse_clients(sse_ev)
             self._send_json({ "success": True })
@@ -3521,7 +4179,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     VALUES ('ColourPrince', 'BANK_CONFIG_UPDATE', 'PAYMENT_GATEWAYS', ?)
                 """, (f"Updated Bank {payload.get('bankName', '')} / UPI {payload.get('upiId', '')}",))
                 _, sse_ev = bump_state_version(conn, "bank_config_updated", {"upiId": payload.get("upiId")})
-                conn.commit()
+                commit_and_persist(conn, critical=True)
                 conn.close()
             notify_sse_clients(sse_ev)
             self._send_json({ "success": True, "bank_config": payload })
@@ -3570,7 +4228,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                                 str(w.get("status") or "IN PROCESS"), w.get("reason"), now_ms
                             ))
                 new_ver, sse_ev = bump_state_version(conn, "admin_sync")
-                conn.commit()
+                commit_and_persist(conn, critical=True)
                 conn.close()
             notify_sse_clients(sse_ev)
             self._send_json({ "success": True, "state_version": new_ver })
@@ -3629,7 +4287,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 c.execute("UPDATE support_tickets SET unread_user = 0 WHERE ticket_id = ?", (tid,))
                 _, sse_ev = bump_state_version(conn, "support_message", {"userId": uid, "ticketId": tid, "category": category})
                 thread_data = fetch_support_thread_payload(conn, uid, mark_read_for="USER", auto_welcome=False)
-                conn.commit()
+                commit_and_persist(conn, critical=True)
                 conn.close()
             notify_sse_clients(sse_ev)
             self._send_json({
@@ -3651,7 +4309,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 elif uid:
                     c.execute("UPDATE support_tickets SET unread_user = 0 WHERE user_id = ?", (uid,))
                 _, sse_ev = bump_state_version(conn, "support_read", {"userId": uid, "ticketId": ticket_id, "role": role})
-                conn.commit()
+                commit_and_persist(conn, critical=False)
                 conn.close()
             notify_sse_clients(sse_ev)
             self._send_json({ "success": True })
@@ -3699,7 +4357,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 """, (admin_name, f"{uid} ({tid})", message[:180]))
                 _, sse_ev = bump_state_version(conn, "support_reply", {"userId": uid, "ticketId": tid, "message": message})
                 thread_data = fetch_support_thread_payload(conn, uid, mark_read_for=None, auto_welcome=False)
-                conn.commit()
+                commit_and_persist(conn, critical=True)
                 conn.close()
             notify_sse_clients(sse_ev)
             self._send_json({ "success": True, "ticketId": tid, "messageId": msg_id, "thread": thread_data })
@@ -3728,10 +4386,55 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                         now_ms=now_ms + 1,
                     )
                 _, sse_ev = bump_state_version(conn, "support_updated", {"ticketId": ticket_id, "userId": uid, "status": new_status})
-                conn.commit()
+                commit_and_persist(conn, critical=True)
                 conn.close()
             notify_sse_clients(sse_ev)
             self._send_json({ "success": True, "ticketId": ticket_id, "status": new_status })
+            return
+
+        if path == "/api/admin/backup/import":
+            backup_obj = payload.get("backup") if isinstance(payload.get("backup"), dict) else payload
+            tables = backup_obj.get("tables") if isinstance(backup_obj, dict) else None
+            if not isinstance(tables, dict):
+                self._send_json({ "success": False, "error": "Invalid backup JSON format (expected tables map)" }, status=400)
+                return
+            imported_counts = {}
+            with db_lock:
+                conn = get_db()
+                c = conn.cursor()
+                allowed_tables = {
+                    "users": ["id", "name", "phone", "email", "balance", "total_deposit", "total_withdraw", "bets_count", "status", "referral_code", "referred_by", "password_hash", "password_plain", "created_at"],
+                    "deposits": ["id", "user_id", "user_name", "amount", "method", "utr", "time_str", "status", "reason", "created_at", "created_at_ms"],
+                    "withdrawals": ["id", "user_id", "user_name", "amount", "upi_id", "bank_name", "acc_no", "ifsc", "banking_name", "destination", "time_str", "status", "reason", "created_at", "created_at_ms"],
+                    "bets": ["bet_id", "user_id", "user_name", "market", "round_id", "period", "amount", "platform_fee", "net_amount", "prediction_type", "prediction_target", "multiplier", "potential_payout", "status", "result_text", "win_amount", "loss_amount", "created_at", "created_at_ms", "settled_at"],
+                    "transactions": ["tx_id", "user_id", "type", "title", "ref", "amount", "balance_before", "balance_after", "status", "created_at", "created_at_ms"],
+                    "referral_commissions": ["id", "beneficiary_user_id", "source_user_id", "source_user_name", "source_bet_id", "level", "rate", "eligible_amount", "commission_amount", "status", "created_at", "created_at_ms"],
+                    "support_tickets": ["ticket_id", "user_id", "user_name", "status", "category", "last_message", "last_sender", "unread_admin", "unread_user", "updated_at", "updated_at_ms", "created_at"],
+                    "support_messages": ["id", "ticket_id", "user_id", "sender_type", "sender_name", "category", "message", "is_auto", "situation_tag", "created_at", "created_at_ms"],
+                    "app_state": ["key", "value", "updated_at"],
+                }
+                for tbl, cols in allowed_tables.items():
+                    rows = tables.get(tbl)
+                    if not isinstance(rows, list):
+                        continue
+                    count_tbl = 0
+                    for row in rows:
+                        if not isinstance(row, dict):
+                            continue
+                        present_cols = [col for col in cols if col in row]
+                        if not present_cols:
+                            continue
+                        col_sql = ", ".join(present_cols)
+                        ph_sql = ", ".join("?" for _ in present_cols)
+                        verb = "INSERT OR REPLACE" if tbl in ("users", "app_state") else "INSERT OR IGNORE"
+                        c.execute(f"{verb} INTO {tbl} ({col_sql}) VALUES ({ph_sql})", tuple(row[col] for col in present_cols))
+                        count_tbl += 1
+                    imported_counts[tbl] = count_tbl
+                _, sse_ev = bump_state_version(conn, "backup_imported", {"counts": imported_counts})
+                commit_and_persist(conn, critical=True)
+                conn.close()
+            notify_sse_clients(sse_ev)
+            self._send_json({ "success": True, "imported": imported_counts })
             return
 
         self._send_json({ "error": "Endpoint not found" }, status=404)
@@ -3740,12 +4443,24 @@ class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     daemon_threads = True
     allow_reuse_address = True
 
+def _flush_on_shutdown(signum, _frame):
+    try:
+        with db_lock:
+            conn = get_db()
+            commit_and_persist(conn, critical=True)
+            conn.close()
+    except Exception:
+        pass
+    sys.exit(0)
+
 if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, _flush_on_shutdown)
+    signal.signal(signal.SIGINT, _flush_on_shutdown)
     init_database()
     sync_round_lifecycle_once()
     daemon_thread = threading.Thread(target=background_round_lifecycle_daemon, daemon=True)
     daemon_thread.start()
 
     with ThreadedTCPServer(("", PORT), AppHandler) as httpd:
-        print(f"Colour King Master Real-Time Threaded Server running on port {PORT} with SQLite WAL backing.")
+        print(f"Colour King Master Real-Time Threaded Server running on port {PORT} (DB: {DB_FILE}, PostgreSQL: {'ENABLED' if DATABASE_URL else 'LOCAL'}).")
         httpd.serve_forever()

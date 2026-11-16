@@ -2645,8 +2645,73 @@
     let currentUserEmail = '';
     let currentUserPhone = '';
     let currentUserReferralCode = '';
+    let currentRecoveryToken = '';
     let userBalance = 0.00;
     let isSoundEnabled = true;
+    const RECOVERY_VAULT_KEY = 'colour_king_account_vault_v1';
+
+    function normalizeVaultKeys(raw) {
+      const s = String(raw || '').trim();
+      if (!s) return [];
+      const keys = new Set([s.toLowerCase()]);
+      const digits = s.replace(/[^0-9]/g, '');
+      if (digits.length >= 10) keys.add(digits.slice(-10));
+      return Array.from(keys);
+    }
+
+    function saveRecoveryVault(userObj, tokenStr) {
+      const tok = String(tokenStr || currentRecoveryToken || '').trim();
+      if (!tok || !userObj || !userObj.id) return;
+      currentRecoveryToken = tok;
+      try {
+        const raw = localStorage.getItem(RECOVERY_VAULT_KEY);
+        const vault = (raw ? JSON.parse(raw) : {}) || {};
+        const idx = (vault.byId && typeof vault.byId === 'object') ? vault.byId : {};
+        const keyMap = (vault.keys && typeof vault.keys === 'object') ? vault.keys : {};
+        idx[userObj.id] = {
+          id: userObj.id,
+          name: userObj.name || userObj.username || currentUserName || '',
+          phone: userObj.phone || currentUserPhone || '',
+          email: userObj.email || currentUserEmail || '',
+          recoveryToken: tok,
+          updatedAtMs: Date.now()
+        };
+        [userObj.id, userObj.name, userObj.username, userObj.phone, userObj.email].forEach(fld => {
+          normalizeVaultKeys(fld).forEach(k => { keyMap[k] = userObj.id; });
+        });
+        localStorage.setItem(RECOVERY_VAULT_KEY, JSON.stringify({ byId: idx, keys: keyMap }));
+      } catch (e) {}
+    }
+
+    function findRecoveryTokenForIdentifier(identifier) {
+      try {
+        const raw = localStorage.getItem(RECOVERY_VAULT_KEY);
+        if (!raw) return '';
+        const vault = JSON.parse(raw);
+        if (!vault || !vault.byId || !vault.keys) return '';
+        const lookup = normalizeVaultKeys(identifier);
+        for (const k of lookup) {
+          const uid = vault.keys[k];
+          if (uid && vault.byId[uid] && vault.byId[uid].recoveryToken) {
+            return vault.byId[uid].recoveryToken;
+          }
+        }
+      } catch (e) {}
+      return '';
+    }
+
+    function getStoredRecoveryToken() {
+      if (currentRecoveryToken) return currentRecoveryToken;
+      try {
+        const saved = localStorage.getItem('colour_king_user_session');
+        if (saved) {
+          const p = JSON.parse(saved);
+          if (p && p.recoveryToken) return p.recoveryToken;
+        }
+      } catch (e) {}
+      if (currentUserId) return findRecoveryTokenForIdentifier(currentUserId);
+      return '';
+    }
 
     function persistSessionSnapshot() {
       if (!currentUserId || currentUserId === 'Guest') return;
@@ -2657,7 +2722,8 @@
           email: currentUserEmail || '',
           phone: currentUserPhone || '',
           balance: Number(userBalance) || 0,
-          referralCode: currentUserReferralCode || ''
+          referralCode: currentUserReferralCode || '',
+          recoveryToken: currentRecoveryToken || ''
         }));
       } catch (e) {}
     }
@@ -2672,6 +2738,7 @@
           currentUserEmail = parsed.email || '';
           currentUserPhone = parsed.phone || '';
           currentUserReferralCode = parsed.referralCode || '';
+          currentRecoveryToken = parsed.recoveryToken || '';
           userBalance = typeof parsed.balance === 'number' ? parsed.balance : 0.00;
         }
       }
@@ -5714,6 +5781,11 @@
         cache: 'no-store'
       }).then(async r => {
         if (r.status === 404) {
+          const recToken = getStoredRecoveryToken();
+          if (recToken) {
+            restoreSessionFromServerAndStorage(false);
+            return null;
+          }
           localStorage.removeItem('colour_king_user_session');
           currentUserId = null;
           restoreSessionFromServerAndStorage(true);
@@ -5728,6 +5800,10 @@
           if (data.email) currentUserEmail = data.email;
           if (data.phone) currentUserPhone = data.phone;
           if (data.referralCode) currentUserReferralCode = data.referralCode;
+          if (data.recoveryToken) {
+            currentRecoveryToken = data.recoveryToken;
+            saveRecoveryVault(data, data.recoveryToken);
+          }
           updateBalanceUI();
           updateProfileIdentityUI(currentUserId, currentUserName, currentUserEmail || currentUserPhone || '');
           updateAffiliateStatsUI();
@@ -5786,6 +5862,11 @@
           showToast('⚠️ ' + (data.error || 'Could not update password'));
           return;
         }
+        if (data.recoveryToken) {
+          currentRecoveryToken = data.recoveryToken;
+          saveRecoveryVault({ id: currentUserId, name: currentUserName, phone: currentUserPhone, email: currentUserEmail }, data.recoveryToken);
+          persistSessionSnapshot();
+        }
         if (document.getElementById('cpCurrentInput')) document.getElementById('cpCurrentInput').value = '';
         if (document.getElementById('cpNewInput')) document.getElementById('cpNewInput').value = '';
         if (document.getElementById('cpConfirmInput')) document.getElementById('cpConfirmInput').value = '';
@@ -5807,6 +5888,7 @@
       currentUserEmail = '';
       currentUserPhone = '';
       currentUserReferralCode = '';
+      currentRecoveryToken = '';
       userBalance = 0.00;
       latestStatementData = null;
       userBetSlipsHistory = [];
@@ -5893,12 +5975,13 @@
       }
     }
 
-    function completeAuthSession(userObj) {
+    function completeAuthSession(userObj, recToken = '') {
       currentUserId = userObj.id;
       currentUserName = userObj.name || userObj.username || userObj.id;
       currentUserEmail = userObj.email || '';
       currentUserPhone = userObj.phone || '';
       currentUserReferralCode = userObj.referralCode || currentUserReferralCode || '';
+      if (recToken) currentRecoveryToken = recToken;
       userBalance = typeof userObj.balance === 'number' ? userObj.balance : 0.00;
       const curStatus = String(userObj.status || 'ACTIVE').toUpperCase();
       lastKnownAccountStatus = curStatus;
@@ -5908,6 +5991,7 @@
       affiliateTeam = [];
       lastKnownBetStatuses = {};
       loadSavedBetSlipsForCurrentUser();
+      if (recToken) saveRecoveryVault(userObj, recToken);
       persistSessionSnapshot();
       updateBalanceUI();
       updateProfileIdentityUI(currentUserId, currentUserName, currentUserEmail || currentUserPhone || '');
@@ -5939,21 +6023,23 @@
       const btn = document.getElementById('loginSubmitBtn');
       if (btn) { btn.disabled = true; btn.innerText = 'Verifying...'; }
 
+      const matchedRecoveryToken = findRecoveryTokenForIdentifier(identifier) || getStoredRecoveryToken();
+
       try {
         if (hasBackendConnection()) {
           const res = await fetch(apiUrl('/api/users/login'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
-            body: JSON.stringify({ identifier, password })
+            body: JSON.stringify({ identifier, password, recoveryToken: matchedRecoveryToken })
           });
           const data = await res.json();
           if (!res.ok || !data.success || !data.user) {
             showAuthError('loginErrorBox', data.error || 'Invalid login credentials');
             return;
           }
-          completeAuthSession(data.user);
-          showToast(`Welcome back, ${currentUserName}!`);
+          completeAuthSession(data.user, data.recoveryToken || matchedRecoveryToken);
+          showToast(data.restored ? `Welcome back, ${currentUserName}! Account restored safely.` : `Welcome back, ${currentUserName}!`);
           playSound('betClick');
         } else {
           showAuthError('loginErrorBox', 'Server connection unavailable');
@@ -5967,7 +6053,8 @@
 
     async function submitRegisterUser() {
       const name = (document.getElementById('regNameInput')?.value || '').trim();
-      const phone = (document.getElementById('regPhoneInput')?.value || '').replace(/[^0-9]/g, '').trim();
+      const rawPhoneDigits = (document.getElementById('regPhoneInput')?.value || '').replace(/[^0-9]/g, '').trim();
+      const phone = rawPhoneDigits.length >= 10 ? rawPhoneDigits.slice(-10) : rawPhoneDigits;
       const email = (document.getElementById('regEmailInput')?.value || '').trim();
       const password = (document.getElementById('regPasswordInput')?.value || '').trim();
       const confirmPw = (document.getElementById('regConfirmPasswordInput')?.value || '').trim();
@@ -5979,7 +6066,7 @@
         showAuthError('regErrorBox', 'Username must be at least 3 characters');
         return;
       }
-      if (phone.length < 10) {
+      if (phone.length !== 10) {
         showAuthError('regErrorBox', 'Please enter a valid 10-digit mobile number');
         return;
       }
@@ -6030,7 +6117,7 @@
         if (document.getElementById('regPasswordInput')) document.getElementById('regPasswordInput').value = '';
         if (document.getElementById('regConfirmPasswordInput')) document.getElementById('regConfirmPasswordInput').value = '';
 
-        completeAuthSession(data.user);
+        completeAuthSession(data.user, data.recoveryToken || '');
         showToast(`🎉 Welcome ${currentUserName}! ₹${Number(userBalance).toLocaleString('en-IN')} welcome bonus credited!`);
         playSound('win');
       } catch (e) {
@@ -6041,6 +6128,7 @@
     }
 
     async function restoreSessionFromServerAndStorage(forceOpenAuthIfMissing = false) {
+      const storedToken = getStoredRecoveryToken();
       if (hasBackendConnection()) {
         try {
           const query = (currentUserId && currentUserId !== 'Guest')
@@ -6050,8 +6138,24 @@
           if (res.ok) {
             const data = await res.json();
             if (data && data.authenticated && data.user) {
-              completeAuthSession(data.user);
+              completeAuthSession(data.user, data.recoveryToken || storedToken);
               return;
+            }
+          }
+          // If server restarted/recycled and lost SQLite record, automatically restore via signed recoveryToken
+          if (storedToken) {
+            const r2 = await fetch(apiUrl('/api/users/restore-session'), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({ recoveryToken: storedToken })
+            });
+            if (r2.ok) {
+              const d2 = await r2.json();
+              if (d2 && d2.authenticated && d2.user) {
+                completeAuthSession(d2.user, d2.recoveryToken || storedToken);
+                return;
+              }
             }
           }
         } catch (e) {}
@@ -6075,6 +6179,7 @@
       currentUserEmail = '';
       currentUserPhone = '';
       currentUserReferralCode = '';
+      currentRecoveryToken = '';
       userBalance = 0.00;
       userBetSlipsHistory = [];
       walletLedger = [];

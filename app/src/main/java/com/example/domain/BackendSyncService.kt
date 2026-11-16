@@ -170,7 +170,8 @@ data class ServerSyncSnapshot(
 data class ServerAuthResult(
     val user: ServerUserState? = null,
     val error: String? = null,
-    val isNetworkError: Boolean = false
+    val isNetworkError: Boolean = false,
+    val recoveryToken: String? = null
 )
 
 data class ServerSupportTxBrief(
@@ -241,10 +242,12 @@ class BackendSyncService(
         private const val TAG = "BackendSyncService"
         private const val PREFS_NAME = "colour_king_sync"
         private const val KEY_BACKEND_URL = "backend_base_url"
+        private const val KEY_RECOVERY_VAULT = "account_recovery_vault_v1"
 
         val DEFAULT_CANDIDATE_URLS = listOf(
             "http://10.0.2.2:3000",
             "http://127.0.0.1:3000",
+            "https://ck-1vrj.onrender.com",
             "https://ais-dev-zgi6cruhcpqtgg5frvcozc-221262354191.asia-southeast1.run.app",
             "https://ais-pre-zgi6cruhcpqtgg5frvcozc-221262354191.asia-southeast1.run.app"
         )
@@ -288,6 +291,51 @@ class BackendSyncService(
         context?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
 
+    private val inMemoryRecoveryVault = mutableMapOf<String, String>()
+
+    private fun recoveryLookupKeys(raw: String?): List<String> {
+        val clean = (raw ?: "").trim()
+        if (clean.isBlank()) return emptyList()
+        val keys = linkedSetOf(clean.lowercase())
+        val digits = clean.filter { it.isDigit() }
+        if (digits.length >= 10) keys.add(digits.takeLast(10))
+        return keys.toList()
+    }
+
+    fun saveRecoveryToken(user: ServerUserState, token: String?) {
+        val tok = (token ?: "").trim()
+        if (tok.isBlank()) return
+        val keys = listOf(user.id, user.name, user.phone, user.email)
+            .flatMap { recoveryLookupKeys(it) }
+        keys.forEach { k -> inMemoryRecoveryVault[k] = tok }
+        val p = prefs ?: return
+        try {
+            val raw = p.getString(KEY_RECOVERY_VAULT, "{}") ?: "{}"
+            val obj = JSONObject(raw)
+            keys.forEach { k -> obj.put(k, tok) }
+            p.edit().putString(KEY_RECOVERY_VAULT, obj.toString()).apply()
+        } catch (_: Exception) {}
+    }
+
+    fun findRecoveryToken(identifier: String?): String? {
+        val keys = recoveryLookupKeys(identifier)
+        for (k in keys) {
+            inMemoryRecoveryVault[k]?.let { return it }
+        }
+        val p = prefs ?: return null
+        return try {
+            val raw = p.getString(KEY_RECOVERY_VAULT, null) ?: return null
+            val obj = JSONObject(raw)
+            for (k in keys) {
+                val found = obj.optString(k, "").trim()
+                if (found.isNotBlank()) return found
+            }
+            null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
     private val httpClient: OkHttpClient = OkHttpClient.Builder()
@@ -297,9 +345,9 @@ class BackendSyncService(
         .build()
 
     private val probeClient: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(2, TimeUnit.SECONDS)
-        .readTimeout(2, TimeUnit.SECONDS)
-        .writeTimeout(2, TimeUnit.SECONDS)
+        .connectTimeout(3, TimeUnit.SECONDS)
+        .readTimeout(3, TimeUnit.SECONDS)
+        .writeTimeout(3, TimeUnit.SECONDS)
         .build()
 
     private val sseClient: OkHttpClient = OkHttpClient.Builder()
@@ -963,7 +1011,10 @@ class BackendSyncService(
                 error = "Invalid registration response from server.",
                 isNetworkError = false
             )
-        return@withContext ServerAuthResult(user = parseServerUser(uObj))
+        val parsedUser = parseServerUser(uObj)
+        val recToken = resp.optString("recoveryToken").takeIf { it.isNotBlank() }
+        saveRecoveryToken(parsedUser, recToken)
+        return@withContext ServerAuthResult(user = parsedUser, recoveryToken = recToken)
     }
 
     suspend fun registerUserOnServer(
@@ -988,9 +1039,13 @@ class BackendSyncService(
         identifier: String,
         password: String
     ): ServerAuthResult = withContext(Dispatchers.IO) {
+        val matchedRecoveryToken = findRecoveryToken(identifier)
         val payload = JSONObject().apply {
             put("identifier", identifier)
             put("password", password)
+            if (!matchedRecoveryToken.isNullOrBlank()) {
+                put("recoveryToken", matchedRecoveryToken)
+            }
         }
         val resp = postJsonWithRetry("/api/users/login", payload)
             ?: return@withContext ServerAuthResult(
@@ -1011,7 +1066,29 @@ class BackendSyncService(
                 error = "Invalid server response",
                 isNetworkError = false
             )
-        return@withContext ServerAuthResult(user = parseServerUser(uObj))
+        val parsedUser = parseServerUser(uObj)
+        val recToken = resp.optString("recoveryToken").takeIf { it.isNotBlank() } ?: matchedRecoveryToken
+        saveRecoveryToken(parsedUser, recToken)
+        return@withContext ServerAuthResult(user = parsedUser, recoveryToken = recToken)
+    }
+
+    suspend fun restoreSessionWithRecovery(
+        vararg identifiers: String?
+    ): ServerAuthResult = withContext(Dispatchers.IO) {
+        val token = identifiers.firstNotNullOfOrNull { findRecoveryToken(it) }
+            ?: return@withContext ServerAuthResult(user = null, error = "No local recovery token", isNetworkError = false)
+        val payload = JSONObject().apply { put("recoveryToken", token) }
+        val resp = postJsonWithRetry("/api/users/restore-session", payload)
+            ?: return@withContext ServerAuthResult(user = null, error = "Unable to reach server", isNetworkError = true)
+        if (!resp.optBoolean("success", false)) {
+            return@withContext ServerAuthResult(user = null, error = resp.optString("error"), isNetworkError = false)
+        }
+        val uObj = resp.optJSONObject("user")
+            ?: return@withContext ServerAuthResult(user = null, error = "Invalid session response", isNetworkError = false)
+        val parsedUser = parseServerUser(uObj)
+        val newToken = resp.optString("recoveryToken").takeIf { it.isNotBlank() } ?: token
+        saveRecoveryToken(parsedUser, newToken)
+        return@withContext ServerAuthResult(user = parsedUser, recoveryToken = newToken)
     }
 
     suspend fun loginUserOnServer(

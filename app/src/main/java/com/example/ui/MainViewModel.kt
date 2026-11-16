@@ -161,6 +161,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     @Volatile
     private var lastLocalMutationAtMs: Long = 0L
+    @Volatile
+    private var lastRecoveryAttemptAtMs: Long = 0L
     private val knownDepositStatuses = mutableMapOf<String, String>()
     private val knownWithdrawalStatuses = mutableMapOf<String, String>()
 
@@ -659,6 +661,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             updatedAt = System.currentTimeMillis()
                         )
                     )
+                }
+            }
+        } else if (snap.usersById.isNotEmpty()) {
+            val nowMs = System.currentTimeMillis()
+            if (nowMs - lastRecoveryAttemptAtMs > 15_000L) {
+                lastRecoveryAttemptAtMs = nowMs
+                val activeU = _activeUser.value
+                viewModelScope.launch {
+                    val restored = backendSyncService.restoreSessionWithRecovery(
+                        serverUserId,
+                        localUserId,
+                        activeU?.username,
+                        activeU?.phone
+                    )
+                    if (restored.user != null) {
+                        backendSyncService.forceSyncNow()
+                    }
                 }
             }
         }

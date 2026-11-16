@@ -812,6 +812,25 @@
       <!-- TAB 1: DASHBOARD OVERVIEW -->
       <!-- ========================================== -->
       <section class="tab-section active" id="sec-dashboard">
+        <!-- Database & Cloud Persistence Status Panel -->
+        <div class="panel" id="storageStatusPanel" style="background:linear-gradient(135deg, rgba(16,24,41,0.95) 0%, rgba(20,30,52,0.95) 100%); border:1px solid rgba(0,229,255,0.28);">
+          <div class="panel-header" style="margin-bottom:8px;">
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+              <span class="panel-title">🗄️ Database & Permanent Cloud Storage</span>
+              <span class="badge badge-approved" id="storageModeBadge">Checking...</span>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <button class="btn btn-secondary btn-sm" onclick="exportAdminJsonBackup()">⬇ Export JSON Backup</button>
+              <label class="btn btn-gold btn-sm" style="cursor:pointer; margin:0;">
+                ⬆ Restore Backup
+                <input type="file" id="restoreBackupFileInput" accept="application/json,.json" style="display:none;" onchange="importAdminJsonBackup(event)" />
+              </label>
+            </div>
+          </div>
+          <p id="storageStatusDetails" style="font-size:12px; color:var(--text-muted); line-height:1.5;">Connecting to storage telemetry...</p>
+          <p id="storageStatusWarning" style="display:none; font-size:11px; color:var(--amber); background:rgba(255,170,0,0.08); border:1px solid rgba(255,170,0,0.25); padding:8px 10px; border-radius:8px; margin-top:8px;"></p>
+        </div>
+
         <!-- 4 Separate Markets Overview -->
         <div class="panel">
           <div class="panel-header">
@@ -3621,6 +3640,87 @@
       }).catch(() => {});
     }
 
+    function renderStorageStatusPanel(info) {
+      if (!info) return;
+      const badge = document.getElementById('storageModeBadge');
+      const details = document.getElementById('storageStatusDetails');
+      const warn = document.getElementById('storageStatusWarning');
+      if (badge) {
+        badge.className = info.isDurableCloud ? 'badge badge-approved' : 'badge badge-warn';
+        badge.innerText = info.label || info.mode || 'SQLite WAL';
+      }
+      if (details) {
+        const pgTxt = info.pgConfigured ? (info.pgConnected ? 'PostgreSQL: CONNECTED ✓' : `PostgreSQL: ERROR (${info.pgLastError || 'Disconnected'})`) : 'PostgreSQL: Not Attached (Local SQLite)';
+        details.innerHTML = `Registered Users: <strong style="color:#FFF;">${Number(info.registeredUsers || 0)}</strong> (Total DB Accounts: ${Number(info.totalUsers || 0)}) • Total Bets: <strong style="color:var(--cyan);">${Number(info.totalBets || 0)}</strong> • State v<strong style="color:var(--gold);">${Number(info.stateVersion || 1)}</strong> • ${escapeAdminHtml(pgTxt)}`;
+      }
+      if (warn) {
+        if (info.warning) {
+          warn.style.display = 'block';
+          warn.innerText = 'ℹ️ ' + info.warning;
+        } else {
+          warn.style.display = 'none';
+          warn.innerText = '';
+        }
+      }
+    }
+
+    function exportAdminJsonBackup() {
+      if (window.location.protocol === 'file:') {
+        showToast('⚠️ Connect to server URL to export SQLite backup');
+        return;
+      }
+      fetch('/api/admin/backup/export?t=' + Date.now(), { cache: 'no-store' })
+        .then(r => r.json())
+        .then(data => {
+          if (!data || !data.success || !data.backup) {
+            showToast('❌ Backup export failed');
+            return;
+          }
+          const blob = new Blob([JSON.stringify(data.backup, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `colour_king_backup_${new Date().toISOString().slice(0,10)}.json`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+          showToast('✅ Downloaded complete SQLite JSON backup!');
+        })
+        .catch(() => showToast('❌ Network error exporting backup'));
+    }
+
+    function importAdminJsonBackup(event) {
+      const file = event?.target?.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const parsed = JSON.parse(String(reader.result || '{}'));
+          fetch('/api/admin/backup/import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ backup: parsed })
+          })
+          .then(r => r.json())
+          .then(res => {
+            if (res && res.success) {
+              showToast('✅ Database restored from JSON backup!');
+              pullAdminStateFromServer();
+            } else {
+              showToast('❌ Restore failed: ' + (res?.error || 'Invalid format'));
+            }
+          })
+          .catch(() => showToast('❌ Network error restoring backup'));
+        } catch (e) {
+          showToast('❌ Invalid JSON backup file');
+        } finally {
+          if (event.target) event.target.value = '';
+        }
+      };
+      reader.readAsText(file);
+    }
+
     function applyServerStateToAdmin(data) {
       if (!data) return;
       if (data.state_version) lastAdminStateVersion = Number(data.state_version) || lastAdminStateVersion;
@@ -3629,6 +3729,7 @@
       if (data.live_wagers) serverLiveWagers = data.live_wagers;
       if (data.market_stats) serverMarketStats = data.market_stats;
       if (Array.isArray(data.support_tickets)) supportTickets = data.support_tickets;
+      if (data.storage_info) renderStorageStatusPanel(data.storage_info);
 
       if (data.bank_config) {
         bankConfig = data.bank_config;
