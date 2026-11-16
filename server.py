@@ -21,6 +21,10 @@ import math
 import csv
 import io
 import queue
+import mimetypes
+import re
+from email.parser import BytesParser
+from email.policy import default as email_default_policy
 from datetime import datetime, timezone, timedelta
 
 try:
@@ -102,6 +106,26 @@ def resolve_db_file():
     return LEGACY_DB_FILE
 
 DB_FILE = resolve_db_file()
+SUPPORT_UPLOAD_DIR = os.path.join(os.path.dirname(os.path.abspath(DB_FILE)), "support_uploads")
+os.makedirs(SUPPORT_UPLOAD_DIR, exist_ok=True)
+MAX_SUPPORT_FILE_BYTES = 10 * 1024 * 1024  # Strictly 10 MB max
+
+def sanitize_support_filename(raw_name):
+    base = os.path.basename(str(raw_name or "attachment").replace("\\", "/")).strip()
+    if not base:
+        base = "attachment"
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", base).strip("._")
+    if not cleaned:
+        cleaned = "attachment"
+    return cleaned[:96]
+
+def format_file_size_human(size_bytes):
+    sz = max(0, int(size_bytes or 0))
+    if sz >= 1024 * 1024:
+        return f"{sz / (1024 * 1024):.2f} MB"
+    if sz >= 1024:
+        return f"{sz / 1024:.1f} KB"
+    return f"{sz} B"
 DATABASE_URL = (
     os.environ.get("DATABASE_URL")
     or os.environ.get("RENDER_POSTGRES_URL")
@@ -900,6 +924,10 @@ def init_database():
             "ALTER TABLE transactions ADD COLUMN created_at_ms INTEGER DEFAULT 0",
             "ALTER TABLE deposits ADD COLUMN created_at_ms INTEGER DEFAULT 0",
             "ALTER TABLE withdrawals ADD COLUMN created_at_ms INTEGER DEFAULT 0",
+            "ALTER TABLE support_messages ADD COLUMN attachment_name TEXT DEFAULT ''",
+            "ALTER TABLE support_messages ADD COLUMN attachment_mime TEXT DEFAULT ''",
+            "ALTER TABLE support_messages ADD COLUMN attachment_size INTEGER DEFAULT 0",
+            "ALTER TABLE support_messages ADD COLUMN attachment_url TEXT DEFAULT ''",
         ]:
             try:
                 c.execute(alter_sql)
@@ -965,6 +993,10 @@ def init_database():
                 message TEXT NOT NULL,
                 is_auto INTEGER NOT NULL DEFAULT 0,
                 situation_tag TEXT DEFAULT '',
+                attachment_name TEXT DEFAULT '',
+                attachment_mime TEXT DEFAULT '',
+                attachment_size INTEGER DEFAULT 0,
+                attachment_url TEXT DEFAULT '',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 created_at_ms INTEGER NOT NULL DEFAULT 0
             )
@@ -2194,9 +2226,32 @@ def generate_support_auto_reply(conn, uid, user_message="", category="GENERAL"):
 
     return tag, "\n".join(parts)
 
-def ensure_support_ticket_and_add_message(conn, uid, user_name, sender_type, sender_name, message, category="GENERAL", is_auto=0, situation_tag="", now_ms=None):
+def ensure_support_ticket_and_add_message(
+    conn,
+    uid,
+    user_name,
+    sender_type,
+    sender_name,
+    message,
+    category="GENERAL",
+    is_auto=0,
+    situation_tag="",
+    now_ms=None,
+    attachment_name="",
+    attachment_mime="",
+    attachment_size=0,
+    attachment_url="",
+):
     if now_ms is None:
         now_ms = int(time.time() * 1000)
+    att_name = str(attachment_name or "").strip()[:160]
+    att_mime = str(attachment_mime or "").strip()[:120]
+    att_size = max(0, int(attachment_size or 0))
+    att_url = str(attachment_url or "").strip()[:300]
+    clean_msg = str(message or "").strip()
+    preview_text = clean_msg if clean_msg else (f"📎 {att_name}" if att_name else "📎 Media Attachment")
+    preview_text = preview_text[:200]
+
     c = conn.cursor()
     c.execute("SELECT * FROM support_tickets WHERE user_id = ? ORDER BY updated_at_ms DESC LIMIT 1", (uid,))
     trow = c.fetchone()
@@ -2207,13 +2262,19 @@ def ensure_support_ticket_and_add_message(conn, uid, user_name, sender_type, sen
         c.execute("""
             INSERT INTO support_tickets (ticket_id, user_id, user_name, status, category, last_message, last_sender, unread_admin, unread_user, updated_at_ms)
             VALUES (?, ?, ?, 'OPEN', ?, ?, ?, 0, 0, ?)
-        """, (ticket_id, uid, user_name, category, message[:200], sender_type, now_ms))
+        """, (ticket_id, uid, user_name, category, preview_text, sender_type, now_ms))
 
     msg_id = f"MSG-{int(now_ms)}-{random.randint(1000, 9999)}"
     c.execute("""
-        INSERT INTO support_messages (id, ticket_id, user_id, sender_type, sender_name, category, message, is_auto, situation_tag, created_at_ms)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (msg_id, ticket_id, uid, sender_type, sender_name, category, message, 1 if is_auto else 0, situation_tag, now_ms))
+        INSERT INTO support_messages (
+            id, ticket_id, user_id, sender_type, sender_name, category, message, is_auto, situation_tag,
+            attachment_name, attachment_mime, attachment_size, attachment_url, created_at_ms
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        msg_id, ticket_id, uid, sender_type, sender_name, category, clean_msg, 1 if is_auto else 0, situation_tag,
+        att_name, att_mime, att_size, att_url, now_ms
+    ))
 
     if sender_type == "USER":
         c.execute("""
@@ -2221,21 +2282,21 @@ def ensure_support_ticket_and_add_message(conn, uid, user_name, sender_type, sen
             SET user_name = ?, status = 'OPEN', category = ?, last_message = ?, last_sender = ?,
                 unread_admin = unread_admin + 1, updated_at = CURRENT_TIMESTAMP, updated_at_ms = ?
             WHERE ticket_id = ?
-        """, (user_name, category, message[:200], sender_type, now_ms, ticket_id))
+        """, (user_name, category, preview_text, sender_type, now_ms, ticket_id))
     elif sender_type == "ADMIN":
         c.execute("""
             UPDATE support_tickets
             SET user_name = ?, status = 'OPEN', last_message = ?, last_sender = 'ADMIN',
                 unread_admin = 0, unread_user = unread_user + 1, updated_at = CURRENT_TIMESTAMP, updated_at_ms = ?
             WHERE ticket_id = ?
-        """, (user_name, message[:200], now_ms, ticket_id))
+        """, (user_name, preview_text, now_ms, ticket_id))
     else:  # AUTO_BOT
         c.execute("""
             UPDATE support_tickets
             SET user_name = ?, last_message = ?, last_sender = 'AUTO_BOT',
                 unread_user = unread_user + 1, updated_at = CURRENT_TIMESTAMP, updated_at_ms = ?
             WHERE ticket_id = ?
-        """, (user_name, message[:200], now_ms, ticket_id))
+        """, (user_name, preview_text, now_ms, ticket_id))
 
     return ticket_id, msg_id
 
@@ -2330,6 +2391,10 @@ def fetch_support_thread_payload(conn, uid, mark_read_for=None, auto_welcome=Fal
             "message": m["message"],
             "isAuto": bool(m["is_auto"]),
             "situationTag": m["situation_tag"] or "",
+            "attachmentName": (m["attachment_name"] if "attachment_name" in m.keys() and m["attachment_name"] else ""),
+            "attachmentMime": (m["attachment_mime"] if "attachment_mime" in m.keys() and m["attachment_mime"] else ""),
+            "attachmentSize": int(m["attachment_size"] or 0) if "attachment_size" in m.keys() else 0,
+            "attachmentUrl": (m["attachment_url"] if "attachment_url" in m.keys() and m["attachment_url"] else ""),
             "createdAt": m["created_at"] or "",
             "createdAtMs": int(m["created_at_ms"] or 0),
         } for m in c.fetchall()]
@@ -2374,9 +2439,15 @@ def list_admin_support_tickets(conn):
             "message": m["message"],
             "isAuto": bool(m["is_auto"]),
             "situationTag": m["situation_tag"] or "",
+            "attachmentName": (m["attachment_name"] if "attachment_name" in m.keys() and m["attachment_name"] else ""),
+            "attachmentMime": (m["attachment_mime"] if "attachment_mime" in m.keys() and m["attachment_mime"] else ""),
+            "attachmentSize": int(m["attachment_size"] or 0) if "attachment_size" in m.keys() else 0,
+            "attachmentUrl": (m["attachment_url"] if "attachment_url" in m.keys() and m["attachment_url"] else ""),
             "createdAt": m["created_at"] or "",
+            "created_at_ms": int(m["created_at_ms"] or 0),
             "createdAtMs": int(m["created_at_ms"] or 0),
         } for m in c.fetchall()]
+        att_count = sum(1 for mm in msgs if mm.get("attachmentUrl"))
         sit = build_user_support_situation(conn, uid)
         tickets.append({
             "ticketId": tid,
@@ -2391,6 +2462,7 @@ def list_admin_support_tickets(conn):
             "lastSender": r["last_sender"] or "AUTO_BOT",
             "unreadAdmin": unread_a,
             "unreadUser": int(r["unread_user"] or 0),
+            "attachmentCount": att_count,
             "updatedAt": r["updated_at"] or "",
             "updatedAtMs": int(r["updated_at_ms"] or 0),
             "situation": sit,
@@ -2432,7 +2504,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
         else:
             self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, X-File-Name, X-File-Mime, X-User-Id")
 
     def _send_csv(self, csv_text, filename):
         try:
@@ -3207,6 +3279,74 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json(payload_out)
             return
 
+        if path.startswith("/api/support/files/"):
+            rel_name = urllib.parse.unquote(path[len("/api/support/files/"):]).strip()
+            safe_name = os.path.basename(rel_name)
+            if not safe_name or safe_name != rel_name or safe_name.startswith("."):
+                self._send_json({ "success": False, "error": "Invalid file path" }, status=400)
+                return
+            fpath = os.path.join(SUPPORT_UPLOAD_DIR, safe_name)
+            if not os.path.isfile(fpath):
+                self._send_json({ "success": False, "error": "Attachment not found" }, status=404)
+                return
+            file_size = os.path.getsize(fpath)
+            guessed_mime, _ = mimetypes.guess_type(fpath)
+            mime_type = guessed_mime or "application/octet-stream"
+            force_download = qs.get("download", ["0"])[0] in ("1", "true", "yes")
+            inline_safe = (not force_download) and (
+                mime_type.startswith("image/")
+                or mime_type.startswith("video/")
+                or mime_type.startswith("audio/")
+                or mime_type == "application/pdf"
+                or mime_type.startswith("text/")
+            )
+            disp = "inline" if inline_safe else "attachment"
+            display_name = safe_name.split("_", 1)[1] if "_" in safe_name and safe_name.startswith("SUP-") else safe_name
+            display_name = display_name.replace('"', "")
+            range_hdr = self.headers.get("Range", "")
+            start_byte = 0
+            end_byte = file_size - 1
+            is_partial = False
+            if range_hdr.startswith("bytes=") and file_size > 0:
+                try:
+                    spec = range_hdr[len("bytes="):].split(",")[0].strip()
+                    p_start, p_end = spec.split("-", 1)
+                    if p_start:
+                        start_byte = max(0, int(p_start))
+                    if p_end:
+                        end_byte = min(file_size - 1, int(p_end))
+                    if start_byte <= end_byte < file_size:
+                        is_partial = True
+                except Exception:
+                    start_byte = 0
+                    end_byte = file_size - 1
+            length_to_send = max(0, end_byte - start_byte + 1) if file_size > 0 else 0
+            try:
+                self.send_response(206 if is_partial else 200)
+                self.send_header("Content-Type", mime_type)
+                self.send_header("Content-Disposition", f'{disp}; filename="{display_name}"')
+                self.send_header("Accept-Ranges", "bytes")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self._send_cors_headers()
+                self.send_header("Cache-Control", "public, max-age=86400")
+                if is_partial:
+                    self.send_header("Content-Range", f"bytes {start_byte}-{end_byte}/{file_size}")
+                self.send_header("Content-Length", str(length_to_send))
+                self.end_headers()
+                if length_to_send > 0:
+                    with open(fpath, "rb") as fobj:
+                        fobj.seek(start_byte)
+                        remaining = length_to_send
+                        while remaining > 0:
+                            chunk = fobj.read(min(65536, remaining))
+                            if not chunk:
+                                break
+                            self.wfile.write(chunk)
+                            remaining -= len(chunk)
+            except Exception as e:
+                print(f"Error serving support file {safe_name}: {e}")
+            return
+
         if path == "/api/admin/support/tickets":
             with db_lock:
                 conn = get_db()
@@ -3296,14 +3436,118 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
-        content_len = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(content_len).decode("utf-8") if content_len > 0 else "{}"
+        qs = urllib.parse.parse_qs(parsed.query)
+        try:
+            content_len = int(self.headers.get("Content-Length", 0))
+        except Exception:
+            content_len = 0
+
+        now_ms = int(time.time() * 1000)
+
+        # Reject oversized payloads (> 15 MB envelope; file uploads enforce <= 10 MB strictly)
+        if content_len > 15 * 1024 * 1024:
+            self._send_json({
+                "success": False,
+                "error": "File too large. Maximum allowed file size is 10 MB."
+            }, status=413)
+            return
+
+        raw_bytes = self.rfile.read(content_len) if content_len > 0 else b""
+
+        # Support Media / Any-File Upload (Max 10 MB)
+        if path == "/api/support/upload":
+            ct = str(self.headers.get("Content-Type") or "")
+            uid = str(qs.get("userId", [""])[0] or self.headers.get("X-User-Id") or self._get_cookie_uid() or "").strip()
+            file_name = str(qs.get("fileName", [""])[0] or urllib.parse.unquote(self.headers.get("X-File-Name") or "")).strip()
+            file_mime = str(qs.get("mime", [""])[0] or self.headers.get("X-File-Mime") or "").strip()
+            file_bytes = None
+
+            if "multipart/form-data" in ct.lower():
+                try:
+                    msg_parsed = BytesParser(policy=email_default_policy).parsebytes(
+                        b"Content-Type: " + ct.encode("latin-1", errors="ignore") + b"\r\nMIME-Version: 1.0\r\n\r\n" + raw_bytes
+                    )
+                    if msg_parsed.is_multipart():
+                        for part in msg_parsed.iter_parts():
+                            cd_name = part.get_param("name", header="content-disposition")
+                            part_filename = part.get_filename()
+                            if part_filename or cd_name == "file":
+                                file_bytes = part.get_payload(decode=True) or b""
+                                if not file_name:
+                                    file_name = part_filename or "attachment"
+                                if not file_mime:
+                                    file_mime = part.get_content_type() or ""
+                            elif cd_name == "userId" and not uid:
+                                uid = (part.get_content() or "").strip()
+                except Exception as ex:
+                    self._send_json({ "success": False, "error": f"Invalid multipart upload: {ex}" }, status=400)
+                    return
+            elif "application/json" in ct.lower():
+                try:
+                    jdata = json.loads(raw_bytes.decode("utf-8") or "{}")
+                except Exception:
+                    jdata = {}
+                uid = str(jdata.get("userId") or uid or "").strip()
+                file_name = str(jdata.get("fileName") or file_name or "attachment").strip()
+                file_mime = str(jdata.get("fileMime") or file_mime or "").strip()
+                b64_raw = str(jdata.get("fileDataBase64") or "").strip()
+                if "," in b64_raw and b64_raw.startswith("data:"):
+                    b64_raw = b64_raw.split(",", 1)[1]
+                try:
+                    file_bytes = base64.b64decode(b64_raw) if b64_raw else b""
+                except Exception:
+                    self._send_json({ "success": False, "error": "Invalid base64 attachment data" }, status=400)
+                    return
+            else:
+                file_bytes = raw_bytes
+                if not file_mime and ct and "octet-stream" not in ct.lower():
+                    file_mime = ct.split(";")[0].strip()
+
+            if not uid or uid == "Guest":
+                self._send_json({ "success": False, "error": "Please login to upload support files" }, status=401)
+                return
+
+            if not file_bytes:
+                self._send_json({ "success": False, "error": "Empty file cannot be uploaded" }, status=400)
+                return
+
+            if len(file_bytes) > MAX_SUPPORT_FILE_BYTES:
+                self._send_json({
+                    "success": False,
+                    "error": f"File exceeds the 10 MB limit ({format_file_size_human(len(file_bytes))}). Please select a file under 10 MB."
+                }, status=413)
+                return
+
+            safe_orig = sanitize_support_filename(file_name or "attachment")
+            if not file_mime:
+                guessed, _ = mimetypes.guess_type(safe_orig)
+                file_mime = guessed or "application/octet-stream"
+
+            stored_name = f"SUP-{now_ms}-{random.randint(1000, 9999)}_{safe_orig}"
+            stored_path = os.path.join(SUPPORT_UPLOAD_DIR, stored_name)
+            try:
+                os.makedirs(SUPPORT_UPLOAD_DIR, exist_ok=True)
+                with open(stored_path, "wb") as fout:
+                    fout.write(file_bytes)
+            except Exception as ex:
+                self._send_json({ "success": False, "error": f"Failed to store file: {ex}" }, status=500)
+                return
+
+            att_url = f"/api/support/files/{urllib.parse.quote(stored_name)}"
+            self._send_json({
+                "success": True,
+                "attachmentName": file_name or safe_orig,
+                "attachmentMime": file_mime,
+                "attachmentSize": len(file_bytes),
+                "attachmentUrl": att_url,
+            })
+            return
+
+        body = raw_bytes.decode("utf-8", errors="replace") if raw_bytes else "{}"
         try:
             payload = json.loads(body)
         except Exception:
             payload = {}
-
-        now_ms = int(time.time() * 1000)
 
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         # 1. ATOMIC BET PLACEMENT WITH STRICT 30-SECOND LOCK REJECTION
@@ -4241,11 +4485,26 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             uid = str(payload.get("userId") or self._get_cookie_uid() or "").strip()
             message = str(payload.get("message") or "").strip()
             category = str(payload.get("category") or "GENERAL").upper().strip()
+            att_name = str(payload.get("attachmentName") or "").strip()
+            att_mime = str(payload.get("attachmentMime") or "").strip()
+            try:
+                att_size = max(0, int(payload.get("attachmentSize") or 0))
+            except Exception:
+                att_size = 0
+            att_url = str(payload.get("attachmentUrl") or "").strip()
+            if att_url and not att_url.startswith("/api/support/files/"):
+                att_url = ""
+                att_name = ""
+                att_mime = ""
+                att_size = 0
+            if att_size > MAX_SUPPORT_FILE_BYTES:
+                self._send_json({ "success": False, "error": "Attachment exceeds 10 MB limit" }, status=413)
+                return
             if not uid or uid == "Guest":
                 self._send_json({ "success": False, "error": "Please login to send a support message" }, status=401)
                 return
-            if not message:
-                self._send_json({ "success": False, "error": "Support message cannot be empty" }, status=400)
+            if not message and not att_url:
+                self._send_json({ "success": False, "error": "Please enter a message or attach a file (under 10 MB)" }, status=400)
                 return
 
             with db_lock:
@@ -4267,10 +4526,19 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     message=message,
                     category=category,
                     is_auto=0,
-                    situation_tag="USER_MESSAGE",
+                    situation_tag="USER_MEDIA" if att_url else "USER_MESSAGE",
                     now_ms=now_ms,
+                    attachment_name=att_name,
+                    attachment_mime=att_mime,
+                    attachment_size=att_size,
+                    attachment_url=att_url,
                 )
                 auto_tag, auto_reply = generate_support_auto_reply(conn, uid, message, category)
+                if att_url:
+                    auto_reply = (
+                        f"📎 Received your shared file: {att_name or 'Attachment'} ({format_file_size_human(att_size)}). "
+                        "It is now visible on the Admin Support Desk.\n" + auto_reply
+                    )
                 ensure_support_ticket_and_add_message(
                     conn,
                     uid=uid,
@@ -4285,7 +4553,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 )
                 # User is actively viewing chat when sending; clear unread_user right away
                 c.execute("UPDATE support_tickets SET unread_user = 0 WHERE ticket_id = ?", (tid,))
-                _, sse_ev = bump_state_version(conn, "support_message", {"userId": uid, "ticketId": tid, "category": category})
+                _, sse_ev = bump_state_version(conn, "support_message", {"userId": uid, "ticketId": tid, "category": category, "hasAttachment": bool(att_url)})
                 thread_data = fetch_support_thread_payload(conn, uid, mark_read_for="USER", auto_welcome=False)
                 commit_and_persist(conn, critical=True)
                 conn.close()
@@ -4320,8 +4588,20 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             uid = str(payload.get("userId") or "").strip()
             message = str(payload.get("message") or "").strip()
             admin_name = str(payload.get("adminName") or "ColourPrince").strip() or "ColourPrince"
-            if not message:
-                self._send_json({ "success": False, "error": "Reply message cannot be empty" }, status=400)
+            att_name = str(payload.get("attachmentName") or "").strip()
+            att_mime = str(payload.get("attachmentMime") or "").strip()
+            try:
+                att_size = max(0, int(payload.get("attachmentSize") or 0))
+            except Exception:
+                att_size = 0
+            att_url = str(payload.get("attachmentUrl") or "").strip()
+            if att_url and not att_url.startswith("/api/support/files/"):
+                att_url = ""
+                att_name = ""
+                att_mime = ""
+                att_size = 0
+            if not message and not att_url:
+                self._send_json({ "success": False, "error": "Reply message or attachment cannot be empty" }, status=400)
                 return
 
             with db_lock:
@@ -4350,12 +4630,16 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     is_auto=0,
                     situation_tag="ADMIN_CUSTOM_REPLY",
                     now_ms=now_ms,
+                    attachment_name=att_name,
+                    attachment_mime=att_mime,
+                    attachment_size=att_size,
+                    attachment_url=att_url,
                 )
                 c.execute("""
                     INSERT INTO admin_audit_logs (actor, action, entity, desc)
                     VALUES (?, 'ADMIN_SUPPORT_REPLY', ?, ?)
-                """, (admin_name, f"{uid} ({tid})", message[:180]))
-                _, sse_ev = bump_state_version(conn, "support_reply", {"userId": uid, "ticketId": tid, "message": message})
+                """, (admin_name, f"{uid} ({tid})", (message or f"📎 {att_name}")[:180]))
+                _, sse_ev = bump_state_version(conn, "support_reply", {"userId": uid, "ticketId": tid, "message": message or f"📎 {att_name}"})
                 thread_data = fetch_support_thread_payload(conn, uid, mark_read_for=None, auto_welcome=False)
                 commit_and_persist(conn, critical=True)
                 conn.close()
@@ -4410,7 +4694,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     "transactions": ["tx_id", "user_id", "type", "title", "ref", "amount", "balance_before", "balance_after", "status", "created_at", "created_at_ms"],
                     "referral_commissions": ["id", "beneficiary_user_id", "source_user_id", "source_user_name", "source_bet_id", "level", "rate", "eligible_amount", "commission_amount", "status", "created_at", "created_at_ms"],
                     "support_tickets": ["ticket_id", "user_id", "user_name", "status", "category", "last_message", "last_sender", "unread_admin", "unread_user", "updated_at", "updated_at_ms", "created_at"],
-                    "support_messages": ["id", "ticket_id", "user_id", "sender_type", "sender_name", "category", "message", "is_auto", "situation_tag", "created_at", "created_at_ms"],
+                    "support_messages": ["id", "ticket_id", "user_id", "sender_type", "sender_name", "category", "message", "is_auto", "situation_tag", "attachment_name", "attachment_mime", "attachment_size", "attachment_url", "created_at", "created_at_ms"],
                     "app_state": ["key", "value", "updated_at"],
                 }
                 for tbl, cols in allowed_tables.items():

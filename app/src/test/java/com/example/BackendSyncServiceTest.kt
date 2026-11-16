@@ -616,4 +616,88 @@ class BackendSyncServiceTest {
             server.stop(0)
         }
     }
+
+    @Test
+    fun supportAttachmentUploadAndMessage_enforces10MbLimitAndPersistsAttachmentMetadata() = runBlocking {
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
+        val port = server.address.port
+        var uploadedSize = 0
+
+        server.createContext("/api/support/upload") { ex ->
+            val bytesIn = ex.requestBody.readBytes()
+            uploadedSize = bytesIn.size
+            val respStr = org.json.JSONObject()
+                .put("success", true)
+                .put("attachmentName", "receipt.pdf")
+                .put("attachmentMime", "application/pdf")
+                .put("attachmentSize", uploadedSize)
+                .put("attachmentUrl", "/api/support/files/SUP-123_receipt.pdf")
+                .toString()
+            val bytes = respStr.toByteArray()
+            ex.responseHeaders.add("Content-Type", "application/json")
+            ex.sendResponseHeaders(200, bytes.size.toLong())
+            ex.responseBody.use { it.write(bytes) }
+        }
+
+        server.createContext("/api/support/message") { ex ->
+            val req = org.json.JSONObject(ex.requestBody.bufferedReader().readText())
+            val respStr = org.json.JSONObject()
+                .put("success", true)
+                .put("unreadUser", 0)
+                .put(
+                    "messages",
+                    org.json.JSONArray()
+                        .put(
+                            org.json.JSONObject()
+                                .put("id", "MSG-ATT-1")
+                                .put("ticketId", "TKT-USR-1001")
+                                .put("userId", "USR-1001")
+                                .put("senderType", "USER")
+                                .put("senderName", "Rahul_Player")
+                                .put("category", "GENERAL")
+                                .put("message", req.optString("message"))
+                                .put("isAuto", false)
+                                .put("attachmentName", req.optString("attachmentName"))
+                                .put("attachmentMime", req.optString("attachmentMime"))
+                                .put("attachmentSize", req.optLong("attachmentSize"))
+                                .put("attachmentUrl", req.optString("attachmentUrl"))
+                        )
+                )
+                .toString()
+            val bytes = respStr.toByteArray()
+            ex.responseHeaders.add("Content-Type", "application/json")
+            ex.sendResponseHeaders(200, bytes.size.toLong())
+            ex.responseBody.use { it.write(bytes) }
+        }
+
+        server.start()
+        try {
+            val sync = BackendSyncService(context, "http://127.0.0.1:$port")
+            // 1. Over-limit file rejected client-side without hitting server
+            val tooBigBytes = ByteArray(10 * 1024 * 1024 + 1)
+            val (tooBigRes, tooBigErr) = sync.uploadSupportAttachment("USR-1001", "huge.bin", "application/octet-stream", tooBigBytes)
+            assertEquals(null, tooBigRes)
+            assertTrue(tooBigErr!!.contains("10 MB", ignoreCase = true))
+
+            // 2. Valid attachment under 10 MB uploads & attaches to message
+            val samplePdf = "%PDF-1.4\n%receipt\n".toByteArray()
+            val pending = com.example.domain.PendingSupportAttachment(
+                fileName = "receipt.pdf",
+                mimeType = "application/pdf",
+                sizeBytes = samplePdf.size.toLong(),
+                bytes = samplePdf
+            )
+            val (sent, err) = sync.sendSupportMessage("USR-1001", "", "GENERAL", pending)
+            assertEquals(null, err)
+            assertNotNull(sent)
+            assertEquals(samplePdf.size, uploadedSize)
+            val msg = sent!!.messages.first()
+            assertEquals("receipt.pdf", msg.attachmentName)
+            assertEquals("application/pdf", msg.attachmentMime)
+            assertEquals("/api/support/files/SUP-123_receipt.pdf", msg.attachmentUrl)
+            assertEquals("http://127.0.0.1:$port/api/support/files/SUP-123_receipt.pdf", sync.resolveAssetUrl(msg.attachmentUrl))
+        } finally {
+            server.stop(0)
+        }
+    }
 }

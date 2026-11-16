@@ -85,6 +85,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _supportError = MutableStateFlow<String?>(null)
     val supportError = _supportError.asStateFlow()
 
+    private val _pendingSupportAttachment = MutableStateFlow<PendingSupportAttachment?>(null)
+    val pendingSupportAttachment = _pendingSupportAttachment.asStateFlow()
+
     @Volatile
     private var isSupportDialogOpen: Boolean = false
 
@@ -93,6 +96,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (open) {
             refreshSupportThread(markRead = true, initWelcome = true)
         }
+    }
+
+    fun selectSupportAttachment(attachment: PendingSupportAttachment?) {
+        if (attachment != null && attachment.sizeBytes > BackendSyncService.MAX_SUPPORT_FILE_BYTES) {
+            _supportError.value = "File exceeds 10 MB limit. Please select a file under 10 MB."
+            return
+        }
+        _supportError.value = null
+        _pendingSupportAttachment.value = attachment
+    }
+
+    fun clearSupportAttachment() {
+        _pendingSupportAttachment.value = null
+    }
+
+    fun setSupportError(msg: String?) {
+        _supportError.value = msg
     }
 
     fun refreshSupportThread(markRead: Boolean = isSupportDialogOpen, initWelcome: Boolean = false) {
@@ -112,10 +132,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun sendSupportMessage(message: String, category: String = "GENERAL") {
+    fun sendSupportMessage(message: String, category: String = "GENERAL", includePendingAttachment: Boolean = true) {
         val clean = message.trim()
-        if (clean.isBlank()) {
-            _supportError.value = "Please enter a message for support."
+        val pendingAtt = if (includePendingAttachment) _pendingSupportAttachment.value else null
+        if (clean.isBlank() && pendingAtt == null) {
+            _supportError.value = "Please enter a message or attach a file (under 10 MB)."
             return
         }
         val serverUid = getServerUserId()
@@ -130,10 +151,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val (thread, err) = backendSyncService.sendSupportMessage(
                     serverUserId = serverUid,
                     message = clean,
-                    category = category
+                    category = category,
+                    attachment = pendingAtt
                 )
                 if (thread != null) {
                     _supportThread.value = thread
+                    if (pendingAtt != null) {
+                        _pendingSupportAttachment.value = null
+                    }
                 } else {
                     _supportError.value = err ?: "Failed to send support message"
                     postNotification("⚠️ ${err ?: "Failed to send support message"}", false)

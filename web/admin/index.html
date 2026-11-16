@@ -1568,9 +1568,17 @@
 
             <!-- Custom Admin Reply Form -->
             <div id="supportReplyComposer" style="display:none; flex-direction:column; gap:8px; margin-top:4px;">
+              <div id="adminSupportAttPreview" style="display:none; align-items:center; justify-content:space-between; gap:8px; background:rgba(0,229,255,0.09); border:1px solid rgba(0,229,255,0.35); border-radius:8px; padding:6px 10px; font-size:11px;">
+                <span id="adminSupportAttLabel" style="color:#FFF; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;"></span>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="clearAdminSupportPendingFile()" style="padding:2px 8px;">✕ Remove</button>
+              </div>
+              <input type="file" id="adminSupportFileInput" style="display:none;" onchange="handleAdminSupportFileSelected(event)" />
               <textarea class="form-control" id="adminSupportReplyInput" rows="2" placeholder="Write a custom Admin reply to the user (syncs live to Web & Android app)..."></textarea>
-              <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-                <span style="font-size:11px; color:var(--text-muted);">Replies appear instantly under the user's Profile → 24/7 Support chat.</span>
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="triggerAdminSupportFilePick()" title="Attach any file under 10 MB">📎 Attach File (&lt;10 MB)</button>
+                  <span style="font-size:11px; color:var(--text-muted);">Replies &amp; files sync live to Web &amp; Android app.</span>
+                </div>
                 <button type="button" class="btn btn-gold" onclick="sendAdminSupportCustomReply()" id="adminSupportSendBtn">📨 Send Custom Reply</button>
               </div>
             </div>
@@ -3486,12 +3494,14 @@
       container.innerHTML = filtered.map(t => {
         const isSelected = t.ticketId === activeSupportTicketId;
         const unread = Number(t.unreadAdmin || 0);
+        const attCount = Number(t.attachmentCount || 0);
         const isResolved = String(t.status || '').toUpperCase() === 'RESOLVED';
         return `
           <div onclick="selectSupportTicket('${escapeAdminHtml(t.ticketId)}')" style="cursor:pointer; padding:10px 12px; border-radius:10px; border:1px solid ${isSelected ? 'var(--gold)' : 'var(--border)'}; background:${isSelected ? 'rgba(255,215,0,0.08)' : 'var(--card)'}; display:flex; flex-direction:column; gap:4px;">
             <div style="display:flex; justify-content:space-between; align-items:center; gap:6px;">
               <strong style="color:#FFF; font-size:13px;">${escapeAdminHtml(t.userName)}</strong>
               <div style="display:flex; gap:4px; align-items:center;">
+                ${attCount > 0 ? `<span class="badge" style="background:rgba(0,229,255,0.16); color:var(--cyan); border:1px solid rgba(0,229,255,0.35);">📎 ${attCount}</span>` : ''}
                 ${unread > 0 ? `<span class="badge badge-alert">${unread} NEW</span>` : ''}
                 <span class="badge ${isResolved ? 'badge-approved' : 'badge-warn'}">${escapeAdminHtml(t.status)}</span>
               </div>
@@ -3567,18 +3577,124 @@
           const bg = isAdmin ? 'rgba(0,230,118,0.12)' : (isBot ? 'rgba(0,229,255,0.08)' : 'rgba(255,215,0,0.08)');
           const border = isAdmin ? 'rgba(0,230,118,0.4)' : (isBot ? 'rgba(0,229,255,0.35)' : 'rgba(255,215,0,0.35)');
           const roleColor = isAdmin ? 'var(--green)' : (isBot ? 'var(--cyan)' : 'var(--gold)');
+          const attHtml = renderAdminSupportAttachmentHtml(m);
+          const msgBody = m.message ? `<div style="font-size:12px; color:#FFF; white-space:pre-line; line-height:1.45; ${attHtml ? 'margin-top:6px;' : ''}">${escapeAdminHtml(m.message)}</div>` : '';
           return `
             <div style="align-self:${align}; max-width:85%; background:${bg}; border:1px solid ${border}; border-radius:10px; padding:8px 12px;">
               <div style="display:flex; justify-content:space-between; gap:10px; font-size:10px; margin-bottom:4px;">
                 <strong style="color:${roleColor};">${escapeAdminHtml(m.senderName || st)}${m.situationTag ? ` • ${escapeAdminHtml(m.situationTag)}` : ''}</strong>
                 <span style="color:var(--text-muted);">${escapeAdminHtml(String(m.createdAt || '').slice(11, 19) || 'Live')}</span>
               </div>
-              <div style="font-size:12px; color:#FFF; white-space:pre-line; line-height:1.45;">${escapeAdminHtml(m.message || '')}</div>
+              ${attHtml}
+              ${msgBody}
             </div>
           `;
         }).join('');
         boxEl.scrollTop = boxEl.scrollHeight;
       }
+    }
+
+    const ADMIN_MAX_SUPPORT_FILE_BYTES = 10 * 1024 * 1024;
+    let adminPendingSupportFile = null;
+
+    function formatAdminFileSize(bytes) {
+      const b = Math.max(0, Number(bytes || 0));
+      if (b >= 1024 * 1024) return (b / (1024 * 1024)).toFixed(2) + ' MB';
+      if (b >= 1024) return (b / 1024).toFixed(1) + ' KB';
+      return b + ' B';
+    }
+
+    function renderAdminSupportAttachmentHtml(m) {
+      if (!m || !m.attachmentUrl) return '';
+      const rawUrl = String(m.attachmentUrl);
+      const dlUrl = rawUrl + (rawUrl.includes('?') ? '&' : '?') + 'download=1';
+      const name = escapeAdminHtml(m.attachmentName || 'Attachment');
+      const mime = String(m.attachmentMime || '').toLowerCase();
+      const sizeStr = formatAdminFileSize(m.attachmentSize || 0);
+      if (mime.startsWith('image/')) {
+        return `
+          <div style="display:flex; flex-direction:column; gap:5px; background:rgba(0,0,0,0.28); padding:6px; border-radius:8px; border:1px solid rgba(255,255,255,0.12);">
+            <a href="${escapeAdminHtml(rawUrl)}" target="_blank" rel="noopener" title="Open full-size image">
+              <img src="${escapeAdminHtml(rawUrl)}" alt="${name}" style="max-width:280px; max-height:220px; border-radius:6px; object-fit:contain; display:block;" />
+            </a>
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:11px;">
+              <span style="color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:190px;">🖼️ ${name} (${sizeStr})</span>
+              <a href="${escapeAdminHtml(dlUrl)}" download="${name}" class="btn btn-secondary btn-sm" style="padding:2px 8px; text-decoration:none;">⬇ Download</a>
+            </div>
+          </div>
+        `;
+      }
+      if (mime.startsWith('video/')) {
+        return `
+          <div style="display:flex; flex-direction:column; gap:5px; background:rgba(0,0,0,0.28); padding:6px; border-radius:8px; border:1px solid rgba(255,255,255,0.12);">
+            <video src="${escapeAdminHtml(rawUrl)}" controls preload="metadata" style="max-width:300px; max-height:210px; border-radius:6px; background:#000;"></video>
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:11px;">
+              <span style="color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:190px;">🎬 ${name} (${sizeStr})</span>
+              <a href="${escapeAdminHtml(dlUrl)}" download="${name}" class="btn btn-secondary btn-sm" style="padding:2px 8px; text-decoration:none;">⬇ Download</a>
+            </div>
+          </div>
+        `;
+      }
+      if (mime.startsWith('audio/')) {
+        return `
+          <div style="display:flex; flex-direction:column; gap:5px; background:rgba(0,0,0,0.28); padding:6px; border-radius:8px; border:1px solid rgba(255,255,255,0.12);">
+            <audio src="${escapeAdminHtml(rawUrl)}" controls style="width:260px; height:36px;"></audio>
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:11px;">
+              <span style="color:var(--text-muted);">🎵 ${name} (${sizeStr})</span>
+              <a href="${escapeAdminHtml(dlUrl)}" download="${name}" class="btn btn-secondary btn-sm" style="padding:2px 8px; text-decoration:none;">⬇ Download</a>
+            </div>
+          </div>
+        `;
+      }
+      const icon = mime.includes('pdf') ? '📄' : (mime.includes('zip') || mime.includes('rar') || mime.includes('archive') ? '🗜️' : '📁');
+      return `
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; background:rgba(0,0,0,0.34); border:1px solid rgba(0,229,255,0.35); border-radius:8px; padding:8px 10px;">
+          <div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1;">
+            <span style="font-size:20px;">${icon}</span>
+            <div style="min-width:0; flex:1;">
+              <div style="font-size:12px; font-weight:700; color:#FFF; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:210px;">${name}</div>
+              <div style="font-size:10px; color:var(--cyan);">${escapeAdminHtml(mime || 'file')} • ${sizeStr}</div>
+            </div>
+          </div>
+          <div style="display:flex; gap:6px;">
+            <a href="${escapeAdminHtml(rawUrl)}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm" style="padding:4px 8px; text-decoration:none;">👁 Open</a>
+            <a href="${escapeAdminHtml(dlUrl)}" download="${name}" class="btn btn-gold btn-sm" style="padding:4px 8px; text-decoration:none;">⬇ Save</a>
+          </div>
+        </div>
+      `;
+    }
+
+    function triggerAdminSupportFilePick() {
+      const fi = document.getElementById('adminSupportFileInput');
+      if (fi) { fi.value = ''; fi.click(); }
+    }
+
+    function handleAdminSupportFileSelected(ev) {
+      const f = ev && ev.target && ev.target.files ? ev.target.files[0] : null;
+      if (!f) return;
+      if (f.size <= 0) {
+        showToast('⚠️ Selected file is empty.');
+        clearAdminSupportPendingFile();
+        return;
+      }
+      if (f.size > ADMIN_MAX_SUPPORT_FILE_BYTES) {
+        showToast(`⚠️ File exceeds 10 MB limit (${formatAdminFileSize(f.size)}).`);
+        clearAdminSupportPendingFile();
+        return;
+      }
+      adminPendingSupportFile = f;
+      const box = document.getElementById('adminSupportAttPreview');
+      const lbl = document.getElementById('adminSupportAttLabel');
+      if (lbl) lbl.innerText = `📎 ${f.name} (${formatAdminFileSize(f.size)})`;
+      if (box) box.style.display = 'flex';
+    }
+
+    function clearAdminSupportPendingFile() {
+      adminPendingSupportFile = null;
+      const fi = document.getElementById('adminSupportFileInput');
+      if (fi) fi.value = '';
+      const box = document.getElementById('adminSupportAttPreview');
+      if (box) box.style.display = 'none';
     }
 
     function fillAdminSupportQuickReply(text) {
@@ -3589,39 +3705,69 @@
       }
     }
 
-    function sendAdminSupportCustomReply() {
+    async function sendAdminSupportCustomReply() {
       const t = (supportTickets || []).find(x => x.ticketId === activeSupportTicketId);
       const inp = document.getElementById('adminSupportReplyInput');
       const msg = (inp?.value || '').trim();
-      if (!t || !msg) {
-        showToast('⚠️ Select a ticket and type your reply first.');
+      if (!t || (!msg && !adminPendingSupportFile)) {
+        showToast('⚠️ Select a ticket and type a reply or attach a file (< 10 MB).');
         return;
       }
       const btn = document.getElementById('adminSupportSendBtn');
       if (btn) btn.disabled = true;
-      fetch('/api/admin/support/reply', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      try {
+        let uploadedMeta = null;
+        if (adminPendingSupportFile) {
+          const uploadUrl = `/api/support/upload?userId=${encodeURIComponent(t.userId)}&fileName=${encodeURIComponent(adminPendingSupportFile.name || 'admin_file')}&mime=${encodeURIComponent(adminPendingSupportFile.type || 'application/octet-stream')}`;
+          const upRes = await fetch(uploadUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': adminPendingSupportFile.type || 'application/octet-stream',
+              'X-File-Name': encodeURIComponent(adminPendingSupportFile.name || 'admin_file'),
+              'X-File-Mime': adminPendingSupportFile.type || 'application/octet-stream',
+              'X-User-Id': t.userId
+            },
+            body: adminPendingSupportFile
+          });
+          const upData = await upRes.json().catch(() => ({}));
+          if (!upRes.ok || !upData.success) {
+            showToast('❌ ' + (upData?.error || 'Failed to upload file'));
+            return;
+          }
+          uploadedMeta = upData;
+        }
+        const replyBody = {
           ticketId: t.ticketId,
           userId: t.userId,
           message: msg,
           adminName: document.getElementById('adminUsernameDisplay')?.innerText || 'ColourPrince'
-        })
-      })
-      .then(r => r.json())
-      .then(data => {
+        };
+        if (uploadedMeta) {
+          replyBody.attachmentName = uploadedMeta.attachmentName;
+          replyBody.attachmentMime = uploadedMeta.attachmentMime;
+          replyBody.attachmentSize = uploadedMeta.attachmentSize;
+          replyBody.attachmentUrl = uploadedMeta.attachmentUrl;
+        }
+        const r = await fetch('/api/admin/support/reply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(replyBody)
+        });
+        const data = await r.json();
         if (!data || !data.success) {
           showToast('❌ ' + (data?.error || 'Failed to send reply'));
           return;
         }
         if (inp) inp.value = '';
+        clearAdminSupportPendingFile();
         showToast(`📨 Custom Admin reply sent to ${t.userName}!`);
         refreshAdminSupportTickets();
         pullAdminStateFromServer();
-      })
-      .catch(() => showToast('❌ Network error sending reply'))
-      .finally(() => { if (btn) btn.disabled = false; });
+      } catch (e) {
+        showToast('❌ Network error sending reply');
+      } finally {
+        if (btn) btn.disabled = false;
+      }
     }
 
     function toggleSupportTicketStatus(ticketId, nextStatus) {

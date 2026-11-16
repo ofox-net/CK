@@ -210,7 +210,25 @@ data class ServerSupportMessage(
     val isAuto: Boolean,
     val situationTag: String = "",
     val createdAt: String = "",
-    val createdAtMs: Long = 0L
+    val createdAtMs: Long = 0L,
+    val attachmentName: String = "",
+    val attachmentMime: String = "",
+    val attachmentSize: Long = 0L,
+    val attachmentUrl: String = ""
+)
+
+data class PendingSupportAttachment(
+    val fileName: String,
+    val mimeType: String,
+    val sizeBytes: Long,
+    val bytes: ByteArray
+)
+
+data class UploadedSupportAttachment(
+    val attachmentName: String,
+    val attachmentMime: String,
+    val attachmentSize: Long,
+    val attachmentUrl: String
 )
 
 data class ServerSupportTicket(
@@ -243,6 +261,7 @@ class BackendSyncService(
         private const val PREFS_NAME = "colour_king_sync"
         private const val KEY_BACKEND_URL = "backend_base_url"
         private const val KEY_RECOVERY_VAULT = "account_recovery_vault_v1"
+        const val MAX_SUPPORT_FILE_BYTES = 10L * 1024L * 1024L
 
         val DEFAULT_CANDIDATE_URLS = listOf(
             "http://10.0.2.2:3000",
@@ -342,6 +361,12 @@ class BackendSyncService(
         .connectTimeout(4, TimeUnit.SECONDS)
         .readTimeout(6, TimeUnit.SECONDS)
         .writeTimeout(6, TimeUnit.SECONDS)
+        .build()
+
+    private val uploadHttpClient: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(6, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
     private val probeClient: OkHttpClient = OkHttpClient.Builder()
@@ -1235,7 +1260,11 @@ class BackendSyncService(
                     isAuto = m.optBoolean("isAuto", false),
                     situationTag = m.optString("situationTag", ""),
                     createdAt = m.optString("createdAt", ""),
-                    createdAtMs = m.optLong("createdAtMs", 0L)
+                    createdAtMs = m.optLong("createdAtMs", 0L),
+                    attachmentName = m.optString("attachmentName", ""),
+                    attachmentMime = m.optString("attachmentMime", ""),
+                    attachmentSize = m.optLong("attachmentSize", 0L),
+                    attachmentUrl = m.optString("attachmentUrl", "")
                 )
             )
         }
@@ -1295,17 +1324,108 @@ class BackendSyncService(
         }
     }
 
+    fun resolveAssetUrl(relativeOrFullUrl: String): String {
+        val clean = relativeOrFullUrl.trim()
+        if (clean.isBlank()) return ""
+        if (clean.startsWith("http://") || clean.startsWith("https://")) return clean
+        val base = _activeBackendUrl.value.trimEnd('/')
+        val path = if (clean.startsWith("/")) clean else "/$clean"
+        return "$base$path"
+    }
+
+    suspend fun uploadSupportAttachment(
+        serverUserId: String,
+        fileName: String,
+        mimeType: String,
+        fileBytes: ByteArray
+    ): Pair<UploadedSupportAttachment?, String?> = withContext(Dispatchers.IO) {
+        if (serverUserId.isBlank()) return@withContext null to "User ID is required"
+        if (fileBytes.isEmpty()) return@withContext null to "Selected file is empty"
+        if (fileBytes.size.toLong() > MAX_SUPPORT_FILE_BYTES) {
+            return@withContext null to "File exceeds the 10 MB size limit"
+        }
+        val cleanName = fileName.ifBlank { "attachment" }
+        val cleanMime = mimeType.ifBlank { "application/octet-stream" }
+        val encUid = java.net.URLEncoder.encode(serverUserId, "UTF-8")
+        val encName = java.net.URLEncoder.encode(cleanName, "UTF-8")
+        val encMime = java.net.URLEncoder.encode(cleanMime, "UTF-8")
+
+        fun attemptUpload(): Pair<UploadedSupportAttachment?, String?> {
+            val baseUrl = _activeBackendUrl.value
+            val url = "$baseUrl/api/support/upload?userId=$encUid&fileName=$encName&mime=$encMime"
+            return try {
+                val body = fileBytes.toRequestBody(cleanMime.toMediaType())
+                val req = Request.Builder()
+                    .url(url)
+                    .header("X-File-Name", encName)
+                    .header("X-File-Mime", cleanMime)
+                    .header("X-User-Id", serverUserId)
+                    .post(body)
+                    .build()
+                uploadHttpClient.newCall(req).execute().use { resp ->
+                    val txt = resp.body?.string()?.trim().orEmpty()
+                    val obj = try { JSONObject(txt) } catch (_: Exception) { JSONObject() }
+                    if (!resp.isSuccessful || !obj.optBoolean("success", false)) {
+                        val err = obj.optString("error").takeIf { it.isNotBlank() }
+                            ?: "Upload failed (HTTP ${resp.code})"
+                        return@use null to err
+                    }
+                    UploadedSupportAttachment(
+                        attachmentName = obj.optString("attachmentName", cleanName),
+                        attachmentMime = obj.optString("attachmentMime", cleanMime),
+                        attachmentSize = obj.optLong("attachmentSize", fileBytes.size.toLong()),
+                        attachmentUrl = obj.optString("attachmentUrl", "")
+                    ) to null
+                }
+            } catch (e: Exception) {
+                null to (e.message ?: "Network error during upload")
+            }
+        }
+
+        val first = attemptUpload()
+        if (first.first != null) return@withContext first
+        if (!hasCustomOverride) {
+            resolveReachableBackendUrl()
+            return@withContext attemptUpload()
+        }
+        return@withContext first
+    }
+
     suspend fun sendSupportMessage(
         serverUserId: String,
         message: String,
-        category: String = "GENERAL"
+        category: String = "GENERAL",
+        attachment: PendingSupportAttachment? = null
     ): Pair<ServerSupportThread?, String?> = withContext(Dispatchers.IO) {
         if (serverUserId.isBlank()) return@withContext null to "User ID is required"
-        if (message.isBlank()) return@withContext null to "Support message cannot be empty"
+        if (message.isBlank() && attachment == null) {
+            return@withContext null to "Please enter a message or attach a file (under 10 MB)"
+        }
+
+        var uploadedMeta: UploadedSupportAttachment? = null
+        if (attachment != null) {
+            val (up, upErr) = uploadSupportAttachment(
+                serverUserId = serverUserId,
+                fileName = attachment.fileName,
+                mimeType = attachment.mimeType,
+                fileBytes = attachment.bytes
+            )
+            if (up == null) {
+                return@withContext null to (upErr ?: "Failed to upload attachment")
+            }
+            uploadedMeta = up
+        }
+
         val payload = JSONObject().apply {
             put("userId", serverUserId)
             put("message", message.trim())
             put("category", category.uppercase())
+            if (uploadedMeta != null) {
+                put("attachmentName", uploadedMeta.attachmentName)
+                put("attachmentMime", uploadedMeta.attachmentMime)
+                put("attachmentSize", uploadedMeta.attachmentSize)
+                put("attachmentUrl", uploadedMeta.attachmentUrl)
+            }
         }
         val resp = postJsonWithRetry("/api/support/message", payload)
             ?: return@withContext null to "Unable to reach support server"

@@ -2613,12 +2613,32 @@
         <div style="text-align:center; color:var(--text-muted); font-size:11px; padding:24px 8px;">Connecting to 24/7 Support Desk...</div>
       </div>
 
+      <!-- Selected File Preview Pill (Max 10 MB) -->
+      <div id="supportAttachmentPreview" style="display:none; align-items:center; justify-content:space-between; gap:8px; background:rgba(255,215,0,0.10); border:1px solid rgba(255,215,0,0.35); border-radius:10px; padding:7px 10px; font-size:11px;">
+        <div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1;">
+          <span id="supportAttachmentIcon" style="font-size:15px;">📎</span>
+          <div style="min-width:0; flex:1;">
+            <div id="supportAttachmentName" style="color:#FFF; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">file</div>
+            <div id="supportAttachmentMeta" style="color:var(--gold); font-size:10px;">0 KB • Ready to share</div>
+          </div>
+        </div>
+        <button type="button" onclick="clearSupportPendingFile()" style="background:rgba(255,23,68,0.18); color:var(--red); border:1px solid rgba(255,23,68,0.4); border-radius:6px; padding:4px 8px; font-size:10px; font-weight:800; cursor:pointer;">✕</button>
+      </div>
+
       <!-- Composer -->
-      <form onsubmit="event.preventDefault(); sendUserSupportMessage();" style="display:flex; gap:8px; align-items:center;">
-        <input id="supportMessageInput" type="text" placeholder="Type your issue (Deposit, Withdrawal, Bet, Account)..." autocomplete="off"
-          style="flex:1; background:var(--card-highlight); border:1px solid var(--border); border-radius:10px; padding:10px 12px; color:#FFF; font-size:12px; outline:none;" />
+      <input type="file" id="supportFileInput" style="display:none;" onchange="handleSupportFileSelected(event)" />
+      <form onsubmit="event.preventDefault(); sendUserSupportMessage();" style="display:flex; gap:6px; align-items:center;">
+        <button type="button" id="supportAttachBtn" onclick="triggerSupportFilePick()" title="Attach any media or file (Max 10 MB)"
+          style="background:var(--card-highlight); border:1px solid var(--border); color:var(--cyan); border-radius:10px; min-width:42px; height:40px; display:flex; align-items:center; justify-content:center; font-size:16px; cursor:pointer; flex-shrink:0;">
+          📎
+        </button>
+        <input id="supportMessageInput" type="text" placeholder="Type issue or share media/file (Max 10 MB)..." autocomplete="off"
+          style="flex:1; min-width:0; background:var(--card-highlight); border:1px solid var(--border); border-radius:10px; padding:10px 12px; color:#FFF; font-size:12px; outline:none;" />
         <button id="supportSendBtn" type="submit" class="btn-primary" style="padding:10px 14px; font-size:12px; white-space:nowrap;">Send</button>
       </form>
+      <div style="font-size:10px; color:var(--text-muted); text-align:center;">
+        Share screenshots, videos, PDFs or any file under <strong>10 MB</strong> — delivered directly to Admin Support.
+      </div>
     </div>
   </div>
 
@@ -6199,14 +6219,23 @@
     // ==========================================
     // 24/7 LIVE SUPPORT SYSTEM (WEB & SYNCED)
     // ==========================================
+    const MAX_SUPPORT_FILE_BYTES = 10 * 1024 * 1024;
     const userSupportState = {
       ticket: null,
       messages: [],
       situation: null,
       unreadUser: 0,
       isOpen: false,
-      isSending: false
+      isSending: false,
+      pendingFile: null
     };
+
+    function formatSupportFileSize(bytes) {
+      const b = Math.max(0, Number(bytes || 0));
+      if (b >= 1024 * 1024) return (b / (1024 * 1024)).toFixed(2) + ' MB';
+      if (b >= 1024) return (b / 1024).toFixed(1) + ' KB';
+      return b + ' B';
+    }
 
     function escapeSupportHtml(val) {
       return String(val == null ? '' : val)
@@ -6224,6 +6253,7 @@
       userSupportState.unreadUser = 0;
       userSupportState.isOpen = false;
       userSupportState.isSending = false;
+      clearSupportPendingFile();
       closeModal('supportChatModal');
       updateProfileSupportCard();
     }
@@ -6309,8 +6339,9 @@
         if (msgs.length > 0) {
           const last = msgs[msgs.length - 1];
           const who = last.senderType === 'ADMIN' ? '👑 Admin' : (last.senderType === 'AUTO_BOT' ? '🤖 24/7 Bot' : 'You');
+          const txtPreview = last.message || (last.attachmentName ? `📎 ${last.attachmentName}` : '');
           previewEl.style.display = 'block';
-          previewEl.innerHTML = `<strong style="color:var(--cyan);">${escapeSupportHtml(who)}:</strong> ${escapeSupportHtml(String(last.message || '').slice(0, 120))}${String(last.message || '').length > 120 ? '…' : ''}`;
+          previewEl.innerHTML = `<strong style="color:var(--cyan);">${escapeSupportHtml(who)}:</strong> ${escapeSupportHtml(String(txtPreview).slice(0, 120))}${String(txtPreview).length > 120 ? '…' : ''}`;
         } else {
           previewEl.style.display = 'none';
         }
@@ -6368,7 +6399,7 @@
       if (listEl) {
         const msgs = userSupportState.messages || [];
         if (msgs.length === 0) {
-          listEl.innerHTML = '<div style="text-align:center; color:var(--text-muted); font-size:11px; padding:24px 8px;">Tap a quick topic or send a message for instant situation-aware help &amp; Admin reply.</div>';
+          listEl.innerHTML = '<div style="text-align:center; color:var(--text-muted); font-size:11px; padding:24px 8px;">Tap a quick topic, send a message, or attach any file under 10 MB for instant help &amp; Admin reply.</div>';
         } else {
           listEl.innerHTML = msgs.map(m => {
             const st = String(m.senderType || 'AUTO_BOT').toUpperCase();
@@ -6377,16 +6408,120 @@
               ? '<span style="background:rgba(0,230,118,0.22); color:var(--green); padding:1px 5px; border-radius:4px; font-weight:800;">ADMIN</span>'
               : (st === 'AUTO_BOT' ? '<span style="background:rgba(0,229,255,0.2); color:var(--cyan); padding:1px 5px; border-radius:4px; font-weight:800;">24/7 AUTO</span>' : '');
             const timeLabel = m.createdAtMs ? new Date(m.createdAtMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (m.createdAt || '');
+            const attHtml = renderSupportAttachmentHtml(m);
+            const msgBody = m.message ? `<div style="${attHtml ? 'margin-top:6px;' : ''}">${escapeSupportHtml(m.message)}</div>` : '';
             return `
               <div class="support-msg-row ${rowCls}">
                 <div class="support-msg-meta">${badge}<span>${escapeSupportHtml(m.senderName || st)}</span><span>• ${escapeSupportHtml(timeLabel)}</span></div>
-                <div class="support-msg-bubble">${escapeSupportHtml(m.message || '')}</div>
+                <div class="support-msg-bubble">${attHtml}${msgBody}</div>
               </div>
             `;
           }).join('');
           listEl.scrollTop = listEl.scrollHeight;
         }
       }
+    }
+
+    function renderSupportAttachmentHtml(m) {
+      if (!m || !m.attachmentUrl) return '';
+      const rawUrl = m.attachmentUrl.startsWith('http') ? m.attachmentUrl : apiUrl(m.attachmentUrl);
+      const dlUrl = rawUrl + (rawUrl.includes('?') ? '&' : '?') + 'download=1';
+      const name = escapeSupportHtml(m.attachmentName || 'Attachment');
+      const mime = String(m.attachmentMime || '').toLowerCase();
+      const sizeStr = formatSupportFileSize(m.attachmentSize || 0);
+      if (mime.startsWith('image/')) {
+        return `
+          <div style="display:flex; flex-direction:column; gap:4px;">
+            <a href="${escapeSupportHtml(rawUrl)}" target="_blank" rel="noopener" style="display:block;">
+              <img src="${escapeSupportHtml(rawUrl)}" alt="${name}" style="max-width:220px; max-height:180px; border-radius:8px; border:1px solid rgba(255,255,255,0.18); object-fit:cover; display:block;" />
+            </a>
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:10px; color:var(--text-muted);">
+              <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:150px;">🖼️ ${name}</span>
+              <a href="${escapeSupportHtml(dlUrl)}" download="${name}" style="color:var(--cyan); text-decoration:none; font-weight:700;">⬇ ${sizeStr}</a>
+            </div>
+          </div>
+        `;
+      }
+      if (mime.startsWith('video/')) {
+        return `
+          <div style="display:flex; flex-direction:column; gap:4px;">
+            <video src="${escapeSupportHtml(rawUrl)}" controls preload="metadata" style="max-width:230px; max-height:170px; border-radius:8px; border:1px solid rgba(255,255,255,0.18); background:#000;"></video>
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:10px; color:var(--text-muted);">
+              <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:150px;">🎬 ${name}</span>
+              <a href="${escapeSupportHtml(dlUrl)}" download="${name}" style="color:var(--cyan); text-decoration:none; font-weight:700;">⬇ ${sizeStr}</a>
+            </div>
+          </div>
+        `;
+      }
+      if (mime.startsWith('audio/')) {
+        return `
+          <div style="display:flex; flex-direction:column; gap:4px;">
+            <audio src="${escapeSupportHtml(rawUrl)}" controls style="width:210px; height:34px;"></audio>
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:10px; color:var(--text-muted);">
+              <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:150px;">🎵 ${name}</span>
+              <a href="${escapeSupportHtml(dlUrl)}" download="${name}" style="color:var(--cyan); text-decoration:none; font-weight:700;">⬇ ${sizeStr}</a>
+            </div>
+          </div>
+        `;
+      }
+      const icon = mime.includes('pdf') ? '📄' : (mime.includes('zip') || mime.includes('rar') || mime.includes('archive') ? '🗜️' : '📁');
+      return `
+        <a href="${escapeSupportHtml(dlUrl)}" target="_blank" rel="noopener" download="${name}"
+          style="display:flex; align-items:center; gap:8px; background:rgba(0,0,0,0.28); border:1px solid rgba(0,229,255,0.32); border-radius:8px; padding:7px 10px; text-decoration:none; color:#FFF;">
+          <span style="font-size:18px;">${icon}</span>
+          <div style="min-width:0; flex:1;">
+            <div style="font-size:11px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:165px;">${name}</div>
+            <div style="font-size:10px; color:var(--cyan);">${sizeStr} • Tap to open/download</div>
+          </div>
+        </a>
+      `;
+    }
+
+    function triggerSupportFilePick() {
+      if (!currentUserId || currentUserId === 'Guest') {
+        showToast('Please login first to attach files.');
+        return;
+      }
+      const fi = document.getElementById('supportFileInput');
+      if (fi) {
+        fi.value = '';
+        fi.click();
+      }
+    }
+
+    function handleSupportFileSelected(ev) {
+      const file = ev && ev.target && ev.target.files ? ev.target.files[0] : null;
+      if (!file) return;
+      if (file.size <= 0) {
+        showToast('⚠️ Selected file is empty.');
+        clearSupportPendingFile();
+        return;
+      }
+      if (file.size > MAX_SUPPORT_FILE_BYTES) {
+        showToast(`⚠️ File too large (${formatSupportFileSize(file.size)}). Max allowed size is 10 MB.`);
+        clearSupportPendingFile();
+        return;
+      }
+      userSupportState.pendingFile = file;
+      const box = document.getElementById('supportAttachmentPreview');
+      const iconEl = document.getElementById('supportAttachmentIcon');
+      const nameEl = document.getElementById('supportAttachmentName');
+      const metaEl = document.getElementById('supportAttachmentMeta');
+      const t = String(file.type || '').toLowerCase();
+      if (iconEl) {
+        iconEl.innerText = t.startsWith('image/') ? '🖼️' : (t.startsWith('video/') ? '🎬' : (t.startsWith('audio/') ? '🎵' : (t.includes('pdf') ? '📄' : '📎')));
+      }
+      if (nameEl) nameEl.innerText = file.name || 'attachment';
+      if (metaEl) metaEl.innerText = `${formatSupportFileSize(file.size)} • Ready to send to Admin`;
+      if (box) box.style.display = 'flex';
+    }
+
+    function clearSupportPendingFile() {
+      userSupportState.pendingFile = null;
+      const fi = document.getElementById('supportFileInput');
+      if (fi) fi.value = '';
+      const box = document.getElementById('supportAttachmentPreview');
+      if (box) box.style.display = 'none';
     }
 
     function triggerQuickSupportTopic(category, promptText) {
@@ -6403,8 +6538,9 @@
       if (userSupportState.isSending) return;
       const inp = document.getElementById('supportMessageInput');
       const text = String(customMsg != null ? customMsg : (inp ? inp.value : '')).trim();
-      if (!text) {
-        showToast('Please type a support message.');
+      const pendingFile = userSupportState.pendingFile;
+      if (!text && !pendingFile) {
+        showToast('Please type a message or attach a file (under 10 MB).');
         return;
       }
       if (!hasBackendConnection()) {
@@ -6414,17 +6550,53 @@
 
       userSupportState.isSending = true;
       const btn = document.getElementById('supportSendBtn');
-      if (btn) { btn.disabled = true; btn.innerText = '...'; }
+      const attachBtn = document.getElementById('supportAttachBtn');
+      if (btn) { btn.disabled = true; btn.innerText = pendingFile ? 'Uploading...' : '...'; }
+      if (attachBtn) attachBtn.disabled = true;
       try {
+        let uploadedMeta = null;
+        if (pendingFile) {
+          if (pendingFile.size > MAX_SUPPORT_FILE_BYTES) {
+            showToast('⚠️ File exceeds 10 MB limit.');
+            return;
+          }
+          const uploadUrl = apiUrl(`/api/support/upload?userId=${encodeURIComponent(currentUserId)}&fileName=${encodeURIComponent(pendingFile.name || 'attachment')}&mime=${encodeURIComponent(pendingFile.type || 'application/octet-stream')}`);
+          const upRes = await fetch(uploadUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': pendingFile.type || 'application/octet-stream',
+              'X-File-Name': encodeURIComponent(pendingFile.name || 'attachment'),
+              'X-File-Mime': pendingFile.type || 'application/octet-stream',
+              'X-User-Id': currentUserId
+            },
+            credentials: 'include',
+            body: pendingFile
+          });
+          const upData = await upRes.json().catch(() => ({}));
+          if (!upRes.ok || !upData.success) {
+            showToast('⚠️ ' + ((upData && upData.error) || 'Failed to upload attachment'));
+            return;
+          }
+          uploadedMeta = upData;
+        }
+
+        const msgPayload = {
+          userId: currentUserId,
+          message: text,
+          category: category
+        };
+        if (uploadedMeta) {
+          msgPayload.attachmentName = uploadedMeta.attachmentName;
+          msgPayload.attachmentMime = uploadedMeta.attachmentMime;
+          msgPayload.attachmentSize = uploadedMeta.attachmentSize;
+          msgPayload.attachmentUrl = uploadedMeta.attachmentUrl;
+        }
+
         const res = await fetch(apiUrl('/api/support/message'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({
-            userId: currentUserId,
-            message: text,
-            category: category
-          })
+          body: JSON.stringify(msgPayload)
         });
         const data = await res.json();
         if (!res.ok || !data.success) {
@@ -6432,6 +6604,7 @@
           return;
         }
         if (inp) inp.value = '';
+        clearSupportPendingFile();
         userSupportState.ticket = data.ticket || userSupportState.ticket;
         userSupportState.messages = Array.isArray(data.messages) ? data.messages : userSupportState.messages;
         userSupportState.situation = data.situation || userSupportState.situation;
@@ -6443,6 +6616,7 @@
       } finally {
         userSupportState.isSending = false;
         if (btn) { btn.disabled = false; btn.innerText = 'Send'; }
+        if (attachBtn) attachBtn.disabled = false;
       }
     }
 

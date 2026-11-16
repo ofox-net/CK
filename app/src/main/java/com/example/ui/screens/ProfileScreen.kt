@@ -5,8 +5,11 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -27,21 +30,27 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import coil.compose.AsyncImage
 import com.example.data.model.MoneyUtils
+import com.example.domain.BackendSyncService
+import com.example.domain.PendingSupportAttachment
 import com.example.domain.ServerSupportMessage
 import com.example.domain.ServerSupportThread
 import com.example.ui.MainViewModel
 import com.example.ui.components.borderStroke
 import com.example.ui.theme.*
+import java.io.ByteArrayOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -60,6 +69,7 @@ fun ProfileScreen(
     val supportThread by viewModel.supportThread.collectAsState()
     val isSupportSending by viewModel.isSupportSending.collectAsState()
     val supportError by viewModel.supportError.collectAsState()
+    val pendingSupportAttachment by viewModel.pendingSupportAttachment.collectAsState()
     val context = LocalContext.current
 
     var twoFactorEnabled by remember { mutableStateOf(true) }
@@ -84,10 +94,15 @@ fun ProfileScreen(
     if (showSupportDialog) {
         SupportChatDialog(
             supportThread = supportThread,
+            pendingAttachment = pendingSupportAttachment,
+            backendBaseUrl = backendUrl,
             isSending = isSupportSending,
             errorMessage = supportError,
+            onPickAttachment = { att -> viewModel.selectSupportAttachment(att) },
+            onClearAttachment = { viewModel.clearSupportAttachment() },
+            onValidationError = { msg -> viewModel.setSupportError(msg) },
             onRefresh = { viewModel.refreshSupportThread(markRead = true, initWelcome = true) },
-            onSend = { msg, cat -> viewModel.sendSupportMessage(msg, cat) },
+            onSend = { msg, cat -> viewModel.sendSupportMessage(msg, cat, includePendingAttachment = (cat == "GENERAL")) },
             onDismiss = { showSupportDialog = false }
         )
     }
@@ -878,17 +893,35 @@ fun ProfileScreen(
 @Composable
 private fun SupportChatDialog(
     supportThread: ServerSupportThread?,
+    pendingAttachment: PendingSupportAttachment?,
+    backendBaseUrl: String,
     isSending: Boolean,
     errorMessage: String?,
+    onPickAttachment: (PendingSupportAttachment) -> Unit,
+    onClearAttachment: () -> Unit,
+    onValidationError: (String) -> Unit,
     onRefresh: () -> Unit,
     onSend: (String, String) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
     var messageInput by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val messages = supportThread?.messages ?: emptyList()
     val situation = supportThread?.situation
     val ticketStatus = supportThread?.ticket?.status ?: "OPEN"
+
+    // Zero-permission SAF system picker supporting any file type up to 10 MB
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val loaded = readSupportUriUnderLimit(context, uri, BackendSyncService.MAX_SUPPORT_FILE_BYTES)
+        loaded.fold(
+            onSuccess = { att -> onPickAttachment(att) },
+            onFailure = { ex -> onValidationError(ex.message ?: "Unable to read selected file") }
+        )
+    }
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
@@ -1101,7 +1134,10 @@ private fun SupportChatDialog(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             items(messages, key = { it.id }) { msg ->
-                                SupportMessageBubble(msg = msg)
+                                SupportMessageBubble(
+                                    msg = msg,
+                                    backendBaseUrl = backendBaseUrl
+                                )
                             }
                         }
                     }
@@ -1117,22 +1153,99 @@ private fun SupportChatDialog(
                     )
                 }
 
+                // Selected File Preview Pill (under 10 MB)
+                if (pendingAttachment != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = GoldAccent.copy(alpha = 0.12f),
+                        border = borderStroke(1.dp, GoldAccent.copy(alpha = 0.45f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = supportFileIcon(pendingAttachment.mimeType),
+                                    contentDescription = "Selected Attachment",
+                                    tint = GoldAccent,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = pendingAttachment.fileName,
+                                        color = TextPrimary,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "${formatSupportBytes(pendingAttachment.sizeBytes)} • Ready to share with Admin",
+                                        color = GoldAccent,
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
+                            IconButton(
+                                onClick = onClearAttachment,
+                                enabled = !isSending,
+                                modifier = Modifier.size(40.dp).testTag("support_clear_attachment_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Remove Selected File",
+                                    tint = NeonRed,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(8.dp))
 
                 // Composer
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    IconButton(
+                        onClick = { if (!isSending) filePickerLauncher.launch(arrayOf("*/*")) },
+                        enabled = !isSending,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(CardHighlight)
+                            .border(1.dp, CardBorder, RoundedCornerShape(10.dp))
+                            .testTag("support_attach_file_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AttachFile,
+                            contentDescription = "Attach any media or file under 10 MB",
+                            tint = ElectricCyan
+                        )
+                    }
                     OutlinedTextField(
                         value = messageInput,
                         onValueChange = { messageInput = it },
                         placeholder = {
                             Text(
-                                text = "Ask about Deposit, Withdrawal, Bet...",
+                                text = "Message or share file (<10 MB)...",
                                 color = TextMuted,
-                                fontSize = 12.sp
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         },
                         singleLine = true,
@@ -1151,16 +1264,16 @@ private fun SupportChatDialog(
                     Button(
                         onClick = {
                             val textToSend = messageInput.trim()
-                            if (textToSend.isNotEmpty() && !isSending) {
+                            if ((textToSend.isNotEmpty() || pendingAttachment != null) && !isSending) {
                                 messageInput = ""
                                 onSend(textToSend, "GENERAL")
                             }
                         },
-                        enabled = !isSending && messageInput.isNotBlank(),
+                        enabled = !isSending && (messageInput.isNotBlank() || pendingAttachment != null),
                         colors = ButtonDefaults.buttonColors(containerColor = GoldAccent),
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier
-                            .defaultMinSize(minWidth = 56.dp, minHeight = 48.dp)
+                            .defaultMinSize(minWidth = 52.dp, minHeight = 48.dp)
                             .testTag("support_send_button")
                     ) {
                         if (isSending) {
@@ -1178,13 +1291,23 @@ private fun SupportChatDialog(
                         }
                     }
                 }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Share screenshots, videos, PDFs or any file under 10 MB — synced live to Admin.",
+                    color = TextMuted,
+                    fontSize = 10.sp
+                )
             }
         }
     }
 }
 
 @Composable
-private fun SupportMessageBubble(msg: ServerSupportMessage) {
+private fun SupportMessageBubble(
+    msg: ServerSupportMessage,
+    backendBaseUrl: String
+) {
+    val context = LocalContext.current
     val isUser = msg.senderType == "USER"
     val isAdmin = msg.senderType == "ADMIN"
     val bubbleBg = when {
@@ -1202,6 +1325,15 @@ private fun SupportMessageBubble(msg: ServerSupportMessage) {
             SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(msg.createdAtMs))
         } else {
             msg.createdAt.takeLast(8)
+        }
+    }
+
+    val resolvedAttachmentUrl = remember(msg.attachmentUrl, backendBaseUrl) {
+        val raw = msg.attachmentUrl.trim()
+        when {
+            raw.isBlank() -> ""
+            raw.startsWith("http://") || raw.startsWith("https://") -> raw
+            else -> "${backendBaseUrl.trimEnd('/')}${if (raw.startsWith("/")) raw else "/$raw"}"
         }
     }
 
@@ -1244,14 +1376,180 @@ private fun SupportMessageBubble(msg: ServerSupportMessage) {
             border = borderStroke(1.dp, bubbleBorder),
             modifier = Modifier.widthIn(max = 300.dp)
         ) {
-            Text(
-                text = msg.message,
-                color = TextPrimary,
-                fontSize = 12.sp,
-                lineHeight = 17.sp,
-                modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp)
-            )
+            Column(modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp)) {
+                if (resolvedAttachmentUrl.isNotBlank()) {
+                    val isImage = msg.attachmentMime.lowercase().startsWith("image/")
+                    if (isImage) {
+                        AsyncImage(
+                            model = resolvedAttachmentUrl,
+                            contentDescription = msg.attachmentName.ifBlank { "Shared image" },
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 120.dp, max = 190.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .border(1.dp, CardBorder, RoundedCornerShape(8.dp))
+                                .clickable {
+                                    runCatching {
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(resolvedAttachmentUrl)))
+                                    }
+                                }
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val dl = resolvedAttachmentUrl + (if (resolvedAttachmentUrl.contains("?")) "&" else "?") + "download=1"
+                                    runCatching {
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(dl)))
+                                    }
+                                },
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = msg.attachmentName.ifBlank { "Image" },
+                                color = TextSecondary,
+                                fontSize = 10.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                text = "⬇ ${formatSupportBytes(msg.attachmentSize)}",
+                                color = ElectricCyan,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    } else {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = ObsidianBg.copy(alpha = 0.7f),
+                            border = borderStroke(1.dp, ElectricCyan.copy(alpha = 0.35f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    runCatching {
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(resolvedAttachmentUrl)))
+                                    }
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = supportFileIcon(msg.attachmentMime),
+                                    contentDescription = msg.attachmentName.ifBlank { "Attachment" },
+                                    tint = ElectricCyan,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = msg.attachmentName.ifBlank { "Shared File" },
+                                        color = TextPrimary,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "${formatSupportBytes(msg.attachmentSize)} • Tap to open/download",
+                                        color = ElectricCyan,
+                                        fontSize = 10.sp
+                                    )
+                                }
+                                Icon(
+                                    imageVector = Icons.Default.Download,
+                                    contentDescription = "Download file",
+                                    tint = GoldAccent,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+                    if (msg.message.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                    }
+                }
+                if (msg.message.isNotBlank()) {
+                    Text(
+                        text = msg.message,
+                        color = TextPrimary,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp
+                    )
+                }
+            }
         }
     }
+}
+
+private fun supportFileIcon(mime: String) = when {
+    mime.lowercase().startsWith("image/") -> Icons.Default.Image
+    mime.lowercase().startsWith("video/") -> Icons.Default.Movie
+    mime.lowercase().startsWith("audio/") -> Icons.Default.AudioFile
+    mime.lowercase().contains("pdf") -> Icons.Default.PictureAsPdf
+    else -> Icons.Default.InsertDriveFile
+}
+
+private fun formatSupportBytes(bytes: Long): String {
+    val b = bytes.coerceAtLeast(0L)
+    return when {
+        b >= 1024L * 1024L -> String.format(Locale.US, "%.2f MB", b / (1024.0 * 1024.0))
+        b >= 1024L -> String.format(Locale.US, "%.1f KB", b / 1024.0)
+        else -> "$b B"
+    }
+}
+
+private fun readSupportUriUnderLimit(
+    context: Context,
+    uri: Uri,
+    maxBytes: Long
+): Result<PendingSupportAttachment> = runCatching {
+    val cr = context.contentResolver
+    var fileName = "attachment"
+    var reportedSize = -1L
+    cr.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+        if (cursor.moveToFirst()) {
+            val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (nameIdx >= 0) {
+                cursor.getString(nameIdx)?.takeIf { it.isNotBlank() }?.let { fileName = it }
+            }
+            val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
+            if (sizeIdx >= 0 && !cursor.isNull(sizeIdx)) {
+                reportedSize = cursor.getLong(sizeIdx)
+            }
+        }
+    }
+    if (reportedSize > maxBytes) {
+        error("File exceeds the 10 MB limit (${formatSupportBytes(reportedSize)}). Please pick a smaller file.")
+    }
+    val mimeType = cr.getType(uri)?.takeIf { it.isNotBlank() } ?: "application/octet-stream"
+    val out = ByteArrayOutputStream()
+    cr.openInputStream(uri)?.use { input ->
+        val buf = ByteArray(16 * 1024)
+        var total = 0L
+        while (true) {
+            val read = input.read(buf)
+            if (read <= 0) break
+            total += read
+            if (total > maxBytes) {
+                error("File exceeds the 10 MB limit. Please pick a file under 10 MB.")
+            }
+            out.write(buf, 0, read)
+        }
+    } ?: error("Unable to open the selected file.")
+    val bytes = out.toByteArray()
+    if (bytes.isEmpty()) error("Selected file is empty.")
+    PendingSupportAttachment(
+        fileName = fileName,
+        mimeType = mimeType,
+        sizeBytes = bytes.size.toLong(),
+        bytes = bytes
+    )
 }
 
