@@ -155,7 +155,9 @@ object StatementExporter {
         val summary = computeSummary(wallet, bets, ledger, commissions, clampedDays, nowMs)
         val filteredLedger = filterLedgerEntries(ledger, filter, clampedDays, nowMs)
         val windowBets = bets.filter { it.createdAt >= cutoff }
-        val df = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.ENGLISH)
+        val df = SimpleDateFormat("yyyy-MM-dd HH:mm:ss 'IST'", Locale.ENGLISH).apply {
+            timeZone = GlobalRoundClock.IST_TZ
+        }
 
         val sb = StringBuilder()
         sb.append('\uFEFF') // UTF-8 BOM for Excel
@@ -175,7 +177,7 @@ object StatementExporter {
             "User ID", user?.id ?: "USR-1001",
             "Username", user?.username ?: "Player",
             "Window", "Last $clampedDays Days (90-Day Storage)",
-            "Generated At", df.format(Date(nowMs))
+            "Generated At (IST)", df.format(Date(nowMs))
         )
         row()
         row("FINANCIAL SUMMARY (INR)")

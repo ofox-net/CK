@@ -741,6 +741,10 @@
       </div>
 
       <div class="header-right">
+        <div title="Server-Synced Indian Standard Time (Asia/Kolkata)" style="display:flex; flex-direction:column; align-items:flex-end; padding:5px 10px; border-radius:8px; background:rgba(0,229,255,0.1); border:1px solid rgba(0,229,255,0.32); line-height:1.2;">
+          <span style="font-size:9px; font-weight:800; color:var(--cyan); letter-spacing:0.4px;">🇮🇳 INDIAN CLOCK (IST +05:30)</span>
+          <span id="adminHeaderIstClock" style="font-size:12px; font-weight:900; font-family:monospace; color:#FFF;">--:--:-- IST</span>
+        </div>
         <div class="portal-link-pill" onclick="copyPortalLink()" title="Click to copy Web Admin Link">
           <span>🔗</span> <span id="portalLinkDisplay">.../admin.html</span>
           <span style="font-size:10px; color:var(--cyan); margin-left:4px;">[COPY]</span>
@@ -1062,6 +1066,7 @@
                 <span style="font-size:11px; color:var(--text-muted);">ACTIVE PERIOD:</span>
                 <h4 style="font-size:18px; color:var(--gold); font-weight:900;" id="activeDeciderPeriod">#202610311025</h4>
                 <div style="font-size:11px; color:var(--cyan); margin-top:2px;" id="activeDeciderStatus">Status: Bet Open (Time Left: 02:45)</div>
+                <div style="font-size:10px; color:var(--gold); font-family:monospace; margin-top:3px;" id="deciderIstClock">🇮🇳 --:--:-- IST</div>
               </div>
               <div style="text-align:right;">
                 <span class="badge badge-approved" id="deciderBetStatusBadge">Bet Open</span>
@@ -1192,6 +1197,7 @@
                     <th>Color</th>
                     <th>Size</th>
                     <th>Mode</th>
+                    <th>Declared Time (IST)</th>
                     <th>Payout (₹)</th>
                   </tr>
                 </thead>
@@ -1828,7 +1834,44 @@
         minute: '2-digit',
         second: '2-digit',
         hour12: true
-      });
+      }).toUpperCase();
+    }
+
+    function getAdminSyncedNowMs() {
+      return Date.now() + adminClockOffsetMs;
+    }
+
+    function nowAdminISTDisplay() {
+      return formatIndianDateTimeString(new Date(getAdminSyncedNowMs())) + ' IST';
+    }
+
+    function formatAdminISTFileDate(ms = getAdminSyncedNowMs()) {
+      const ist = new Date(Number(ms || getAdminSyncedNowMs()) + 5.5 * 3600 * 1000);
+      return `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, '0')}-${String(ist.getUTCDate()).padStart(2, '0')}`;
+    }
+
+    function resolveAdminIST(rawTime, ms = 0, withDate = true) {
+      const numMs = Number(ms || 0);
+      if (Number.isFinite(numMs) && numMs > 0) {
+        const d = new Date(numMs);
+        return (withDate ? formatIndianDateTimeString(d) : formatIndianTimeString(d).toUpperCase()) + ' IST';
+      }
+      const txt = String(rawTime || '').trim();
+      if (!txt || /^just now$/i.test(txt)) {
+        const d = new Date(getAdminSyncedNowMs());
+        return (withDate ? formatIndianDateTimeString(d) : formatIndianTimeString(d).toUpperCase()) + ' IST';
+      }
+      if (/IST/i.test(txt)) return txt;
+      if (/^\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}/.test(txt)) {
+        const norm = txt.includes('T') ? txt : txt.replace(' ', 'T') + 'Z';
+        const parsed = Date.parse(norm);
+        if (!Number.isNaN(parsed)) {
+          const d = new Date(parsed);
+          return (withDate ? formatIndianDateTimeString(d) : formatIndianTimeString(d).toUpperCase()) + ' IST';
+        }
+      }
+      if (/^\d{2}:\d{2}(:\d{2})?$/.test(txt)) return `${txt} IST`;
+      return txt;
     }
 
     // ----------------------------------------------------
@@ -2134,7 +2177,7 @@
           <td>
             <button class="btn btn-secondary btn-sm" onclick="viewProofSlip('${d.id}')">🔍 View Slip</button>
           </td>
-          <td style="font-size:11px; color:var(--text-muted);">${d.time}</td>
+          <td style="font-size:11px; color:var(--cyan);">${resolveAdminIST(d.time, d.timestampMs, true)}</td>
           <td>
             ${badgeHtml}
           </td>
@@ -2172,7 +2215,7 @@
       }
 
       auditLogs.unshift({
-        time: new Date().toLocaleTimeString(),
+        time: nowAdminISTDisplay(),
         actor: "ColourPrince",
         action: "DEPOSIT_APPROVE",
         entity: depositId,
@@ -2206,7 +2249,7 @@
         <div><strong>AMOUNT:</strong> ₹${dep.amount.toFixed(2)}</div>
         <div><strong>UTR NUMBER:</strong> <span style="background:#FFFF00; padding:1px 4px;">${dep.utr}</span></div>
         <div><strong>CHANNEL:</strong> ${dep.method}</div>
-        <div><strong>TIMESTAMP:</strong> ${dep.time}</div>
+        <div><strong>TIMESTAMP (IST):</strong> ${resolveAdminIST(dep.time, dep.timestampMs, true)}</div>
         <div><strong>STATUS:</strong> <span style="font-weight:900; color:${(dep.status==='SUCCESS'||dep.status==='APPROVED')?'green':(dep.status==='FAIL'||dep.status==='REJECTED')?'red':'orange'}">${dep.status}</span></div>
         ${dep.reason ? `<div><strong>REASON:</strong> <span style="color:red;">${escapeAdminHtml(dep.reason)}</span></div>` : ''}
         <div style="margin-top:12px; text-align:center; font-size:10px; color:#888;">
@@ -2231,7 +2274,7 @@
         const newDep = {
           id: "DEP-" + Math.floor(10000 + Math.random() * 90000),
           userId: randUser.id, userName: randUser.name, amount: randomAmount,
-          method: "UPI (PhonePe QR)", utr: randUtr, time: "Just now", status: "IN PROCESS"
+          method: "UPI (PhonePe QR)", utr: randUtr, time: nowAdminISTDisplay(), timestampMs: getAdminSyncedNowMs(), status: "IN PROCESS"
         };
         depositRequests.unshift(newDep);
         persistAllState();
@@ -2326,7 +2369,7 @@
               ${w.ifsc ? `<button class="btn btn-secondary btn-sm" style="padding:1px 6px; font-size:9px;" onclick="copyToClipboard('${w.ifsc}')">Copy IFSC</button>` : ''}
             </div>
           </td>
-          <td style="font-size:11px; color:var(--text-muted);">${w.time}</td>
+          <td style="font-size:11px; color:var(--cyan);">${resolveAdminIST(w.time, w.timestampMs, true)}</td>
           <td>
             ${badgeHtml}
           </td>
@@ -2362,7 +2405,7 @@
       }
 
       auditLogs.unshift({
-        time: new Date().toLocaleTimeString(),
+        time: nowAdminISTDisplay(),
         actor: "ColourPrince",
         action: "WITHDRAWAL_PAYOUT",
         entity: withdrawalId,
@@ -2422,7 +2465,7 @@
           id: "WD-" + Math.floor(10000 + Math.random() * 90000),
           userId: randUser.id, userName: randUser.name, amount,
           destination: `UPI: ${randUser.name.toLowerCase()}@okhdfcbank`,
-          time: "Just now", status: "IN PROCESS"
+          time: nowAdminISTDisplay(), timestampMs: getAdminSyncedNowMs(), status: "IN PROCESS"
         };
         withdrawalRequests.unshift(newWd);
         persistAllState();
@@ -2457,7 +2500,7 @@
           }).then(() => pullAdminStateFromServer()).catch(() => {});
 
           auditLogs.unshift({
-            time: new Date().toLocaleTimeString(),
+            time: nowAdminISTDisplay(),
             actor: "ColourPrince",
             action: "DEPOSIT_REJECT",
             entity: dep.id,
@@ -2481,7 +2524,7 @@
             user.balance += wd.amount;
           }
           auditLogs.unshift({
-            time: new Date().toLocaleTimeString(),
+            time: nowAdminISTDisplay(),
             actor: "ColourPrince",
             action: "WITHDRAWAL_REJECT",
             entity: wd.id,
@@ -2553,6 +2596,7 @@
         color: color,
         isBig: isBig,
         mode: "MANUAL_OVERRIDE",
+        time: nowAdminISTDisplay(),
         payout: 0.00
       });
 
@@ -2573,7 +2617,7 @@
 
       // Audit log
       auditLogs.unshift({
-        time: new Date().toLocaleTimeString(),
+        time: nowAdminISTDisplay(),
         actor: "ColourPrince",
         action: "RESULT_FORCE_PUBLISH",
         entity: `${selectedDeciderMarket} #${currentPeriodNum}`,
@@ -2668,6 +2712,7 @@
           <td><span class="badge ${r.color.includes('GREEN') ? 'badge-approved' : r.color.includes('RED') ? 'badge-rejected' : 'badge-alert'}">${r.color}</span></td>
           <td><span class="badge ${r.isBig ? 'badge-approved' : 'badge-pending'}">${r.isBig ? 'BIG' : 'SMALL'}</span></td>
           <td><span class="badge ${r.mode === 'MANUAL_OVERRIDE' ? 'badge-alert' : 'badge-ok'}">${r.mode}</span></td>
+          <td style="font-size:11px; color:var(--cyan); font-family:monospace;">${escapeAdminHtml(resolveAdminIST(r.time, r.timestampMs, true))}</td>
           <td style="color:var(--green); font-weight:700;">₹${r.payout.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
         </tr>
       `).join('');
@@ -2740,7 +2785,7 @@
         const safePhone = escapeAdminHtml(u.phone);
         const safeEmail = escapeAdminHtml(u.email || '');
         const safeRef = escapeAdminHtml(u.referralCode || '');
-        const safeCreated = u.createdAt ? escapeAdminHtml(String(u.createdAt).slice(0, 16)) : '';
+        const safeCreated = u.createdAt ? escapeAdminHtml(resolveAdminIST(u.createdAt, 0, true)) : '';
         const rawPw = u.password || '';
         const safePw = rawPw ? escapeAdminHtml(rawPw) : '••••••••';
         return `
@@ -2925,7 +2970,7 @@
       }).then(() => pullAdminStateFromServer()).catch(() => {});
 
       auditLogs.unshift({
-        time: new Date().toLocaleTimeString(),
+        time: nowAdminISTDisplay(),
         actor: "ColourPrince",
         action: "BANK_CONFIG_UPDATE",
         entity: "PAYMENT_GATEWAYS",
@@ -2992,25 +3037,27 @@
           <td style="color:${b.payout > 0 ? 'var(--green)' : 'var(--text-muted)'}; font-weight:700;">
             ₹${b.payout.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
           </td>
-          <td style="font-size:11px; color:var(--text-muted);">${b.time}</td>
+          <td style="font-size:11px; color:var(--cyan);">${resolveAdminIST(b.time, b.createdAtMs, true)}</td>
         </tr>
       `; }).join('');
     }
 
     function exportBetsToCSV() {
-      let csv = "BetID,Market,Period,UserID,UserName,Target,GrossAmount,PlatformFee3Pct,NetAmount,Multiplier,Status,Payout,Time\n";
+      const csvEsc = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+      let csv = "BetID,Market,Period,UserID,UserName,Target,GrossAmount,PlatformFee3Pct,NetAmount,Multiplier,Status,Payout,Time_IST\n";
       allBets.forEach(b => {
         const feeVal = typeof b.platformFee === 'number' ? b.platformFee : +(Number(b.amount || 0) * 0.03).toFixed(2);
         const netVal = typeof b.netAmount === 'number' ? b.netAmount : +(Number(b.amount || 0) - feeVal).toFixed(2);
-        csv += `${b.id},${b.market},${b.period},${b.userId},${b.userName},${b.target},${b.amount},${feeVal},${netVal},${b.multiplier},${b.status},${b.payout},${b.time}\n`;
+        const istStr = resolveAdminIST(b.time, b.createdAtMs, true);
+        csv += [b.id, b.market, b.period, b.userId, b.userName, b.target, b.amount, feeVal, netVal, b.multiplier, b.status, b.payout, istStr].map(csvEsc).join(',') + "\n";
       });
-      const blob = new Blob([csv], { type: 'text/csv' });
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `ColourKing_Bets_${Date.now()}.csv`;
+      a.download = `ColourKing_Bets_IST_${formatAdminISTFileDate()}.csv`;
       a.click();
-      showToast('📥 Bet history CSV exported!');
+      showToast('📥 Bet history CSV (IST) exported!');
     }
 
     // ----------------------------------------------------
@@ -3020,7 +3067,7 @@
       const tbody = document.getElementById('auditTableBody');
       tbody.innerHTML = auditLogs.map(l => `
         <tr>
-          <td style="font-family:monospace; color:var(--text-muted);">${l.time}</td>
+          <td style="font-family:monospace; color:var(--cyan);">${resolveAdminIST(l.time, l.timestampMs, true)}</td>
           <td><strong style="color:var(--gold);">${l.actor}</strong></td>
           <td><span class="badge badge-approved">${l.action}</span></td>
           <td style="color:var(--cyan); font-family:monospace;">${l.entity}</td>
@@ -3366,6 +3413,12 @@
             }
           }
 
+          const istNowMs = getAdminSyncedNowMs();
+          const hdrClock = document.getElementById('adminHeaderIstClock');
+          if (hdrClock) hdrClock.innerText = formatIndianDateTimeString(new Date(istNowMs)) + ' IST';
+          const decIst = document.getElementById('deciderIstClock');
+          if (decIst) decIst.innerText = '🇮🇳 ' + formatIndianTimeString(new Date(istNowMs)).toUpperCase() + ' IST';
+
           if (adminTickCount % 8 === 0 || selSync.secondsLeft === 0) {
             syncAdminMarketsLive();
           }
@@ -3583,7 +3636,7 @@
             <div style="align-self:${align}; max-width:85%; background:${bg}; border:1px solid ${border}; border-radius:10px; padding:8px 12px;">
               <div style="display:flex; justify-content:space-between; gap:10px; font-size:10px; margin-bottom:4px;">
                 <strong style="color:${roleColor};">${escapeAdminHtml(m.senderName || st)}${m.situationTag ? ` • ${escapeAdminHtml(m.situationTag)}` : ''}</strong>
-                <span style="color:var(--text-muted);">${escapeAdminHtml(String(m.createdAt || '').slice(11, 19) || 'Live')}</span>
+                <span style="color:var(--cyan);">${escapeAdminHtml(resolveAdminIST(m.createdAt, m.createdAtMs, false))}</span>
               </div>
               ${attHtml}
               ${msgBody}
@@ -3826,7 +3879,7 @@
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
-          a.download = `colour_king_backup_${new Date().toISOString().slice(0,10)}.json`;
+          a.download = `colour_king_backup_${formatAdminISTFileDate()}.json`;
           document.body.appendChild(a);
           a.click();
           a.remove();

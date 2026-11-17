@@ -33,10 +33,13 @@ import com.example.data.model.MoneyUtils
 import com.example.data.model.WalletEntity
 import com.example.data.model.WalletLedgerEntity
 import com.example.domain.AccountStatementSummary
+import com.example.domain.GlobalRoundClock
 import com.example.domain.StatementExporter
 import com.example.ui.MainViewModel
 import com.example.ui.components.borderStroke
 import com.example.ui.theme.*
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.abs
@@ -75,7 +78,7 @@ fun WalletScreen(
     }
 
     val launchCsvExport: () -> Unit = {
-        val df = SimpleDateFormat("yyyyMMdd", Locale.ENGLISH).format(Date())
+        val df = GlobalRoundClock.formatIstFileDate()
         csvLauncher.launch("ColourKing_${statementDays}Day_Statement_$df.csv")
     }
 
@@ -261,13 +264,33 @@ fun WalletBalancesCard(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(18.dp)) {
-            Text(
-                text = "AVAILABLE BALANCE",
-                color = TextSecondary,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 1.sp
-            )
+            var walletIstClock by remember { mutableStateOf(GlobalRoundClock.formatIstTime12h()) }
+            LaunchedEffect(Unit) {
+                while (isActive) {
+                    walletIstClock = GlobalRoundClock.formatIstTime12h()
+                    delay(500L)
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "AVAILABLE BALANCE",
+                    color = TextSecondary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 1.sp
+                )
+                Text(
+                    text = "🇮🇳 $walletIstClock",
+                    color = ElectricCyan,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = MoneyUtils.formatCents(wallet?.availableBalance ?: 0L),
@@ -614,8 +637,7 @@ fun LedgerItemCard(entry: WalletLedgerEntity) {
     val isCredit = entry.direction == "CREDIT"
     val amountColor = if (isCredit) NeonGreen else NeonRed
     val sign = if (isCredit) "+" else "-"
-    val dateFormat = SimpleDateFormat("dd MMM, HH:mm:ss", Locale.getDefault())
-    val dateStr = dateFormat.format(Date(entry.createdAt))
+    val dateStr = GlobalRoundClock.formatIstDateTime(entry.createdAt)
 
     Surface(
         shape = RoundedCornerShape(12.dp),
@@ -721,6 +743,13 @@ fun DepositDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
+                        var depIstClock by remember { mutableStateOf(GlobalRoundClock.formatIstDateTime()) }
+                        LaunchedEffect(Unit) {
+                            while (isActive) {
+                                depIstClock = GlobalRoundClock.formatIstDateTime()
+                                delay(500L)
+                            }
+                        }
                         Text(
                             text = "+ Add Deposit Funds",
                             color = TextPrimary,
@@ -728,13 +757,14 @@ fun DepositDialog(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Admin Bank & UPI Gateway",
+                            text = "Admin Bank & UPI Gateway • 🇮🇳 $depIstClock",
                             color = NeonGreen,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = FontFamily.Monospace
                         )
                     }
-                    IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
                         Icon(imageVector = Icons.Default.Close, contentDescription = "Close", tint = TextMuted)
                     }
                 }
@@ -1060,6 +1090,13 @@ fun WithdrawDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
+                        var wdIstClock by remember { mutableStateOf(GlobalRoundClock.formatIstDateTime()) }
+                        LaunchedEffect(Unit) {
+                            while (isActive) {
+                                wdIstClock = GlobalRoundClock.formatIstDateTime()
+                                delay(500L)
+                            }
+                        }
                         Text(
                             text = "Request Fund Withdrawal",
                             color = TextPrimary,
@@ -1067,12 +1104,13 @@ fun WithdrawDialog(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Admin Payout Approval Queue",
+                            text = "Escrow Queue • 🇮🇳 $wdIstClock",
                             color = ElectricCyan,
-                            fontSize = 11.sp
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace
                         )
                     }
-                    IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
                         Icon(imageVector = Icons.Default.Close, contentDescription = "Close", tint = TextMuted)
                     }
                 }

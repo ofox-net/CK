@@ -34,8 +34,42 @@ object GlobalRoundClock {
     const val ROUND_DURATION_SEC = 180
     const val BETTING_CUTOFF_SEC = 30 // Last 30s bets are closed
 
+    val IST_TZ: java.util.TimeZone = java.util.TimeZone.getTimeZone("Asia/Kolkata")
+
     @Volatile
     var serverOffsetMs: Long = 0L
+
+    fun nowIstMs(): Long = System.currentTimeMillis() + serverOffsetMs
+
+    fun formatIstTime(ms: Long = nowIstMs()): String =
+        java.text.SimpleDateFormat("HH:mm:ss 'IST'", java.util.Locale.ENGLISH).apply {
+            timeZone = IST_TZ
+        }.format(java.util.Date(ms))
+
+    fun formatIstTime12h(ms: Long = nowIstMs()): String =
+        java.text.SimpleDateFormat("hh:mm:ss a 'IST'", java.util.Locale.ENGLISH).apply {
+            timeZone = IST_TZ
+        }.format(java.util.Date(ms))
+
+    fun formatIstShort(ms: Long = nowIstMs()): String =
+        java.text.SimpleDateFormat("dd MMM, hh:mm a 'IST'", java.util.Locale.ENGLISH).apply {
+            timeZone = IST_TZ
+        }.format(java.util.Date(ms))
+
+    fun formatIstDateTime(ms: Long = nowIstMs()): String =
+        java.text.SimpleDateFormat("dd MMM, hh:mm:ss a 'IST'", java.util.Locale.ENGLISH).apply {
+            timeZone = IST_TZ
+        }.format(java.util.Date(ms))
+
+    fun formatIstFull(ms: Long = nowIstMs()): String =
+        java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss 'IST'", java.util.Locale.ENGLISH).apply {
+            timeZone = IST_TZ
+        }.format(java.util.Date(ms))
+
+    fun formatIstFileDate(ms: Long = nowIstMs()): String =
+        java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.ENGLISH).apply {
+            timeZone = IST_TZ
+        }.format(java.util.Date(ms))
 
     data class ClockState(
         val dateStr: String,
@@ -47,7 +81,7 @@ object GlobalRoundClock {
     )
 
     fun getSyncedState(nowMs: Long = System.currentTimeMillis() + serverOffsetMs): ClockState {
-        val istTz = java.util.TimeZone.getTimeZone("Asia/Kolkata")
+        val istTz = IST_TZ
         val nowCal = java.util.Calendar.getInstance(istTz).apply { timeInMillis = nowMs }
         val ref11Cal = java.util.Calendar.getInstance(istTz).apply {
             timeInMillis = nowMs

@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.components.borderStroke
 import com.example.data.model.*
+import com.example.domain.GlobalRoundClock
 import com.example.domain.RoundResult
 import com.example.domain.StatementExporter
 import com.example.ui.MainViewModel
@@ -407,7 +408,7 @@ fun GameScreen(
                             }
                             OutlinedButton(
                                 onClick = {
-                                    val df = SimpleDateFormat("yyyyMMdd", Locale.ENGLISH).format(Date())
+                                    val df = GlobalRoundClock.formatIstFileDate()
                                     csvLauncher.launch("ColourKing_${statementDays}Day_Bets_$df.csv")
                                 },
                                 shape = RoundedCornerShape(8.dp),
@@ -901,7 +902,14 @@ fun RoundStatusCard(
                     )
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(horizontalAlignment = Alignment.End) {
+                    var istClockText by remember { mutableStateOf(GlobalRoundClock.formatIstTime12h()) }
+                    LaunchedEffect(Unit) {
+                        while (isActive) {
+                            istClockText = GlobalRoundClock.formatIstTime12h()
+                            delay(500L)
+                        }
+                    }
                     Surface(
                         shape = RoundedCornerShape(20.dp),
                         color = if (isBettingOpen) NeonGreen.copy(alpha = 0.2f) else NeonRed.copy(alpha = 0.2f),
@@ -926,6 +934,14 @@ fun RoundStatusCard(
                             )
                         }
                     }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "🇮🇳 $istClockText",
+                        color = ElectricCyan,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
                 }
             }
 
@@ -1751,12 +1767,27 @@ fun BetPlacementDialog(
                                     fontSize = 11.sp
                                 )
                             }
+                            var modalIstClock by remember { mutableStateOf(GlobalRoundClock.formatIstDateTime()) }
+                            LaunchedEffect(Unit) {
+                                while (isActive) {
+                                    modalIstClock = GlobalRoundClock.formatIstDateTime()
+                                    delay(500L)
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "🇮🇳 $modalIstClock",
+                                color = ElectricCyan,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace
+                            )
                         }
                     }
 
                     IconButton(
                         onClick = onDismiss,
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
@@ -2023,7 +2054,11 @@ fun CurrentRoundPlacedBetsSection(
     onCancelBet: (BetEntity) -> Unit
 ) {
     val totalDeductedCents = activeBets.values.sumOf { it.amount }
-    val timeFormat = remember { SimpleDateFormat("hh:mm:ss a", Locale.ENGLISH) }
+    val timeFormat = remember {
+        SimpleDateFormat("hh:mm:ss a 'IST'", Locale.ENGLISH).apply {
+            timeZone = GlobalRoundClock.IST_TZ
+        }
+    }
 
     Surface(
         shape = RoundedCornerShape(16.dp),
@@ -2780,7 +2815,11 @@ fun BetHistoryItem(bet: BetEntity, round: GameRoundEntity? = null) {
     val market = GameMarkets.getById(bet.gameId)
     val marketAccentColor = Color(market.accentColorHex)
     val periodNumber = round?.roundNumber?.let { "#$it" } ?: ("#" + bet.roundId.substringAfterLast("_"))
-    val timeFormatWithSeconds = remember { SimpleDateFormat("dd MMM, hh:mm:ss a", Locale.ENGLISH) }
+    val timeFormatWithSeconds = remember {
+        SimpleDateFormat("dd MMM, hh:mm:ss a 'IST'", Locale.ENGLISH).apply {
+            timeZone = GlobalRoundClock.IST_TZ
+        }
+    }
     val feeCents = if (bet.platformFeeCents > 0L) bet.platformFeeCents else (bet.amount * 3L) / 100L
     val netCents = if (bet.netAmountCents > 0L) bet.netAmountCents else (bet.amount - feeCents)
 
@@ -3326,10 +3365,9 @@ fun PeriodRowItem(
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold
             )
-            val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
             Text(
-                text = timeFormat.format(Date(round.resultTime)),
-                color = TextMuted,
+                text = GlobalRoundClock.formatIstTime(round.resultTime),
+                color = ElectricCyan,
                 fontSize = 10.sp
             )
         }
@@ -3486,7 +3524,11 @@ fun PeriodDetailDialog(
     round: GameRoundEntity,
     onDismiss: () -> Unit
 ) {
-    val timeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+    val timeFormat = remember {
+        SimpleDateFormat("yyyy-MM-dd hh:mm:ss a 'IST'", Locale.ENGLISH).apply {
+            timeZone = GlobalRoundClock.IST_TZ
+        }
+    }
     val num = round.resultNumber ?: 0
     val isBig = num >= 5
 

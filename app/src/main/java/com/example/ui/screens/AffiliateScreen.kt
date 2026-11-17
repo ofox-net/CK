@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.MoneyUtils
 import com.example.data.model.ReferralCommissionEntity
+import com.example.domain.GlobalRoundClock
 import com.example.domain.ServerAffiliateCommission
 import com.example.domain.ServerAffiliateMember
 import com.example.ui.MainViewModel
@@ -499,8 +500,7 @@ fun ServerCommissionLedgerItem(commission: ServerAffiliateCommission) {
 
 @Composable
 fun CommissionLedgerItem(commission: ReferralCommissionEntity) {
-    val dateFormat = SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault())
-    val dateStr = dateFormat.format(Date(commission.createdAt))
+    val dateStr = GlobalRoundClock.formatIstShort(commission.createdAt)
 
     Surface(
         shape = RoundedCornerShape(12.dp),

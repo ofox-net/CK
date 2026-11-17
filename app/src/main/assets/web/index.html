@@ -1363,6 +1363,11 @@
         </div>
       </div>
       <div class="header-right">
+        <!-- Live Indian Clock (IST) Pill -->
+        <div title="Indian Standard Time (UTC+05:30)" style="display:flex; flex-direction:column; align-items:flex-end; padding:4px 8px; border-radius:10px; background:rgba(0,229,255,0.09); border:1px solid rgba(0,229,255,0.28); line-height:1.15;">
+          <span style="font-size:8px; font-weight:800; color:var(--cyan); letter-spacing:0.4px;">🇮🇳 IST +05:30</span>
+          <span id="headerIstClock" style="font-size:11px; font-weight:900; font-family:monospace; color:#FFF;">--:--:--</span>
+        </div>
         <!-- Persistent Global Sound Toggle Button -->
         <button id="soundToggleBtn" class="sound-toggle-btn" onclick="toggleGlobalSound()" title="Sound FX" aria-label="Toggle Sound Effects">
           <span id="soundToggleIcon">🔊</span>
@@ -1434,9 +1439,12 @@
               </div>
               <div class="round-period-sub" id="currentMarketTagline">South Beach Neon • 3 Min • Provably Fair SHA-256</div>
             </div>
-            <div class="status-badge open" id="bettingStatusBadge">
-              <div class="status-dot"></div>
-              <span id="bettingStatusText">Bet Open</span>
+            <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
+              <div class="status-badge open" id="bettingStatusBadge">
+                <div class="status-dot"></div>
+                <span id="bettingStatusText">Bet Open</span>
+              </div>
+              <div style="font-size:10px; font-family:monospace; color:var(--cyan); font-weight:800;" id="roundIstClock">🇮🇳 --:--:-- IST</div>
             </div>
           </div>
 
@@ -1780,9 +1788,12 @@
       <div class="tab-pane" id="tab-wallet">
         <!-- Balance Overview Card -->
         <div class="card" style="background:linear-gradient(135deg, #1B2944, #111A2E); border:1px solid var(--gold);">
-          <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
             <span style="font-size:11px; color:var(--gold); font-weight:800; letter-spacing:0.5px;">TOTAL AVAILABLE BALANCE</span>
-            <span class="badge-pill badge-green">Synced Real-Time</span>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span id="walletIstClock" style="font-size:10px; color:var(--cyan); font-family:monospace; font-weight:800;">🇮🇳 --:--:-- IST</span>
+              <span class="badge-pill badge-green">Synced Real-Time</span>
+            </div>
           </div>
           <div style="font-size:32px; font-weight:900; color:#FFF; margin:4px 0; font-family:monospace;" id="walletTabBalance">₹0.00</div>
           
@@ -2100,9 +2111,10 @@
           </div>
           <div>
             <div id="betModalTargetTitle" style="font-size:16px; font-weight:900; color:#FFF; line-height:1.2;">GREEN</div>
-            <div style="display:flex; align-items:center; gap:6px; margin-top:2px;">
+            <div style="display:flex; align-items:center; gap:6px; margin-top:2px; flex-wrap:wrap;">
               <span id="betModalPayoutBadge" style="background:rgba(0,230,118,0.2); color:var(--green); font-size:11px; font-weight:800; padding:2px 6px; border-radius:4px;">2.0x Payout</span>
               <span id="betModalTypeSubtitle" style="font-size:11px; color:var(--text-muted);">COLOR Bet</span>
+              <span id="betModalIstClock" style="font-size:10px; color:var(--cyan); font-family:monospace; font-weight:800;">🇮🇳 --:--:-- IST</span>
             </div>
           </div>
         </div>
@@ -2235,8 +2247,8 @@
           <strong id="paColorDisplay" style="color:var(--red);">RED</strong>
         </div>
         <div style="display:flex; justify-content:space-between;">
-          <span style="color:var(--text-muted);">Draw Timestamp:</span>
-          <span id="paTimeDisplay" style="color:var(--text-muted); font-family:monospace;">Today, 11:28:00 AM</span>
+          <span style="color:var(--text-muted);">Draw Timestamp (IST):</span>
+          <span id="paTimeDisplay" style="color:var(--cyan); font-family:monospace;">--:--:-- IST</span>
         </div>
       </div>
 
@@ -2248,7 +2260,10 @@
   <div class="modal-overlay" id="depositModal">
     <div class="modal-content">
       <div class="modal-header">
-        <div class="modal-title">+ Add Deposit Funds</div>
+        <div>
+          <div class="modal-title">+ Add Deposit Funds</div>
+          <div id="depositModalIstClock" style="font-size:10px; color:var(--cyan); font-family:monospace; font-weight:800; margin-top:2px;">🇮🇳 --:--:-- IST</div>
+        </div>
         <button class="btn-close" onclick="closeModal('depositModal')">✕</button>
       </div>
 
@@ -2336,7 +2351,10 @@
   <div class="modal-overlay" id="withdrawModal">
     <div class="modal-content">
       <div class="modal-header">
-        <div class="modal-title">↑ Request Fund Withdrawal</div>
+        <div>
+          <div class="modal-title">↑ Request Fund Withdrawal</div>
+          <div id="withdrawModalIstClock" style="font-size:10px; color:var(--cyan); font-family:monospace; font-weight:800; margin-top:2px;">🇮🇳 --:--:-- IST</div>
+        </div>
         <button class="btn-close" onclick="closeModal('withdrawModal')">✕</button>
       </div>
 
@@ -2866,8 +2884,110 @@
           const t1 = Date.now();
           const latency = (t1 - t0) / 2;
           serverClockOffsetMs = data.server_time_ms - (t1 - latency);
+          updateLiveUserISTClocks();
         }
       } catch (e) {}
+    }
+
+    function getSyncedNowMs() {
+      return Date.now() + serverClockOffsetMs;
+    }
+
+    function formatISTTime(ms = getSyncedNowMs(), withSeconds = true) {
+      const targetMs = Number(ms || getSyncedNowMs());
+      try {
+        return new Date(targetMs).toLocaleTimeString('en-IN', {
+          timeZone: 'Asia/Kolkata',
+          hour: '2-digit',
+          minute: '2-digit',
+          ...(withSeconds ? { second: '2-digit' } : {}),
+          hour12: true
+        }).toUpperCase() + ' IST';
+      } catch (e) {
+        const ist = new Date(targetMs + 5.5 * 3600 * 1000);
+        const hh = String(ist.getUTCHours()).padStart(2, '0');
+        const mm = String(ist.getUTCMinutes()).padStart(2, '0');
+        const ss = String(ist.getUTCSeconds()).padStart(2, '0');
+        return (withSeconds ? `${hh}:${mm}:${ss}` : `${hh}:${mm}`) + ' IST';
+      }
+    }
+
+    function formatISTClock24(ms = getSyncedNowMs()) {
+      const targetMs = Number(ms || getSyncedNowMs());
+      try {
+        return new Date(targetMs).toLocaleTimeString('en-GB', {
+          timeZone: 'Asia/Kolkata',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false
+        }) + ' IST';
+      } catch (e) {
+        const ist = new Date(targetMs + 5.5 * 3600 * 1000);
+        return `${String(ist.getUTCHours()).padStart(2, '0')}:${String(ist.getUTCMinutes()).padStart(2, '0')}:${String(ist.getUTCSeconds()).padStart(2, '0')} IST`;
+      }
+    }
+
+    function formatISTDateTime(ms = getSyncedNowMs()) {
+      const targetMs = Number(ms || getSyncedNowMs());
+      try {
+        const parts = new Intl.DateTimeFormat('en-IN', {
+          timeZone: 'Asia/Kolkata',
+          day: '2-digit',
+          month: 'short',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true
+        }).format(new Date(targetMs));
+        return parts + ' IST';
+      } catch (e) {
+        return formatISTTime(targetMs, true);
+      }
+    }
+
+    function formatISTFileDate(ms = getSyncedNowMs()) {
+      const ist = new Date(Number(ms || getSyncedNowMs()) + 5.5 * 3600 * 1000);
+      return `${ist.getUTCFullYear()}${String(ist.getUTCMonth() + 1).padStart(2, '0')}${String(ist.getUTCDate()).padStart(2, '0')}`;
+    }
+
+    function resolveISTTimestamp(rawTime, ms = 0, includeDate = true) {
+      const numMs = Number(ms || 0);
+      if (Number.isFinite(numMs) && numMs > 0) {
+        return includeDate ? formatISTDateTime(numMs) : formatISTTime(numMs, true);
+      }
+      const txt = String(rawTime || '').trim();
+      if (!txt || /^just now$/i.test(txt)) {
+        return includeDate ? formatISTDateTime(getSyncedNowMs()) : formatISTTime(getSyncedNowMs(), true);
+      }
+      if (/IST/i.test(txt)) return txt;
+      if (/^\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}/.test(txt)) {
+        const normalized = txt.includes('T') ? txt : txt.replace(' ', 'T') + 'Z';
+        const parsed = Date.parse(normalized);
+        if (!Number.isNaN(parsed)) {
+          return includeDate ? formatISTDateTime(parsed) : formatISTTime(parsed, true);
+        }
+      }
+      if (/^\d{2}:\d{2}(:\d{2})?$/.test(txt)) return `${txt} IST`;
+      return txt;
+    }
+
+    function updateLiveUserISTClocks() {
+      const nowMs = getSyncedNowMs();
+      const clockText = formatISTTime(nowMs, true);
+      const dateTimeText = formatISTDateTime(nowMs);
+      const hEl = document.getElementById('headerIstClock');
+      if (hEl) hEl.innerText = clockText.replace(/\s*IST$/, '');
+      const rEl = document.getElementById('roundIstClock');
+      if (rEl) rEl.innerText = `🇮🇳 ${clockText}`;
+      const wEl = document.getElementById('walletIstClock');
+      if (wEl) wEl.innerText = `🇮🇳 ${clockText}`;
+      const bmEl = document.getElementById('betModalIstClock');
+      if (bmEl) bmEl.innerText = `🇮🇳 ${dateTimeText}`;
+      const dmEl = document.getElementById('depositModalIstClock');
+      if (dmEl) dmEl.innerText = `🇮🇳 ${dateTimeText}`;
+      const wmEl = document.getElementById('withdrawModalIstClock');
+      if (wmEl) wmEl.innerText = `🇮🇳 ${dateTimeText}`;
     }
 
     // Global IST (+05:30) Server-Synchronized Clock Engine
@@ -3325,7 +3445,7 @@
         isBig: det.isBig,
         color: det.color,
         colClass: det.colClass,
-        time: timestamp || new Date().toTimeString().split(' ')[0],
+        time: resolveISTTimestamp(timestamp, getSyncedNowMs(), false),
         hash: det.hash
       };
       if (!declaredResultsStore[mKey]) declaredResultsStore[mKey] = {};
@@ -3595,8 +3715,8 @@
         st.pastRecords = [];
         for (let i = 1; i <= 100; i++) {
           const prevPeriod = `${datePrefix}${Math.max(1, curNum - i)}`;
-          const recDate = new Date(Date.now() - i * 180 * 1000);
-          const timeStr = recDate.toTimeString().split(' ')[0];
+          const recMs = getSyncedNowMs() - i * 180 * 1000;
+          const timeStr = formatISTClock24(recMs);
           const rec = getStoredOrDeterministicResult(k, prevPeriod, timeStr);
           st.pastRecords.push(rec);
         }
@@ -3809,13 +3929,14 @@
           colorHex = '#FF1744';
         }
 
-        const timeStr = r.time || '23:24:25';
+        const timeStr = resolveISTTimestamp(r.time, r.timestampMs || 0, true);
+        const safeTimeAttr = String(timeStr).replace(/'/g, "\\'");
 
         return `
-          <tr style="cursor:pointer;" onclick="openPeriodAudit('${r.period}', ${num}, '${r.color}', ${isBig})">
+          <tr style="cursor:pointer;" onclick="openPeriodAudit('${r.period}', ${num}, '${r.color}', ${isBig}, '${safeTimeAttr}')">
             <td>
               <div style="font-family:monospace; color:#F0F4F8; font-weight:800; font-size:12px;">${r.period}</div>
-              <div style="font-size:10px; color:var(--text-muted);">${timeStr}</div>
+              <div style="font-size:10px; color:var(--cyan);">${timeStr}</div>
             </td>
             <td style="text-align:center;">
               <div class="result-ball-28 ${ballClass}">${num}</div>
@@ -3835,14 +3956,17 @@
       const st = marketStates[currentMarketId];
       const container = document.getElementById('beadPlateMatrixGrid');
       if (!container) return;
-      container.innerHTML = st.pastRecords.slice(0, 100).map(r => `
-        <div class="bead-circle ${r.color}" onclick="openPeriodAudit('${r.period}', ${r.number}, '${r.color}', ${r.isBig})" title="Period #${r.period}: ${r.number}">
+      container.innerHTML = st.pastRecords.slice(0, 100).map(r => {
+        const safeTimeAttr = String(resolveISTTimestamp(r.time, r.timestampMs || 0, true)).replace(/'/g, "\\'");
+        return `
+        <div class="bead-circle ${r.color}" onclick="openPeriodAudit('${r.period}', ${r.number}, '${r.color}', ${r.isBig}, '${safeTimeAttr}')" title="Period #${r.period}: ${r.number} (${safeTimeAttr})">
           ${r.number}
         </div>
-      `).join('');
+      `;
+      }).join('');
     }
 
-    function openPeriodAudit(period, num, color, isBig) {
+    function openPeriodAudit(period, num, color, isBig, timeStr) {
       document.getElementById('paPeriodTitle').innerText = `Period #${period} Audit`;
       const ball = document.getElementById('paResultBall');
       ball.className = `result-ball ${color}`;
@@ -3850,6 +3974,8 @@
       document.getElementById('paNumberDisplay').innerText = num;
       document.getElementById('paBigSmallDisplay').innerText = isBig ? 'BIG (5-9)' : 'SMALL (0-4)';
       document.getElementById('paColorDisplay').innerText = color.toUpperCase();
+      const tsEl = document.getElementById('paTimeDisplay');
+      if (tsEl) tsEl.innerText = resolveISTTimestamp(timeStr, 0, true);
       document.getElementById('periodAuditModal').classList.add('active');
       playSound('betClick');
     }
@@ -4032,7 +4158,7 @@
             </div>
 
             <div class="bet-slip-footer">
-              <span>🕒 ${slip.time || 'Just now'} • ${slip.id}</span>
+              <span>🕒 ${resolveISTTimestamp(slip.time, slip.createdAtMs, true)} • ${slip.id}</span>
               <div>${plTag}</div>
             </div>
             <div style="font-size:10px; font-weight:700; color:${statusColor}; display:flex; align-items:center; justify-content:space-between; gap:6px;">
@@ -4090,8 +4216,8 @@
               <span class="bet-slip-metric-val" style="color:var(--green);">₹${potWin.toFixed(2)}</span>
             </div>
           </div>
-          <div style="font-size:10px; color:var(--text-muted); display:flex; justify-content:space-between;">
-            <span>Period #${st.currentPeriod}</span>
+          <div style="font-size:10px; color:var(--text-muted); display:flex; justify-content:space-between; gap:6px; flex-wrap:wrap;">
+            <span>Period #${st.currentPeriod} • 🕒 ${resolveISTTimestamp(b.time, b.createdAtMs, false)}</span>
             <span>${b.id}</span>
           </div>
         </div>
@@ -4143,13 +4269,15 @@
         st.activeBets.splice(index, 1);
         userBetSlipsHistory = pruneAndSaveBetSlips(userBetSlipsHistory);
 
+        const cancelNowMs = getSyncedNowMs();
         walletLedger.unshift({
           id: 'TX-' + Math.floor(1000 + Math.random() * 9000),
           type: 'DEPOSIT',
           title: `Refund: ${b.target} (${MARKETS[currentMarketId].name})`,
           ref: `Period #${st.currentPeriod} • Cancelled & Refunded`,
           amount: b.amount,
-          time: 'Just now',
+          timestampMs: cancelNowMs,
+          time: formatISTDateTime(cancelNowMs),
           status: 'COMPLETED'
         });
 
@@ -4434,7 +4562,8 @@
         userBalance = data.newBalance;
         updateBalanceUI();
 
-        const confirmedBet = Object.assign({ createdAtMs: Date.now() }, data.bet || {});
+        const placedNowMs = getSyncedNowMs();
+        const confirmedBet = Object.assign({ createdAtMs: placedNowMs, time: formatISTDateTime(placedNowMs) }, data.bet || {});
         st.activeBets.push(confirmedBet);
         userBetSlipsHistory.unshift(confirmedBet);
         userBetSlipsHistory = pruneAndSaveBetSlips(userBetSlipsHistory);
@@ -4445,7 +4574,8 @@
           title: `Bet on ${MARKETS[currentMarketId].name}`,
           ref: `Target ${pendingBet.target} (${pendingBet.mult}X)`,
           amount: -total,
-          time: 'Just now',
+          timestampMs: placedNowMs,
+          time: formatISTDateTime(placedNowMs),
           status: 'COMPLETED'
         });
 
@@ -4687,7 +4817,7 @@
                     isBig: m.latest_result.isBig,
                     color: m.latest_result.color,
                     colClass: colClass,
-                    time: m.latest_result.time || new Date().toTimeString().split(' ')[0]
+                    time: resolveISTTimestamp(m.latest_result.time, m.latest_result.timestampMs || getSyncedNowMs(), true)
                   };
                   const idx = st.pastRecords.findIndex(r => String(r.period) === newRec.period);
                   if (idx >= 0) {
@@ -4843,6 +4973,7 @@
           });
 
           const activeSt = marketStates[currentMarketId];
+          updateLiveUserISTClocks();
           if (activeSt.secondsLeft !== lastRenderedSecond || currentMarketId !== lastRenderedMarket || rolledOver) {
             lastRenderedSecond = activeSt.secondsLeft;
             lastRenderedMarket = currentMarketId;
@@ -5330,7 +5461,7 @@
               <div style="font-weight:800; font-size:13px; color:#FFF; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
                 ${tx.title} ${statusBadge}
               </div>
-              <div style="font-size:10px; color:var(--text-muted); margin-top:3px;">${tx.ref || ''} • ${tx.time || ''}</div>
+              <div style="font-size:10px; color:var(--text-muted); margin-top:3px;">${tx.ref || ''} • <span style="color:var(--cyan);">${resolveISTTimestamp(tx.time, tx.timestampMs || tx.createdAtMs, true)}</span></div>
             </div>
             <div style="text-align:right;">
               <div style="font-weight:900; font-size:14px; font-family:monospace; color:${color};">
@@ -5410,19 +5541,19 @@
       ];
       walletLedger.forEach(tx => {
         rows.push([
-          tx.time || '', tx.id || '', tx.category || tx.type || '', tx.type || '',
+          resolveISTTimestamp(tx.time, tx.timestampMs || tx.createdAtMs, true), tx.id || '', tx.category || tx.type || '', tx.type || '',
           tx.title || '', tx.ref || '', Number(tx.amount || 0).toFixed(2),
           tx.balanceAfter !== null && tx.balanceAfter !== undefined ? Number(tx.balanceAfter).toFixed(2) : '-',
           tx.status || ''
         ]);
       });
-      rows.push([], ['90-DAY BETTING RECORDS HISTORY'], ['Placed At', 'Bet ID', 'Market', 'Period', 'Type', 'Target', 'Multiplier', 'Stake', 'Status', 'Win Amount', 'Net P&L', 'Result']);
+      rows.push([], ['90-DAY BETTING RECORDS HISTORY'], ['Placed At (IST)', 'Bet ID', 'Market', 'Period', 'Type', 'Target', 'Multiplier', 'Stake', 'Status', 'Win Amount', 'Net P&L', 'Result']);
       userBetSlipsHistory.forEach(b => {
         const st = (b.status || '').toUpperCase();
         const amt = Number(b.amount || 0);
         const winAmt = Number(b.winAmount || 0);
         const pl = st === 'WON' ? (winAmt - amt) : (st === 'LOST' ? -amt : 0);
-        rows.push([b.time || '', b.id || '', b.marketId || '', b.period || '', b.type || '', b.target || '', `${b.mult || 2}x`, amt.toFixed(2), st, winAmt.toFixed(2), pl.toFixed(2), b.result || '']);
+        rows.push([resolveISTTimestamp(b.time, b.createdAtMs, true), b.id || '', b.marketId || '', b.period || '', b.type || '', b.target || '', `${b.mult || 2}x`, amt.toFixed(2), st, winAmt.toFixed(2), pl.toFixed(2), b.result || '']);
       });
       return '\ufeff' + rows.map(r => r.map(esc).join(',')).join('\r\n');
     }
@@ -5435,7 +5566,7 @@
       }
       const uid = currentUserId;
       const cat = categoryOverride || ledgerFilterType || 'ALL';
-      const fname = `ColourKing_${statementDaysFilter}Day_Statement_${uid}_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.csv`;
+      const fname = `ColourKing_${statementDaysFilter}Day_Statement_${uid}_${formatISTFileDate()}.csv`;
       try {
         let csvText = '';
         if (hasBackendConnection()) {
@@ -5577,28 +5708,34 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: currentUserId, userName: currentUserName, amount, utr, method: 'UPI Instant' })
       }).then(r => r.json()).then(res => {
-        const depId = res && res.deposit ? res.deposit.id : ('DEP-' + Math.floor(10000 + Math.random() * 90000));
+        const dep = res && res.deposit ? res.deposit : {};
+        const depId = dep.id || ('DEP-' + Math.floor(10000 + Math.random() * 90000));
+        const depMs = Number(dep.timestampMs || getSyncedNowMs());
         walletLedger.unshift({
           id: depId,
           type: 'DEPOSIT',
           title: 'Deposit via UPI Instant',
           ref: `UTR: ${utr}`,
           amount: amount,
-          time: 'Just now',
+          timestampMs: depMs,
+          time: resolveISTTimestamp(dep.time, depMs, true),
           status: 'IN PROCESS'
         });
+        syncUserTransactions();
         renderWalletLedger();
         showToast('✓ Deposit request submitted! Admin approval IN PROCESS.');
         closeModal('depositModal');
       }).catch(() => {
         const depId = 'DEP-' + Math.floor(10000 + Math.random() * 90000);
+        const depMs = getSyncedNowMs();
         walletLedger.unshift({
           id: depId,
           type: 'DEPOSIT',
           title: 'Deposit via UPI Instant',
           ref: `UTR: ${utr}`,
           amount: amount,
-          time: 'Just now',
+          timestampMs: depMs,
+          time: formatISTDateTime(depMs),
           status: 'IN PROCESS'
         });
         renderWalletLedger();
@@ -5634,13 +5771,15 @@
         } catch (e) {}
       }
       userBalance += 1000;
+      const demoNowMs = getSyncedNowMs();
       walletLedger.unshift({
         id: 'TX-' + Math.floor(1000 + Math.random() * 9000),
         type: 'DEPOSIT',
         title: 'Demo Test Credit',
         ref: 'Instant Sandbox',
         amount: 1000.00,
-        time: 'Just now',
+        timestampMs: demoNowMs,
+        time: formatISTDateTime(demoNowMs),
         status: 'SUCCESS'
       });
       updateBalanceUI();
@@ -5685,14 +5824,17 @@
       }).then(r => r.json()).then(res => {
         if (res.success) {
           userBalance = typeof res.newBalance === 'number' ? res.newBalance : (userBalance - amount);
-          const wdId = res.withdrawalId || (res.withdrawal ? res.withdrawal.id : ('WD-' + Math.floor(10000 + Math.random() * 90000)));
+          const wd = res.withdrawal || {};
+          const wdId = res.withdrawalId || wd.id || ('WD-' + Math.floor(10000 + Math.random() * 90000));
+          const wdMs = Number(wd.timestampMs || getSyncedNowMs());
           walletLedger.unshift({
             id: wdId,
             type: 'WITHDRAWAL',
             title: `Withdrawal to ${bankName || 'Bank'}`,
             ref: `A/C: ${accNo || upiId}`,
             amount: -amount,
-            time: 'Just now',
+            timestampMs: wdMs,
+            time: resolveISTTimestamp(wd.time, wdMs, true),
             status: 'IN PROCESS'
           });
           updateBalanceUI();
@@ -6407,7 +6549,7 @@
             const badge = st === 'ADMIN'
               ? '<span style="background:rgba(0,230,118,0.22); color:var(--green); padding:1px 5px; border-radius:4px; font-weight:800;">ADMIN</span>'
               : (st === 'AUTO_BOT' ? '<span style="background:rgba(0,229,255,0.2); color:var(--cyan); padding:1px 5px; border-radius:4px; font-weight:800;">24/7 AUTO</span>' : '');
-            const timeLabel = m.createdAtMs ? new Date(m.createdAtMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (m.createdAt || '');
+            const timeLabel = m.createdAtMs ? formatISTTime(m.createdAtMs, false) : resolveISTTimestamp(m.createdAt, 0, false);
             const attHtml = renderSupportAttachmentHtml(m);
             const msgBody = m.message ? `<div style="${attHtml ? 'margin-top:6px;' : ''}">${escapeSupportHtml(m.message)}</div>` : '';
             return `

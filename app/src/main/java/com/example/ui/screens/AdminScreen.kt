@@ -22,9 +22,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.*
+import com.example.domain.GlobalRoundClock
 import com.example.ui.MainViewModel
 import com.example.ui.components.borderStroke
 import com.example.ui.theme.*
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -55,15 +58,42 @@ fun AdminScreen(
     ) {
         item {
             Spacer(modifier = Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(imageVector = Icons.Default.AdminPanelSettings, contentDescription = null, tint = GoldAccent)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Platform Administration",
-                    color = TextPrimary,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
-                )
+            var adminIstClock by remember { mutableStateOf(GlobalRoundClock.formatIstDateTime()) }
+            LaunchedEffect(Unit) {
+                while (isActive) {
+                    adminIstClock = GlobalRoundClock.formatIstDateTime()
+                    delay(500L)
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(imageVector = Icons.Default.AdminPanelSettings, contentDescription = "Admin Controls", tint = GoldAccent)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Platform Administration",
+                        color = TextPrimary,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = ElectricCyan.copy(alpha = 0.12f),
+                    border = borderStroke(1.dp, ElectricCyan.copy(alpha = 0.35f))
+                ) {
+                    Text(
+                        text = "🇮🇳 $adminIstClock",
+                        color = ElectricCyan,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
             }
             Text(
                 text = "Multi-tenant orchestration, risk controls, withdrawal escrow & audit trail",
@@ -323,7 +353,7 @@ fun AdminWithdrawalCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "User: ${request.userId}",
                         color = TextPrimary,
@@ -334,6 +364,12 @@ fun AdminWithdrawalCard(
                         text = "Destination: ${request.bankOrUpi}",
                         color = TextSecondary,
                         fontSize = 11.sp
+                    )
+                    Text(
+                        text = "Submitted: ${GlobalRoundClock.formatIstDateTime(request.createdAt)}",
+                        color = ElectricCyan,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace
                     )
                 }
 
@@ -389,8 +425,7 @@ fun AdminWithdrawalCard(
 
 @Composable
 fun AuditLogItem(log: AuditLogEntity) {
-    val dateFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
-    val timeStr = dateFormat.format(Date(log.timestamp))
+    val timeStr = GlobalRoundClock.formatIstDateTime(log.timestamp)
 
     Surface(
         shape = RoundedCornerShape(8.dp),

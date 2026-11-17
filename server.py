@@ -1018,14 +1018,16 @@ def init_database():
         c.execute("SELECT COUNT(*) FROM deposits")
         if c.fetchone()[0] == 0:
             now_seed_ms = int(time.time() * 1000)
+            seed_dep_1_ts = format_ist_display(now_seed_ms - 6 * 60 * 1000)
+            seed_dep_2_ts = format_ist_display(now_seed_ms - 12 * 60 * 1000)
             c.execute("""
                 INSERT INTO deposits (id, user_id, user_name, amount, method, utr, time_str, status, created_at_ms)
-                VALUES ('DEP-88401', 'USR-1001', 'Rahul_Player', 5000.00, 'UPI (GooglePay)', '429188402911', 'Today, 11:24 AM', 'IN PROCESS', ?)
-            """, (now_seed_ms,))
+                VALUES ('DEP-88401', 'USR-1001', 'Rahul_Player', 5000.00, 'UPI (GooglePay)', '429188402911', ?, 'IN PROCESS', ?)
+            """, (seed_dep_1_ts, now_seed_ms - 6 * 60 * 1000))
             c.execute("""
                 INSERT INTO deposits (id, user_id, user_name, amount, method, utr, time_str, status, created_at_ms)
-                VALUES ('DEP-88402', 'USR-1002', 'Aman_Trader', 10000.00, 'IMPS SBI NetBanking', '902184716294', 'Today, 11:18 AM', 'IN PROCESS', ?)
-            """, (now_seed_ms,))
+                VALUES ('DEP-88402', 'USR-1002', 'Aman_Trader', 10000.00, 'IMPS SBI NetBanking', '902184716294', ?, 'IN PROCESS', ?)
+            """, (seed_dep_2_ts, now_seed_ms - 12 * 60 * 1000))
 
         # Ensure app_state defaults exist in SQLite
         c.execute("SELECT value FROM app_state WHERE key = 'bank_config'")
@@ -1049,11 +1051,25 @@ def init_database():
         sync_to_cloud(conn, critical=True)
         conn.close()
 
-def get_ist_now():
-    # IST is UTC + 5:30
-    utc_now = datetime.now(timezone.utc)
-    ist_tz = timezone(timedelta(hours=5, minutes=30))
-    return utc_now.astimezone(ist_tz)
+IST_TZ = timezone(timedelta(hours=5, minutes=30))
+
+def get_ist_now(ms=None):
+    # IST is always UTC + 05:30 regardless of host OS timezone
+    if ms is not None and int(ms) > 0:
+        return datetime.fromtimestamp(int(ms) / 1000.0, tz=timezone.utc).astimezone(IST_TZ)
+    return datetime.now(timezone.utc).astimezone(IST_TZ)
+
+def format_ist_datetime(ms=None):
+    return get_ist_now(ms).strftime("%Y-%m-%d %H:%M:%S IST")
+
+def format_ist_display(ms=None):
+    return get_ist_now(ms).strftime("%d %b, %I:%M:%S %p IST")
+
+def format_ist_time(ms=None):
+    return get_ist_now(ms).strftime("%I:%M:%S %p IST")
+
+def format_ist_clock24(ms=None):
+    return get_ist_now(ms).strftime("%H:%M:%S IST")
 
 def calculate_authoritative_round(market_code, now_ms=None):
     if now_ms is None:
@@ -1171,7 +1187,7 @@ def settle_round_in_db(conn, market_code, round_id, period, winning_number, draw
         color = "violet"
         col_class = "red-violet" if winning_number == 0 else "green-violet"
 
-    now_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now_ts = format_ist_datetime()
 
     # 1. Update or Insert round into rounds table
     c.execute("""
@@ -1318,7 +1334,7 @@ def sync_round_lifecycle_once():
                     ex = c.fetchone()
                     if not ex or ex["status"] != "SETTLED" or ex["result_number"] is None:
                         outcome = generate_provably_fair_outcome(m_code, past_p)
-                        declared_ts = datetime.fromtimestamp(past_auth["end_time_ms"] / 1000.0, tz=timezone.utc).astimezone(timezone(timedelta(hours=5, minutes=30))).strftime("%H:%M:%S")
+                        declared_ts = format_ist_datetime(past_auth["end_time_ms"])
                         c.execute("""
                             INSERT INTO rounds (round_id, market, period, start_time_ms, lock_time_ms, end_time_ms, status, result_number, result_color, result_col_class, is_big, draw_mode, declared_at, declared_by)
                             VALUES (?, ?, ?, ?, ?, ?, 'SETTLED', ?, ?, ?, ?, 'AUTO_RANDOM', ?, 'SYSTEM_SYNC')
@@ -1412,11 +1428,51 @@ def _parse_ts_ms(ts_str, fallback_ms=0):
         return int(fallback_ms)
     if not ts_str:
         return int(time.time() * 1000)
+    raw = str(ts_str).strip()
     try:
-        dt = datetime.strptime(str(ts_str)[:19], "%Y-%m-%d %H:%M:%S")
+        if raw.endswith(" IST") or "+05:30" in raw:
+            cleaned = raw.replace(" IST", "").strip()
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%d %b, %I:%M:%S %p", "%d %b %Y, %I:%M:%S %p"):
+                try:
+                    dt = datetime.strptime(cleaned, fmt)
+                    if "%Y" not in fmt:
+                        dt = dt.replace(year=get_ist_now().year)
+                    return int(dt.replace(tzinfo=IST_TZ).timestamp() * 1000)
+                except Exception:
+                    pass
+        dt = datetime.strptime(raw[:19], "%Y-%m-%d %H:%M:%S")
         return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
     except Exception:
-        return int(time.time() * 1000)
+        try:
+            dt_iso = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if dt_iso.tzinfo is None:
+                dt_iso = dt_iso.replace(tzinfo=timezone.utc)
+            return int(dt_iso.timestamp() * 1000)
+        except Exception:
+            return int(time.time() * 1000)
+
+def to_ist_display(ts_str=None, ms=0, mode="datetime"):
+    raw = str(ts_str or "").strip()
+    if ms and int(ms) > 0:
+        epoch_ms = int(ms)
+    elif raw and raw.lower() not in ("just now",) and not raw.lower().startswith("today,"):
+        # Handle bare HH:MM:SS already computed in IST
+        if len(raw) == 8 and raw[2] == ":" and raw[5] == ":":
+            return f"{raw} IST"
+        epoch_ms = _parse_ts_ms(raw, 0)
+    else:
+        epoch_ms = int(time.time() * 1000)
+    if mode == "display":
+        return format_ist_display(epoch_ms)
+    if mode == "time12":
+        return format_ist_time(epoch_ms)
+    if mode == "clock24":
+        return format_ist_clock24(epoch_ms)
+    return format_ist_datetime(epoch_ms)
+
+def ist_date_str(ts_str=None, ms=0):
+    epoch_ms = _parse_ts_ms(ts_str, ms)
+    return get_ist_now(epoch_ms).strftime("%Y-%m-%d")
 
 def build_user_statement(conn, uid, days=90, category="ALL", market_filter="ALL"):
     now_ms = int(time.time() * 1000)
@@ -1480,6 +1536,7 @@ def build_user_statement(conn, uid, days=90, category="ALL", market_filter="ALL"
         fee_amt = round(float(r["platform_fee"] or 0.0), 2) if "platform_fee" in r.keys() else round(amt * 0.03, 2)
         net_amt = round(float(r["net_amount"] or 0.0), 2) if "net_amount" in r.keys() and float(r["net_amount"] or 0.0) > 0.0 else round(amt - fee_amt, 2)
 
+        bet_ts_ms = _parse_ts_ms(r["created_at"], r["created_at_ms"] if "created_at_ms" in r.keys() else 0)
         bets_list.append({
             "id": r["bet_id"],
             "userId": r["user_id"],
@@ -1500,9 +1557,9 @@ def build_user_statement(conn, uid, days=90, category="ALL", market_filter="ALL"
             "winAmount": round(win_amt, 2),
             "lossAmount": round(loss_amt, 2),
             "netProfitLoss": net_pl,
-            "time": r["created_at"],
-            "settledAt": r["settled_at"],
-            "createdAtMs": int(r["created_at_ms"] or 0)
+            "time": to_ist_display(r["created_at"], bet_ts_ms, mode="datetime"),
+            "settledAt": to_ist_display(r["settled_at"], 0, mode="datetime") if r["settled_at"] else None,
+            "createdAtMs": bet_ts_ms
         })
 
     net_bet_pl = round(total_won - total_wagered, 2)
@@ -1568,7 +1625,7 @@ def build_user_statement(conn, uid, days=90, category="ALL", market_filter="ALL"
             "balanceAfter": None,
             "status": st_u,
             "reason": d["reason"],
-            "time": d["created_at"] or d["time_str"] or "",
+            "time": format_ist_datetime(ts_ms),
             "timestampMs": ts_ms
         })
 
@@ -1594,7 +1651,7 @@ def build_user_statement(conn, uid, days=90, category="ALL", market_filter="ALL"
             "balanceAfter": None,
             "status": st_u,
             "reason": w["reason"],
-            "time": w["created_at"] or w["time_str"] or "",
+            "time": format_ist_datetime(ts_ms),
             "timestampMs": ts_ms
         })
 
@@ -1636,7 +1693,7 @@ def build_user_statement(conn, uid, days=90, category="ALL", market_filter="ALL"
             "balanceAfter": round(float(tx["balance_after"]), 2),
             "status": str(tx["status"] or "COMPLETED").upper(),
             "reason": None,
-            "time": tx["created_at"] or "",
+            "time": format_ist_datetime(ts_ms),
             "timestampMs": ts_ms
         })
 
@@ -1658,7 +1715,7 @@ def build_user_statement(conn, uid, days=90, category="ALL", market_filter="ALL"
                 "balanceAfter": None,
                 "status": str(rc["status"] or "SETTLED").upper(),
                 "reason": None,
-                "time": rc["created_at"] or "",
+                "time": format_ist_datetime(ts_ms),
                 "timestampMs": ts_ms
             })
 
@@ -1709,7 +1766,7 @@ def build_user_statement(conn, uid, days=90, category="ALL", market_filter="ALL"
         "retentionDays": RETENTION_DAYS,
         "category": cat_upper,
         "market": mkt_upper,
-        "generatedAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "generatedAt": format_ist_datetime(now_ms),
         "summary": summary,
         "bets": bets_list,
         "statementEntries": filtered_entries
@@ -1813,7 +1870,7 @@ def build_user_affiliates(conn, uid):
                 "name": ch["name"],
                 "tier": tier,
                 "tierLabel": f"Tier {tier} (Direct)" if tier == 1 else f"Tier {tier}",
-                "joined": str(ch["created_at"] or "")[:10],
+                "joined": ist_date_str(ch["created_at"], 0),
                 "totalDeposit": round(float(ch["total_deposit"] or 0.0), 2),
                 "turnover": round(ch_turnover, 2),
                 "commission": round(ch_comm, 2),
@@ -1860,8 +1917,8 @@ def build_user_affiliates(conn, uid):
         "eligibleAmount": round(float(r["eligible_amount"] or 0.0), 2),
         "commissionAmount": round(float(r["commission_amount"] or 0.0), 2),
         "status": r["status"] or "SETTLED",
-        "createdAt": r["created_at"] or "",
-        "createdAtMs": int(r["created_at_ms"] or 0)
+        "createdAt": to_ist_display(r["created_at"], r["created_at_ms"], mode="datetime"),
+        "createdAtMs": _parse_ts_ms(r["created_at"], r["created_at_ms"])
     } for r in c.fetchall()]
 
     return {
@@ -2076,6 +2133,7 @@ def build_user_support_situation(conn, uid):
     def dep_to_dict(d):
         if not d:
             return None
+        d_ms = _parse_ts_ms(d["created_at"], d["created_at_ms"] if "created_at_ms" in d.keys() else 0)
         return {
             "id": d["id"],
             "amount": round(float(d["amount"] or 0.0), 2),
@@ -2083,19 +2141,22 @@ def build_user_support_situation(conn, uid):
             "utr": d["utr"] or "",
             "status": str(d["status"] or "IN PROCESS").upper(),
             "reason": d["reason"] or "",
-            "time": d["time_str"] or d["created_at"] or "",
+            "time": to_ist_display(d["created_at"], d_ms, mode="display"),
+            "createdAtMs": d_ms,
         }
 
     def wd_to_dict(w):
         if not w:
             return None
+        w_ms = _parse_ts_ms(w["created_at"], w["created_at_ms"] if "created_at_ms" in w.keys() else 0)
         return {
             "id": w["id"],
             "amount": round(float(w["amount"] or 0.0), 2),
             "destination": w["destination"] or "",
             "status": str(w["status"] or "IN PROCESS").upper(),
             "reason": w["reason"] or "",
-            "time": w["time_str"] or w["created_at"] or "",
+            "time": to_ist_display(w["created_at"], w_ms, mode="display"),
+            "createdAtMs": w_ms,
         }
 
     return {
@@ -2117,7 +2178,7 @@ def build_user_support_situation(conn, uid):
             "txId": last_adj["tx_id"],
             "amount": round(float(last_adj["amount"] or 0.0), 2),
             "ref": last_adj["ref"] or "",
-            "time": last_adj["created_at"] or "",
+            "time": to_ist_display(last_adj["created_at"], last_adj["created_at_ms"] if "created_at_ms" in last_adj.keys() else 0, mode="display"),
         } if last_adj else None,
         "latestBet": {
             "id": latest_bet["bet_id"],
@@ -2373,8 +2434,8 @@ def fetch_support_thread_payload(conn, uid, mark_read_for=None, auto_welcome=Fal
             "lastSender": trow["last_sender"] or "AUTO_BOT",
             "unreadAdmin": int(trow["unread_admin"] or 0),
             "unreadUser": int(trow["unread_user"] or 0),
-            "updatedAt": trow["updated_at"] or "",
-            "updatedAtMs": int(trow["updated_at_ms"] or 0),
+            "updatedAt": to_ist_display(trow["updated_at"], trow["updated_at_ms"], mode="display"),
+            "updatedAtMs": _parse_ts_ms(trow["updated_at"], trow["updated_at_ms"]),
         }
         c.execute("""
             SELECT * FROM support_messages
@@ -2395,8 +2456,8 @@ def fetch_support_thread_payload(conn, uid, mark_read_for=None, auto_welcome=Fal
             "attachmentMime": (m["attachment_mime"] if "attachment_mime" in m.keys() and m["attachment_mime"] else ""),
             "attachmentSize": int(m["attachment_size"] or 0) if "attachment_size" in m.keys() else 0,
             "attachmentUrl": (m["attachment_url"] if "attachment_url" in m.keys() and m["attachment_url"] else ""),
-            "createdAt": m["created_at"] or "",
-            "createdAtMs": int(m["created_at_ms"] or 0),
+            "createdAt": to_ist_display(m["created_at"], m["created_at_ms"], mode="display"),
+            "createdAtMs": _parse_ts_ms(m["created_at"], m["created_at_ms"]),
         } for m in c.fetchall()]
 
     situation = build_user_support_situation(conn, uid)
@@ -2443,9 +2504,9 @@ def list_admin_support_tickets(conn):
             "attachmentMime": (m["attachment_mime"] if "attachment_mime" in m.keys() and m["attachment_mime"] else ""),
             "attachmentSize": int(m["attachment_size"] or 0) if "attachment_size" in m.keys() else 0,
             "attachmentUrl": (m["attachment_url"] if "attachment_url" in m.keys() and m["attachment_url"] else ""),
-            "createdAt": m["created_at"] or "",
-            "created_at_ms": int(m["created_at_ms"] or 0),
-            "createdAtMs": int(m["created_at_ms"] or 0),
+            "createdAt": to_ist_display(m["created_at"], m["created_at_ms"], mode="display"),
+            "created_at_ms": _parse_ts_ms(m["created_at"], m["created_at_ms"]),
+            "createdAtMs": _parse_ts_ms(m["created_at"], m["created_at_ms"]),
         } for m in c.fetchall()]
         att_count = sum(1 for mm in msgs if mm.get("attachmentUrl"))
         sit = build_user_support_situation(conn, uid)
@@ -2463,8 +2524,8 @@ def list_admin_support_tickets(conn):
             "unreadAdmin": unread_a,
             "unreadUser": int(r["unread_user"] or 0),
             "attachmentCount": att_count,
-            "updatedAt": r["updated_at"] or "",
-            "updatedAtMs": int(r["updated_at_ms"] or 0),
+            "updatedAt": to_ist_display(r["updated_at"], r["updated_at_ms"], mode="display"),
+            "updatedAtMs": _parse_ts_ms(r["updated_at"], r["updated_at_ms"]),
             "situation": sit,
             "messages": msgs,
         })
@@ -2594,13 +2655,20 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                         sse_subscribers.remove(q)
             return
 
-        # 1. Authoritative Server Clock
+        # 1. Authoritative Server Clock (Always Asia/Kolkata IST UTC+05:30)
         if path == "/api/clock":
             now_ms = int(time.time() * 1000)
+            ist_dt = get_ist_now(now_ms)
             self._send_json({
                 "server_time_ms": now_ms,
                 "iso": datetime.now(timezone.utc).isoformat(),
-                "timezone": "IST"
+                "ist_iso": ist_dt.isoformat(),
+                "ist_time": ist_dt.strftime("%I:%M:%S %p IST"),
+                "ist_time_24": ist_dt.strftime("%H:%M:%S IST"),
+                "ist_date": ist_dt.strftime("%d %b %Y"),
+                "ist_formatted": ist_dt.strftime("%d %b %Y, %I:%M:%S %p IST"),
+                "timezone": "IST",
+                "utc_offset": "+05:30"
             })
             return
 
@@ -2637,7 +2705,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
 
                     # Get latest completed result (always strictly before current period, sorted numerically)
                     c.execute("""
-                        SELECT period, result_number, result_color, result_col_class, is_big, draw_mode, declared_at
+                        SELECT period, result_number, result_color, result_col_class, is_big, draw_mode, declared_at, end_time_ms
                         FROM rounds
                         WHERE market = ? AND status = 'SETTLED' AND result_number IS NOT NULL AND CAST(period AS INTEGER) < CAST(? AS INTEGER)
                         ORDER BY CAST(period AS INTEGER) DESC LIMIT 1
@@ -2645,6 +2713,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     last_res = c.fetchone()
                     latest_result = None
                     if last_res:
+                        res_end_ms = int(last_res["end_time_ms"] or 0) if "end_time_ms" in last_res.keys() else 0
                         latest_result = {
                             "period": last_res["period"],
                             "number": last_res["result_number"],
@@ -2652,7 +2721,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                             "colClass": last_res["result_col_class"],
                             "isBig": bool(last_res["is_big"]),
                             "drawMode": last_res["draw_mode"],
-                            "time": last_res["declared_at"]
+                            "time": to_ist_display(last_res["declared_at"], res_end_ms, mode="datetime")
                         }
 
                     # Count active bets in current period
@@ -2699,7 +2768,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 conn = get_db()
                 c = conn.cursor()
                 c.execute("""
-                    SELECT period, result_number, result_color, result_col_class, is_big, draw_mode, declared_at
+                    SELECT period, result_number, result_color, result_col_class, is_big, draw_mode, declared_at, end_time_ms
                     FROM rounds
                     WHERE market = ? AND status = 'SETTLED' AND result_number IS NOT NULL AND CAST(period AS INTEGER) < CAST(? AS INTEGER)
                     ORDER BY CAST(period AS INTEGER) DESC LIMIT ?
@@ -2707,6 +2776,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 rows = c.fetchall()
                 records = []
                 for r in rows:
+                    r_end_ms = int(r["end_time_ms"] or 0) if "end_time_ms" in r.keys() else 0
                     records.append({
                         "period": r["period"],
                         "number": r["result_number"],
@@ -2714,7 +2784,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                         "colClass": r["result_col_class"],
                         "isBig": bool(r["is_big"]),
                         "drawMode": r["draw_mode"],
-                        "time": r["declared_at"]
+                        "time": to_ist_display(r["declared_at"], r_end_ms, mode="datetime")
                     })
                 conn.close()
             self._send_json({ "market": m_code, "records": records })
@@ -2835,8 +2905,8 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     "winAmount": win_amt,
                     "lossAmount": float(r["loss_amount"] or 0.0),
                     "netProfitLoss": net_pl,
-                    "time": r["created_at"],
-                    "createdAtMs": int(r["created_at_ms"] or 0)
+                    "time": to_ist_display(r["created_at"], r["created_at_ms"], mode="datetime"),
+                    "createdAtMs": _parse_ts_ms(r["created_at"], r["created_at_ms"])
                 }
 
             self._send_json({
@@ -2887,7 +2957,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 conn.close()
             csv_text = export_statement_csv(stmt)
             safe_uid = "".join(ch for ch in uid if ch.isalnum() or ch in ("-", "_")) or "user"
-            fname = f"ColourKing_{stmt['days']}Day_Statement_{safe_uid}_{datetime.now().strftime('%Y%m%d')}.csv"
+            fname = f"ColourKing_{stmt['days']}Day_Statement_{safe_uid}_{get_ist_now().strftime('%Y%m%d')}.csv"
             self._send_csv(csv_text, fname)
             return
 
@@ -3046,26 +3116,34 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                         "status": r["status"] or "ACTIVE",
                         "referralCode": (r["referral_code"] if "referral_code" in r.keys() and r["referral_code"] else r["id"][-6:].upper()),
                         "referredBy": (r["referred_by"] if "referred_by" in r.keys() else None),
-                        "createdAt": r["created_at"] or ""
+                        "createdAt": to_ist_display(r["created_at"], 0, mode="datetime")
                     }
                     users_list[r["id"]] = u_obj
                     users_array.append(u_obj)
 
                 c.execute("SELECT * FROM deposits ORDER BY created_at_ms DESC, created_at DESC LIMIT 500")
-                deposits_list = [{
-                    "id": r["id"], "userId": r["user_id"], "userName": r["user_name"],
-                    "amount": round(float(r["amount"] or 0.0), 2), "method": r["method"], "utr": r["utr"],
-                    "time": r["time_str"] or r["created_at"] or "", "status": r["status"], "reason": r["reason"]
-                } for r in c.fetchall()]
+                deposits_list = []
+                for r in c.fetchall():
+                    d_ms = _parse_ts_ms(r["created_at"], r["created_at_ms"] if "created_at_ms" in r.keys() else 0)
+                    deposits_list.append({
+                        "id": r["id"], "userId": r["user_id"], "userName": r["user_name"],
+                        "amount": round(float(r["amount"] or 0.0), 2), "method": r["method"], "utr": r["utr"],
+                        "time": to_ist_display(r["created_at"], d_ms, mode="display"), "createdAtMs": d_ms,
+                        "status": r["status"], "reason": r["reason"]
+                    })
 
                 c.execute("SELECT * FROM withdrawals ORDER BY created_at_ms DESC, created_at DESC LIMIT 500")
-                withdrawals_list = [{
-                    "id": r["id"], "userId": r["user_id"], "userName": r["user_name"],
-                    "amount": round(float(r["amount"] or 0.0), 2), "upiId": r["upi_id"], "bankName": r["bank_name"],
-                    "accNo": r["acc_no"], "ifsc": r["ifsc"], "bankingName": r["banking_name"],
-                    "destination": r["destination"], "time": r["time_str"] or r["created_at"] or "", "status": r["status"],
-                    "reason": r["reason"]
-                } for r in c.fetchall()]
+                withdrawals_list = []
+                for r in c.fetchall():
+                    w_ms = _parse_ts_ms(r["created_at"], r["created_at_ms"] if "created_at_ms" in r.keys() else 0)
+                    withdrawals_list.append({
+                        "id": r["id"], "userId": r["user_id"], "userName": r["user_name"],
+                        "amount": round(float(r["amount"] or 0.0), 2), "upiId": r["upi_id"], "bankName": r["bank_name"],
+                        "accNo": r["acc_no"], "ifsc": r["ifsc"], "bankingName": r["banking_name"],
+                        "destination": r["destination"],
+                        "time": to_ist_display(r["created_at"], w_ms, mode="display"), "createdAtMs": w_ms,
+                        "status": r["status"], "reason": r["reason"]
+                    })
 
                 c.execute("SELECT value FROM app_state WHERE key = 'bank_config'")
                 bcfg_row = c.fetchone()
@@ -3089,7 +3167,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     }
 
                 c.execute("""
-                    SELECT round_id, market, period, result_number, result_color, result_col_class, is_big, draw_mode, declared_at
+                    SELECT round_id, market, period, result_number, result_color, result_col_class, is_big, draw_mode, declared_at, end_time_ms
                     FROM rounds
                     WHERE status = 'SETTLED' AND result_number IS NOT NULL
                     ORDER BY CAST(period AS INTEGER) DESC, declared_at DESC
@@ -3104,6 +3182,8 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     col_raw = rr["result_color"] or ("violet" if num_i in [0, 5] else ("green" if num_i in [1,3,7,9] else "red"))
                     col_cls = rr["result_col_class"] or ("red-violet" if num_i == 0 else ("green-violet" if num_i == 5 else col_raw))
                     col_badge = "VIOLET+RED" if num_i == 0 else ("VIOLET+GREEN" if num_i == 5 else col_raw.upper())
+                    rr_end_ms = int(rr["end_time_ms"] or 0) if "end_time_ms" in rr.keys() else 0
+                    dec_time_ist = to_ist_display(rr["declared_at"], rr_end_ms, mode="datetime")
                     if m_k in declared_results and len(declared_results[m_k]) < 60:
                         declared_results[m_k][p_str] = {
                             "period": p_str,
@@ -3112,7 +3192,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                             "colClass": col_cls,
                             "isBig": bool(rr["is_big"]),
                             "mode": rr["draw_mode"] or "AUTO_RANDOM",
-                            "time": rr["declared_at"] or ""
+                            "time": dec_time_ist
                         }
                     if len(declared_results_list) < 50:
                         c.execute("SELECT COALESCE(SUM(win_amount), 0.0) FROM bets WHERE market = ? AND period = ? AND status = 'WON'", (m_k, p_str))
@@ -3125,7 +3205,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                             "isBig": bool(rr["is_big"]),
                             "mode": rr["draw_mode"] or "AUTO_RANDOM",
                             "payout": round(payout_sum, 2),
-                            "time": rr["declared_at"] or ""
+                            "time": dec_time_ist
                         })
 
                 c.execute("SELECT * FROM bets ORDER BY created_at_ms DESC LIMIT 1000")
@@ -3143,8 +3223,8 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     "multiplier": float(r["multiplier"] or 0.0),
                     "status": r["status"],
                     "payout": round(float(r["win_amount"] or 0.0), 2),
-                    "time": r["created_at"] or "",
-                    "createdAtMs": int(r["created_at_ms"] or 0)
+                    "time": to_ist_display(r["created_at"], r["created_at_ms"], mode="datetime"),
+                    "createdAtMs": _parse_ts_ms(r["created_at"], r["created_at_ms"])
                 } for r in c.fetchall()]
 
                 c.execute("SELECT * FROM admin_audit_logs ORDER BY id DESC LIMIT 100")
@@ -3154,7 +3234,8 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     "action": r["action"],
                     "entity": r["entity"],
                     "desc": r["desc"],
-                    "time": r["created_at"] or ""
+                    "time": to_ist_display(r["created_at"], 0, mode="display"),
+                    "createdAtMs": _parse_ts_ms(r["created_at"], 0)
                 } for r in c.fetchall()]
 
                 # Build 6-tier affiliate overview dynamically from SQLite users & referral_commissions
@@ -3375,11 +3456,15 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 conn = get_db()
                 c = conn.cursor()
                 c.execute("SELECT * FROM deposits ORDER BY created_at_ms DESC, created_at DESC LIMIT 200")
-                deps = [{
-                    "id": r["id"], "userId": r["user_id"], "userName": r["user_name"],
-                    "amount": r["amount"], "method": r["method"], "utr": r["utr"],
-                    "time": r["time_str"] or r["created_at"] or "", "status": r["status"], "reason": r["reason"]
-                } for r in c.fetchall()]
+                deps = []
+                for r in c.fetchall():
+                    d_ms = _parse_ts_ms(r["created_at"], r["created_at_ms"] if "created_at_ms" in r.keys() else 0)
+                    deps.append({
+                        "id": r["id"], "userId": r["user_id"], "userName": r["user_name"],
+                        "amount": r["amount"], "method": r["method"], "utr": r["utr"],
+                        "time": to_ist_display(r["created_at"], d_ms, mode="display"), "createdAtMs": d_ms,
+                        "status": r["status"], "reason": r["reason"]
+                    })
                 conn.close()
             self._send_json(deps)
             return
@@ -3389,13 +3474,17 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 conn = get_db()
                 c = conn.cursor()
                 c.execute("SELECT * FROM withdrawals ORDER BY created_at_ms DESC, created_at DESC LIMIT 200")
-                wds = [{
-                    "id": r["id"], "userId": r["user_id"], "userName": r["user_name"],
-                    "amount": r["amount"], "upiId": r["upi_id"], "bankName": r["bank_name"],
-                    "accNo": r["acc_no"], "ifsc": r["ifsc"], "bankingName": r["banking_name"],
-                    "destination": r["destination"], "time": r["time_str"] or r["created_at"] or "", "status": r["status"],
-                    "reason": r["reason"]
-                } for r in c.fetchall()]
+                wds = []
+                for r in c.fetchall():
+                    w_ms = _parse_ts_ms(r["created_at"], r["created_at_ms"] if "created_at_ms" in r.keys() else 0)
+                    wds.append({
+                        "id": r["id"], "userId": r["user_id"], "userName": r["user_name"],
+                        "amount": r["amount"], "upiId": r["upi_id"], "bankName": r["bank_name"],
+                        "accNo": r["acc_no"], "ifsc": r["ifsc"], "bankingName": r["banking_name"],
+                        "destination": r["destination"],
+                        "time": to_ist_display(r["created_at"], w_ms, mode="display"), "createdAtMs": w_ms,
+                        "status": r["status"], "reason": r["reason"]
+                    })
                 conn.close()
             self._send_json(wds)
             return
@@ -3425,7 +3514,9 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 c.execute("SELECT * FROM admin_audit_logs ORDER BY id DESC LIMIT 100")
                 logs = [{
                     "id": r["id"], "actor": r["actor"], "action": r["action"],
-                    "entity": r["entity"], "desc": r["desc"], "time": r["created_at"]
+                    "entity": r["entity"], "desc": r["desc"],
+                    "time": to_ist_display(r["created_at"], 0, mode="display"),
+                    "createdAtMs": _parse_ts_ms(r["created_at"], 0)
                 } for r in c.fetchall()]
                 conn.close()
             self._send_json(logs)
@@ -3616,7 +3707,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 platform_fee = round(amount * 0.03, 2)
                 net_amount = round(amount - platform_fee, 2)
                 potential_payout = round(net_amount * mult, 2)
-                now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                now_str = format_ist_datetime(now_ms)
 
                 c.execute("""
                     INSERT INTO bets (
@@ -3687,7 +3778,8 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 "potentialPayout": potential_payout,
                 "status": "PENDING",
                 "result": "Awaiting Draw",
-                "time": now_str
+                "time": now_str,
+                "createdAtMs": now_ms
             }
 
             self._send_json({
@@ -3735,7 +3827,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 new_bal = round(curr_bal + refund_amt, 2)
                 c.execute("UPDATE users SET balance = ? WHERE id = ?", (new_bal, uid))
 
-                now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                now_str = format_ist_datetime(now_ms)
                 c.execute("""
                     UPDATE bets
                     SET status = 'CANCELLED', result_text = 'Cancelled & Refunded', win_amount = 0.0, loss_amount = 0.0, settled_at = ?
@@ -3756,7 +3848,8 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json({
                 "success": True,
                 "message": f"Bet {bet_id} cancelled and ₹{refund_amt:.2f} refunded to your wallet.",
-                "newBalance": new_bal
+                "newBalance": new_bal,
+                "settledAt": now_str
             })
             return
 
@@ -4195,7 +4288,8 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             uid = payload.get("userId", "USR-1001")
             uname = payload.get("userName", "Rahul_Player")
 
-            dep_id = f"DEP-{datetime.now().strftime('%H%M%S')}-{random.randint(10, 99)}"
+            dep_time_str = format_ist_display(now_ms)
+            dep_id = f"DEP-{get_ist_now(now_ms).strftime('%H%M%S')}-{random.randint(10, 99)}"
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
@@ -4208,14 +4302,14 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
 
                 c.execute("""
                     INSERT INTO deposits (id, user_id, user_name, amount, method, utr, time_str, status, created_at_ms)
-                    VALUES (?, ?, ?, ?, ?, ?, 'Just now', 'IN PROCESS', ?)
-                """, (dep_id, uid, uname, amount, method, utr, now_ms))
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'IN PROCESS', ?)
+                """, (dep_id, uid, uname, amount, method, utr, dep_time_str, now_ms))
                 _, sse_ev = bump_state_version(conn, "deposit_requested", {"userId": uid, "depositId": dep_id, "amount": amount})
                 commit_and_persist(conn, critical=True)
                 conn.close()
             notify_sse_clients(sse_ev)
 
-            self._send_json({ "success": True, "deposit": { "id": dep_id, "amount": amount, "utr": utr, "status": "IN PROCESS" } })
+            self._send_json({ "success": True, "deposit": { "id": dep_id, "amount": amount, "method": method, "utr": utr, "status": "IN PROCESS", "time": dep_time_str, "createdAtMs": now_ms } })
             return
 
         if path == "/api/deposits/approve":
@@ -4317,12 +4411,13 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 new_bal = round(urow["balance"] - amount, 2)
                 c.execute("UPDATE users SET balance = ? WHERE id = ?", (new_bal, uid))
 
-                wd_id = f"WD-{datetime.now().strftime('%H%M%S')}-{random.randint(10, 99)}"
+                wd_time_str = format_ist_display(now_ms)
+                wd_id = f"WD-{get_ist_now(now_ms).strftime('%H%M%S')}-{random.randint(10, 99)}"
                 destination = f"{banking_name} • {bank_name} (A/C: {acc_no}, IFSC: {ifsc}) • UPI: {upi_id}"
                 c.execute("""
                     INSERT INTO withdrawals (id, user_id, user_name, amount, upi_id, bank_name, acc_no, ifsc, banking_name, destination, time_str, status, created_at_ms)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Just now', 'IN PROCESS', ?)
-                """, (wd_id, uid, uname, amount, upi_id, bank_name, acc_no, ifsc, banking_name, destination, now_ms))
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'IN PROCESS', ?)
+                """, (wd_id, uid, uname, amount, upi_id, bank_name, acc_no, ifsc, banking_name, destination, wd_time_str, now_ms))
 
                 tx_id = f"TX-WD-{int(now_ms)}-{random.randint(100, 999)}"
                 c.execute("""
@@ -4335,7 +4430,14 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 conn.close()
             notify_sse_clients(sse_ev)
 
-            self._send_json({ "success": True, "withdrawalId": wd_id, "newBalance": new_bal })
+            self._send_json({
+                "success": True,
+                "withdrawalId": wd_id,
+                "time": wd_time_str,
+                "createdAtMs": now_ms,
+                "newBalance": new_bal,
+                "withdrawal": { "id": wd_id, "amount": amount, "status": "IN PROCESS", "time": wd_time_str, "createdAtMs": now_ms }
+            })
             return
 
         if path == "/api/withdrawals/approve":
@@ -4451,7 +4553,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                             """, (
                                 did, str(d.get("userId") or "USR-1001"), str(d.get("userName") or "Player"),
                                 float(d.get("amount", 0.0)), str(d.get("method") or "UPI"),
-                                str(d.get("utr") or ""), str(d.get("time") or "Just now"),
+                                str(d.get("utr") or ""), format_ist_display(now_ms) if not d.get("time") or str(d.get("time")).lower() == "just now" else str(d.get("time")),
                                 str(d.get("status") or "IN PROCESS"), d.get("reason"), now_ms
                             ))
                 if isinstance(payload.get("withdrawals"), list):
@@ -4468,7 +4570,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                                 wid, str(w.get("userId") or "USR-1001"), str(w.get("userName") or "Player"),
                                 float(w.get("amount", 0.0)), w.get("upiId"), w.get("bankName"),
                                 w.get("accNo"), w.get("ifsc"), w.get("bankingName"),
-                                str(w.get("destination") or ""), str(w.get("time") or "Just now"),
+                                str(w.get("destination") or ""), format_ist_display(now_ms) if not w.get("time") or str(w.get("time")).lower() == "just now" else str(w.get("time")),
                                 str(w.get("status") or "IN PROCESS"), w.get("reason"), now_ms
                             ))
                 new_ver, sse_ev = bump_state_version(conn, "admin_sync")

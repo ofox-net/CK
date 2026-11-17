@@ -44,6 +44,7 @@ import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.example.data.model.MoneyUtils
 import com.example.domain.BackendSyncService
+import com.example.domain.GlobalRoundClock
 import com.example.domain.PendingSupportAttachment
 import com.example.domain.ServerSupportMessage
 import com.example.domain.ServerSupportThread
@@ -1320,11 +1321,11 @@ private fun SupportMessageBubble(
         isAdmin -> NeonGreen.copy(alpha = 0.5f)
         else -> ElectricCyan.copy(alpha = 0.35f)
     }
-    val timeFmt = remember(msg.createdAtMs) {
+    val timeFmt = remember(msg.createdAtMs, msg.createdAt) {
         if (msg.createdAtMs > 0L) {
-            SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(msg.createdAtMs))
+            GlobalRoundClock.formatIstTime12h(msg.createdAtMs)
         } else {
-            msg.createdAt.takeLast(8)
+            msg.createdAt
         }
     }
 

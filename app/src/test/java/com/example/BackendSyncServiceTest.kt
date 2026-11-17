@@ -700,4 +700,37 @@ class BackendSyncServiceTest {
             server.stop(0)
         }
     }
+
+    @Test
+    fun testGlobalRoundClockAndStatementExporterAlwaysUseIstTimezone() {
+        val originalTz = java.util.TimeZone.getDefault()
+        try {
+            // Force host JVM into US Pacific Time (-08:00) to prove outputs remain strictly Asia/Kolkata (+05:30 IST)
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("America/Los_Angeles"))
+            // 2026-11-16T18:30:00Z == 2026-11-17T00:00:00+05:30 (IST midnight on Nov 17)
+            val fixedUtcMs = 1794853800000L
+
+            assertEquals("Asia/Kolkata", com.example.domain.GlobalRoundClock.IST_TZ.id)
+            assertEquals("00:00:00 IST", com.example.domain.GlobalRoundClock.formatIstTime(fixedUtcMs))
+            assertEquals("12:00:00 AM IST", com.example.domain.GlobalRoundClock.formatIstTime12h(fixedUtcMs))
+            assertEquals("20261117", com.example.domain.GlobalRoundClock.formatIstFileDate(fixedUtcMs))
+            assertTrue(com.example.domain.GlobalRoundClock.formatIstFull(fixedUtcMs).startsWith("2026-11-17 00:00:00 IST"))
+
+            val csv = com.example.domain.StatementExporter.buildStatementCsv(
+                user = null,
+                wallet = null,
+                bets = emptyList(),
+                ledger = emptyList(),
+                commissions = emptyList(),
+                roundsMap = emptyMap(),
+                days = 90,
+                filter = "ALL",
+                nowMs = fixedUtcMs
+            )
+            assertTrue(csv.contains("Generated At (IST)"))
+            assertTrue(csv.contains("2026-11-17 00:00:00 IST"))
+        } finally {
+            java.util.TimeZone.setDefault(originalTz)
+        }
+    }
 }
