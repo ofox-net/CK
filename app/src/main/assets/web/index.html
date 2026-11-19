@@ -2352,7 +2352,6 @@
 
       <div style="display:flex; flex-direction:column; gap:6px;">
         <button class="btn-primary" onclick="submitUserDepositRequest()">Submit Deposit Request with UTR</button>
-        <button class="btn-secondary" style="border-color:var(--green); color:var(--green);" onclick="executeInstantDemoDeposit()">⚡ Instant Demo Credit (+₹1,000)</button>
         <button class="btn-secondary" onclick="closeModal('depositModal')">Cancel</button>
       </div>
     </div>
@@ -5831,51 +5830,6 @@
         showToast('✓ Deposit request recorded! Status: IN PROCESS.');
         closeModal('depositModal');
       });
-    }
-
-    async function executeInstantDemoDeposit() {
-      if (!currentUserId || currentUserId === 'Guest') {
-        showToast('⚠️ Please login or register first!');
-        openAuthModal(0);
-        return;
-      }
-      if (hasBackendConnection()) {
-        try {
-          const res = await fetch(apiUrl('/api/user/adjust'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ userId: currentUserId, type: 'CREDIT', amount: 1000.0, reason: 'Demo Test Credit' })
-          });
-          const data = await res.json();
-          if (res.ok && data.success && typeof data.balance === 'number') {
-            userBalance = data.balance;
-            updateBalanceUI();
-            syncUserTransactions();
-            closeModal('depositModal');
-            showToast('⚡ Instant Demo Credit +₹1,000 saved to wallet!');
-            playSound('win');
-            return;
-          }
-        } catch (e) {}
-      }
-      userBalance += 1000;
-      const demoNowMs = getSyncedNowMs();
-      walletLedger.unshift({
-        id: 'TX-' + Math.floor(1000 + Math.random() * 9000),
-        type: 'DEPOSIT',
-        title: 'Demo Test Credit',
-        ref: 'Instant Sandbox',
-        amount: 1000.00,
-        timestampMs: demoNowMs,
-        time: formatISTDateTime(demoNowMs),
-        status: 'SUCCESS'
-      });
-      updateBalanceUI();
-      renderWalletLedger();
-      closeModal('depositModal');
-      showToast('⚡ Instant Demo Credit +₹1,000 applied!');
-      playSound('win');
     }
 
     function openWithdrawModal() {

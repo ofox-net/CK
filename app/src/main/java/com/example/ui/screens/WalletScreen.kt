@@ -1005,17 +1005,6 @@ fun DepositDialog(
                         fontWeight = FontWeight.Bold
                     )
                 }
-
-                Spacer(modifier = Modifier.height(6.dp))
-                OutlinedButton(
-                    onClick = {
-                        onDeposit(100000L, "Demo Fast Deposit", "DEMO_INSTANT_${System.currentTimeMillis()}")
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    border = borderStroke(1.dp, GoldAccent.copy(alpha = 0.5f))
-                ) {
-                    Text("⚡ Instant Demo Credit (+₹1,000)", color = GoldAccent, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                }
             }
         }
     }
