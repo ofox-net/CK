@@ -1517,10 +1517,22 @@ def ist_date_str(ts_str=None, ms=0):
     epoch_ms = _parse_ts_ms(ts_str, ms)
     return get_ist_now(epoch_ms).strftime("%Y-%m-%d")
 
-def build_user_statement(conn, uid, days=90, category="ALL", market_filter="ALL"):
+def _parse_days_arg_server(raw_days, default_all=True):
+    if raw_days is None:
+        return None if default_all else RETENTION_DAYS
+    s = str(raw_days).strip().upper()
+    if s in ("", "ALL", "PERMANENT", "FOREVER", "0"):
+        return None
+    try:
+        v = int(s)
+        return v if v > 0 else None
+    except Exception:
+        return None if default_all else RETENTION_DAYS
+
+def build_user_statement(conn, uid, days="ALL", category="ALL", market_filter="ALL"):
     now_ms = int(time.time() * 1000)
-    days_clamped = max(1, min(90, int(days)))
-    cutoff_ms = now_ms - (days_clamped * 86400 * 1000)
+    parsed_days = _parse_days_arg_server(days, default_all=True)
+    cutoff_ms = (now_ms - (parsed_days * 86400 * 1000)) if parsed_days else 0
     cat_upper = (category or "ALL").upper().strip()
     mkt_upper = (market_filter or "ALL").upper().strip()
 
@@ -1531,19 +1543,33 @@ def build_user_statement(conn, uid, days=90, category="ALL", market_filter="ALL"
     wallet_balance = float(u["balance"]) if u else 0.0
     referral_code = (u["referral_code"] if u and "referral_code" in u.keys() and u["referral_code"] else (uid[-6:] if len(uid) >= 6 else uid).upper())
 
-    # 1. All bet records within window (up to 90 days stored & shown)
+    # 1. All bet records permanently stored (optional window filter only if days explicitly numeric)
     if mkt_upper != "ALL" and mkt_upper in MARKET_KEYS:
-        c.execute("""
-            SELECT * FROM bets
-            WHERE user_id = ? AND created_at_ms >= ? AND market = ?
-            ORDER BY created_at_ms DESC
-        """, (uid, cutoff_ms, mkt_upper))
+        if cutoff_ms > 0:
+            c.execute("""
+                SELECT * FROM bets
+                WHERE user_id = ? AND (created_at_ms >= ? OR created_at_ms = 0) AND market = ?
+                ORDER BY created_at_ms DESC
+            """, (uid, cutoff_ms, mkt_upper))
+        else:
+            c.execute("""
+                SELECT * FROM bets
+                WHERE user_id = ? AND market = ?
+                ORDER BY created_at_ms DESC
+            """, (uid, mkt_upper))
     else:
-        c.execute("""
-            SELECT * FROM bets
-            WHERE user_id = ? AND created_at_ms >= ?
-            ORDER BY created_at_ms DESC
-        """, (uid, cutoff_ms))
+        if cutoff_ms > 0:
+            c.execute("""
+                SELECT * FROM bets
+                WHERE user_id = ? AND (created_at_ms >= ? OR created_at_ms = 0)
+                ORDER BY created_at_ms DESC
+            """, (uid, cutoff_ms))
+        else:
+            c.execute("""
+                SELECT * FROM bets
+                WHERE user_id = ?
+                ORDER BY created_at_ms DESC
+            """, (uid,))
     bet_rows = c.fetchall()
 
     bets_list = []
@@ -1782,8 +1808,8 @@ def build_user_statement(conn, uid, days=90, category="ALL", market_filter="ALL"
 
     summary = {
         "walletBalance": round(wallet_balance, 2),
-        "days": days_clamped,
-        "retentionDays": RETENTION_DAYS,
+        "days": parsed_days if parsed_days else "ALL",
+        "retentionDays": "PERMANENT",
         "totalBetsCount": len(bets_list),
         "wonBetsCount": won_count,
         "lostBetsCount": lost_count,
@@ -1805,8 +1831,8 @@ def build_user_statement(conn, uid, days=90, category="ALL", market_filter="ALL"
         "userId": uid,
         "userName": user_name,
         "referralCode": referral_code,
-        "days": days_clamped,
-        "retentionDays": RETENTION_DAYS,
+        "days": parsed_days if parsed_days else "ALL",
+        "retentionDays": "PERMANENT",
         "category": cat_upper,
         "market": mkt_upper,
         "generatedAt": format_ist_datetime(now_ms),
@@ -1821,8 +1847,9 @@ def export_statement_csv(stmt):
     w = csv.writer(buf)
     s = stmt["summary"]
 
-    w.writerow(["COLOUR KING - 90-DAY ACCOUNT & BETTING STATEMENT"])
-    w.writerow(["User ID", stmt["userId"], "User Name", stmt["userName"], "Statement Period", f"Last {stmt['days']} Days (Max Retention: {stmt['retentionDays']} Days)", "Generated At", stmt["generatedAt"]])
+    period_lbl = "All Permanent Records" if str(stmt.get("days")) == "ALL" else f"Last {stmt['days']} Days (Permanent Vault)"
+    w.writerow(["COLOUR KING - PERMANENT ACCOUNT & BETTING STATEMENT"])
+    w.writerow(["User ID", stmt["userId"], "User Name", stmt["userName"], "Statement Period", period_lbl, "Generated At", stmt["generatedAt"]])
     w.writerow([])
     w.writerow(["FINANCIAL SUMMARY (INR)"])
     w.writerow(["Current Wallet Balance", f"{s['walletBalance']:.2f}"])
@@ -2904,25 +2931,36 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     """, (uid,))
                 active_rows = c.fetchall()
 
-                # All user bets history within 90-day retention window (or requested days <= 90)
-                try:
-                    req_days = max(1, min(RETENTION_DAYS, int(qs.get("days", [str(RETENTION_DAYS)])[0])))
-                except Exception:
-                    req_days = RETENTION_DAYS
-                cutoff_ms = now_ms - (req_days * 86400 * 1000)
+                # All permanent user bets history (never deleted; optional days filter if numeric)
+                parsed_days = _parse_days_arg_server(qs.get("days", ["ALL"])[0], default_all=True)
+                cutoff_ms = (now_ms - (parsed_days * 86400 * 1000)) if parsed_days else 0
 
                 if m_code:
-                    c.execute("""
-                        SELECT * FROM bets
-                        WHERE user_id = ? AND market = ? AND (created_at_ms >= ? OR created_at_ms = 0)
-                        ORDER BY created_at_ms DESC
-                    """, (uid, m_code, cutoff_ms))
+                    if cutoff_ms > 0:
+                        c.execute("""
+                            SELECT * FROM bets
+                            WHERE user_id = ? AND market = ? AND (created_at_ms >= ? OR created_at_ms = 0)
+                            ORDER BY created_at_ms DESC
+                        """, (uid, m_code, cutoff_ms))
+                    else:
+                        c.execute("""
+                            SELECT * FROM bets
+                            WHERE user_id = ? AND market = ?
+                            ORDER BY created_at_ms DESC
+                        """, (uid, m_code))
                 else:
-                    c.execute("""
-                        SELECT * FROM bets
-                        WHERE user_id = ? AND (created_at_ms >= ? OR created_at_ms = 0)
-                        ORDER BY created_at_ms DESC
-                    """, (uid, cutoff_ms))
+                    if cutoff_ms > 0:
+                        c.execute("""
+                            SELECT * FROM bets
+                            WHERE user_id = ? AND (created_at_ms >= ? OR created_at_ms = 0)
+                            ORDER BY created_at_ms DESC
+                        """, (uid, cutoff_ms))
+                    else:
+                        c.execute("""
+                            SELECT * FROM bets
+                            WHERE user_id = ?
+                            ORDER BY created_at_ms DESC
+                        """, (uid,))
                 history_rows = c.fetchall()
 
                 conn.close()
@@ -2960,23 +2998,20 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
 
             self._send_json({
                 "userId": uid,
-                "retentionDays": RETENTION_DAYS,
-                "days": req_days,
+                "retentionDays": "PERMANENT",
+                "days": parsed_days if parsed_days else "ALL",
                 "activeBets": [row_to_dict(r) for r in active_rows],
                 "betHistory": [row_to_dict(r) for r in history_rows]
             })
             return
 
-        # 4B. Full 90-Day Account Statement (Wallet, Bet P&L, Refer & Earn, Deposit, Withdrawal)
+        # 4B. Full Permanent Account Statement (Wallet, Bet P&L, Refer & Earn, Deposit, Withdrawal)
         if path == "/api/statement":
             uid = (qs.get("userId", [None])[0] or self._get_cookie_uid() or "").strip()
             if not uid or uid == "Guest":
                 self._send_json({ "success": False, "error": "Missing userId" }, status=400)
                 return
-            try:
-                req_days = int(qs.get("days", [str(RETENTION_DAYS)])[0])
-            except Exception:
-                req_days = RETENTION_DAYS
+            req_days = qs.get("days", ["ALL"])[0]
             cat = qs.get("category", ["ALL"])[0]
             mkt = qs.get("market", ["ALL"])[0]
 
@@ -2993,10 +3028,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             if not uid or uid == "Guest":
                 self._send_json({ "success": False, "error": "Missing userId" }, status=400)
                 return
-            try:
-                req_days = int(qs.get("days", [str(RETENTION_DAYS)])[0])
-            except Exception:
-                req_days = RETENTION_DAYS
+            req_days = qs.get("days", ["ALL"])[0]
             cat = qs.get("category", ["ALL"])[0]
             mkt = qs.get("market", ["ALL"])[0]
 
@@ -3006,7 +3038,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 conn.close()
             csv_text = export_statement_csv(stmt)
             safe_uid = "".join(ch for ch in uid if ch.isalnum() or ch in ("-", "_")) or "user"
-            fname = f"ColourKing_{stmt['days']}Day_Statement_{safe_uid}_{get_ist_now().strftime('%Y%m%d')}.csv"
+            fname = f"ColourKing_{stmt['days']}_Statement_{safe_uid}_{get_ist_now().strftime('%Y%m%d')}.csv"
             self._send_csv(csv_text, fname)
             return
 
@@ -3882,6 +3914,103 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 "bet": created_bet,
                 "newBalance": new_bal
             })
+            return
+
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        # 1B. IDEMPOTENT BET SLIPS RECOVERY (WITHOUT TOUCHING BALANCE)
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        if path == "/api/bets/recover":
+            uid = str(payload.get("userId") or self._get_cookie_uid() or "").strip()
+            slips = payload.get("slips")
+            if not uid or uid == "Guest":
+                self._send_json({ "success": False, "error": "Missing userId" }, status=400)
+                return
+            if not isinstance(slips, list):
+                self._send_json({ "success": True, "recovered": 0 })
+                return
+
+            recovered = 0
+            curr_ms = int(time.time() * 1000)
+            with db_lock:
+                conn = get_db()
+                c = conn.cursor()
+                c.execute("SELECT id, name, bets_count FROM users WHERE id = ?", (uid,))
+                u = c.fetchone()
+                if not u:
+                    conn.close()
+                    self._send_json({ "success": False, "error": "User not found" }, status=404)
+                    return
+
+                cur_p_map = {mk: calculate_authoritative_round(mk, curr_ms)["period"] for mk in MARKET_KEYS}
+                rounds_to_settle = set()
+
+                for s in slips[:1000]:
+                    if not isinstance(s, dict):
+                        continue
+                    bid = str(s.get("id") or "").strip()
+                    if not bid:
+                        continue
+                    c.execute("SELECT 1 FROM bets WHERE bet_id = ?", (bid,))
+                    if c.fetchone():
+                        continue
+                    m_code = str(s.get("marketId") or s.get("market") or "MIAMI").upper().strip()
+                    if m_code not in MARKET_KEYS:
+                        continue
+                    period = str(s.get("period") or "").strip()
+                    if not period:
+                        continue
+                    amt = round(float(s.get("amount") or 0.0), 2)
+                    if amt <= 0:
+                        continue
+                    fee = round(float(s.get("platformFee") if s.get("platformFee") is not None else round(amt * 0.03, 2)), 2)
+                    net_amt = round(float(s.get("netAmount") if s.get("netAmount") else round(amt - fee, 2)), 2)
+                    mult = float(s.get("mult") or s.get("multiplier") or 2.0)
+                    pot = round(float(s.get("potentialPayout") or round(net_amt * mult, 2)), 2)
+                    st = str(s.get("status") or "PENDING").upper().strip()
+                    if st not in ("PENDING", "LOCKED", "WON", "LOST", "CANCELLED", "REFUNDED"):
+                        st = "PENDING"
+                    ts_ms = int(s.get("createdAtMs") or 0) or _parse_ts_ms(s.get("time"), curr_ms)
+                    rid = str(s.get("roundId") or f"RND_{m_code}_{period}")
+                    win_amt = round(float(s.get("winAmount") or 0.0), 2)
+                    loss_amt = round(float(s.get("lossAmount") or 0.0), 2)
+
+                    c.execute("""
+                        INSERT INTO bets (
+                            bet_id, user_id, user_name, market, round_id, period,
+                            amount, platform_fee, net_amount, prediction_type, prediction_target,
+                            multiplier, potential_payout, status, result_text, win_amount, loss_amount,
+                            created_at, created_at_ms
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        bid, uid, u["name"], m_code, rid, period,
+                        amt, fee, net_amt,
+                        str(s.get("type") or "COLOR").upper(),
+                        str(s.get("target") or "GREEN").upper(),
+                        mult, pot, st,
+                        str(s.get("result") or "Awaiting Draw"),
+                        win_amt, loss_amt,
+                        format_ist_datetime(ts_ms), ts_ms
+                    ))
+                    recovered += 1
+                    if st in ("PENDING", "LOCKED") and m_code in cur_p_map and period.isdigit() and int(period) < int(cur_p_map[m_code]):
+                        rounds_to_settle.add((m_code, rid, period))
+
+                if recovered > 0:
+                    c.execute("SELECT COUNT(*) FROM bets WHERE user_id = ?", (uid,))
+                    cnt_row = c.fetchone()
+                    total_cnt = int(cnt_row[0]) if cnt_row else recovered
+                    c.execute("UPDATE users SET bets_count = MAX(COALESCE(bets_count, 0), ?) WHERE id = ?", (total_cnt, uid))
+                    for m_code, rid, period in rounds_to_settle:
+                        c.execute("SELECT result_number, draw_mode FROM rounds WHERE round_id = ? AND status = 'SETTLED'", (rid,))
+                        sr = c.fetchone()
+                        if sr and sr["result_number"] is not None:
+                            win_n, d_m = int(sr["result_number"]), (sr["draw_mode"] or "AUTO_RANDOM")
+                        else:
+                            win_n, d_m = generate_provably_fair_outcome(m_code, period)["number"], "AUTO_RANDOM"
+                        settle_round_in_db(conn, m_code, rid, period, win_n, d_m, "SYSTEM_RECOVERY")
+                    commit_and_persist(conn, critical=True)
+                conn.close()
+            self._send_json({ "success": True, "recovered": recovered })
             return
 
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

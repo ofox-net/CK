@@ -430,6 +430,123 @@ def normalize_bet_target_num(btype: str, target: str):
     return int(m.group(1)) if m else None
 
 
+def _import_sqlite_file_into_sqlalchemy(sqlite_path: str):
+    """Non-destructively merges all historical users, bets, deposits, withdrawals, commissions, transactions,
+    rounds, support tickets, and app_state from a legacy SQLite snapshot into PostgreSQL ORM tables."""
+    import sqlite3
+    import zlib
+    import tempfile
+    if not sqlite_path or not os.path.exists(sqlite_path):
+        return 0
+    sconn = sqlite3.connect(sqlite_path)
+    sconn.row_factory = sqlite3.Row
+    migrated = 0
+    try:
+        cur = sconn.cursor()
+
+        def _tbl_exists(name):
+            return cur.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
+
+        def _merge_rows(tbl, model_cls, pk_col):
+            nonlocal migrated
+            if not _tbl_exists(tbl):
+                return
+            valid_cols = {c.name for c in model_cls.__table__.columns}
+            for row in cur.execute(f"SELECT * FROM {tbl}").fetchall():
+                d = {k: row[k] for k in row.keys() if k in valid_cols}
+                pk_val = d.get(pk_col)
+                if pk_val is None:
+                    continue
+                if not db.session.get(model_cls, pk_val):
+                    if "created_at" in valid_cols and not d.get("created_at"):
+                        d["created_at"] = format_ist_datetime(d.get("created_at_ms") or now_ms())
+                    if "created_at_ms" in valid_cols and (d.get("created_at_ms") is None or int(d.get("created_at_ms") or 0) == 0):
+                        d["created_at_ms"] = _parse_ts_ms(d.get("created_at"), 0)
+                    db.session.add(model_cls(**d))
+                    migrated += 1
+
+        _merge_rows("users", User, "id")
+        _merge_rows("markets", Market, "code")
+        _merge_rows("rounds", Round, "round_id")
+        _merge_rows("bets", Bet, "bet_id")
+        _merge_rows("transactions", Transaction, "tx_id")
+        _merge_rows("deposits", Deposit, "id")
+        _merge_rows("withdrawals", Withdrawal, "id")
+        _merge_rows("referral_commissions", ReferralCommission, "id")
+        _merge_rows("support_tickets", SupportTicket, "ticket_id")
+        _merge_rows("support_messages", SupportMessage, "id")
+        _merge_rows("app_state", AppState, "key")
+        if _tbl_exists("admin_audit_logs") and AdminAuditLog.query.count() == 0:
+            valid_cols = {c.name for c in AdminAuditLog.__table__.columns} - {"id"}
+            for row in cur.execute("SELECT * FROM admin_audit_logs ORDER BY id ASC").fetchall():
+                d = {k: row[k] for k in row.keys() if k in valid_cols}
+                if not d.get("created_at"):
+                    d["created_at"] = format_ist_datetime()
+                if not d.get("created_at_ms"):
+                    d["created_at_ms"] = _parse_ts_ms(d.get("created_at"), 0)
+                db.session.add(AdminAuditLog(**d))
+                migrated += 1
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        print(f"[Migration] SQLite import warning: {exc}")
+    finally:
+        sconn.close()
+    return migrated
+
+
+def _migrate_legacy_postgres_backup():
+    """If PostgreSQL has legacy ck_sqlite_backup / ck_users tables from prior server.py versions,
+    safely import every historical user, bet, commission, deposit, and withdrawal permanently."""
+    import zlib
+    import tempfile
+    try:
+        has_ck_backup = db.session.execute(
+            text("SELECT 1 FROM information_schema.tables WHERE table_name = 'ck_sqlite_backup'")
+        ).fetchone()
+        if has_ck_backup:
+            row = db.session.execute(text("SELECT db_b64 FROM ck_sqlite_backup WHERE id = 1")).fetchone()
+            if row and row[0]:
+                raw_bytes = zlib.decompress(base64.b64decode(row[0]))
+                if raw_bytes.startswith(b"SQLite format 3"):
+                    fd, tmp_path = tempfile.mkstemp(prefix="ck_pg_mig_", suffix=".db")
+                    os.close(fd)
+                    try:
+                        with open(tmp_path, "wb") as f:
+                            f.write(raw_bytes)
+                        migrated_cnt = _import_sqlite_file_into_sqlalchemy(tmp_path)
+                        print(f"[Migration] Migrated {migrated_cnt} historical records from ck_sqlite_backup.")
+                    finally:
+                        if os.path.exists(tmp_path):
+                            os.remove(tmp_path)
+
+        has_ck_users = db.session.execute(
+            text("SELECT 1 FROM information_schema.tables WHERE table_name = 'ck_users'")
+        ).fetchone()
+        if has_ck_users:
+            rows = db.session.execute(text(
+                "SELECT id, name, phone, email, balance, total_deposit, total_withdraw, bets_count, status, referral_code, referred_by, password_hash, password_plain, created_at FROM ck_users"
+            )).fetchall()
+            added_u = 0
+            for r in rows:
+                if not db.session.get(User, str(r[0])):
+                    db.session.add(User(
+                        id=str(r[0]), name=r[1] or str(r[0]), phone=r[2] or "", email=r[3] or "",
+                        balance=float(r[4] or 0.0), total_deposit=float(r[5] or 0.0), total_withdraw=float(r[6] or 0.0),
+                        bets_count=int(r[7] or 0), status=r[8] or "ACTIVE",
+                        referral_code=r[9], referred_by=r[10],
+                        password_hash=r[11] or "", password_plain=r[12] or "",
+                        created_at=r[13] or format_ist_datetime(), created_at_ms=_parse_ts_ms(r[13], 0),
+                    ))
+                    added_u += 1
+            if added_u:
+                db.session.commit()
+                print(f"[Migration] Restored {added_u} users from ck_users.")
+    except Exception as exc:
+        db.session.rollback()
+        print(f"[Migration] Legacy PG check note: {exc}")
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # SAFE NON-DESTRUCTIVE INITIALIZATION (NEVER db.drop_all())
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -450,6 +567,12 @@ def init_database():
                     db.session.commit()
                 except Exception:
                     db.session.rollback()
+
+        # Auto-migrate any existing data from legacy PostgreSQL backup or local SQLite file
+        if IS_POSTGRES:
+            _migrate_legacy_postgres_backup()
+            if Bet.query.count() == 0 and os.path.exists(SQLITE_DB_FILE):
+                _import_sqlite_file_into_sqlalchemy(SQLITE_DB_FILE)
 
         # Seed default users ONLY if users table is completely empty
         if User.query.count() == 0:
@@ -1012,10 +1135,21 @@ def bet_to_dict(b: Bet) -> dict:
     }
 
 
-def build_user_statement(uid: str, days=RETENTION_DAYS, category="ALL", market_filter="ALL") -> dict:
+def _parse_days_arg(raw_days, default_all=True):
+    s = str(raw_days if raw_days is not None else "").strip().upper()
+    if s in ("", "ALL", "0", "FOREVER", "PERMANENT"):
+        return None if default_all else RETENTION_DAYS
+    try:
+        val = int(s)
+        return None if val <= 0 else min(36500, val)
+    except Exception:
+        return None if default_all else RETENTION_DAYS
+
+
+def build_user_statement(uid: str, days="ALL", category="ALL", market_filter="ALL") -> dict:
     curr_ms = now_ms()
-    days_clamped = max(1, min(RETENTION_DAYS, int(days or RETENTION_DAYS)))
-    cutoff_ms = curr_ms - (days_clamped * 86400 * 1000)
+    parsed_days = _parse_days_arg(days, default_all=True)
+    cutoff_ms = (curr_ms - (parsed_days * 86400 * 1000)) if parsed_days else None
     cat_upper = str(category or "ALL").upper().strip()
     mkt_upper = str(market_filter or "ALL").upper().strip()
 
@@ -1024,10 +1158,9 @@ def build_user_statement(uid: str, days=RETENTION_DAYS, category="ALL", market_f
     user_name = u.name if u else uid
     referral_code = (u.referral_code or uid[-6:].upper()) if u else uid[-6:].upper()
 
-    bets_q = Bet.query.filter(
-        Bet.user_id == uid,
-        (Bet.created_at_ms >= cutoff_ms) | (Bet.created_at_ms == 0),
-    )
+    bets_q = Bet.query.filter(Bet.user_id == uid)
+    if cutoff_ms is not None:
+        bets_q = bets_q.filter((Bet.created_at_ms >= cutoff_ms) | (Bet.created_at_ms == 0))
     if mkt_upper in MARKET_KEYS:
         bets_q = bets_q.filter(Bet.market == mkt_upper)
     bet_rows = bets_q.order_by(Bet.created_at_ms.desc()).all()
@@ -1055,25 +1188,20 @@ def build_user_statement(uid: str, days=RETENTION_DAYS, category="ALL", market_f
     settled_wagered = sum(b["amount"] for b in bets_list if str(b["status"]).upper() in ("WON", "LOST"))
     net_bet_pl = round(total_won - settled_wagered, 2)
 
-    tx_rows = Transaction.query.filter(
-        Transaction.user_id == uid,
-        (Transaction.created_at_ms >= cutoff_ms) | (Transaction.created_at_ms == 0),
-    ).order_by(Transaction.created_at_ms.desc()).all()
+    tx_q = Transaction.query.filter(Transaction.user_id == uid)
+    dep_q = Deposit.query.filter(Deposit.user_id == uid)
+    wd_q = Withdrawal.query.filter(Withdrawal.user_id == uid)
+    ref_q = ReferralCommission.query.filter(ReferralCommission.beneficiary_user_id == uid)
+    if cutoff_ms is not None:
+        tx_q = tx_q.filter((Transaction.created_at_ms >= cutoff_ms) | (Transaction.created_at_ms == 0))
+        dep_q = dep_q.filter((Deposit.created_at_ms >= cutoff_ms) | (Deposit.created_at_ms == 0))
+        wd_q = wd_q.filter((Withdrawal.created_at_ms >= cutoff_ms) | (Withdrawal.created_at_ms == 0))
+        ref_q = ref_q.filter((ReferralCommission.created_at_ms >= cutoff_ms) | (ReferralCommission.created_at_ms == 0))
 
-    dep_rows = Deposit.query.filter(
-        Deposit.user_id == uid,
-        (Deposit.created_at_ms >= cutoff_ms) | (Deposit.created_at_ms == 0),
-    ).order_by(Deposit.created_at_ms.desc()).all()
-
-    wd_rows = Withdrawal.query.filter(
-        Withdrawal.user_id == uid,
-        (Withdrawal.created_at_ms >= cutoff_ms) | (Withdrawal.created_at_ms == 0),
-    ).order_by(Withdrawal.created_at_ms.desc()).all()
-
-    ref_rows = ReferralCommission.query.filter(
-        ReferralCommission.beneficiary_user_id == uid,
-        (ReferralCommission.created_at_ms >= cutoff_ms) | (ReferralCommission.created_at_ms == 0),
-    ).order_by(ReferralCommission.created_at_ms.desc()).all()
+    tx_rows = tx_q.order_by(Transaction.created_at_ms.desc()).all()
+    dep_rows = dep_q.order_by(Deposit.created_at_ms.desc()).all()
+    wd_rows = wd_q.order_by(Withdrawal.created_at_ms.desc()).all()
+    ref_rows = ref_q.order_by(ReferralCommission.created_at_ms.desc()).all()
 
     entries = []
     seen_dep_refs, seen_wd_refs = set(), set()
@@ -1184,15 +1312,15 @@ def build_user_statement(uid: str, days=RETENTION_DAYS, category="ALL", market_f
         "userId": uid,
         "userName": user_name,
         "referralCode": referral_code,
-        "days": days_clamped,
-        "retentionDays": RETENTION_DAYS,
+        "days": parsed_days if parsed_days else "ALL",
+        "retentionDays": "PERMANENT",
         "category": cat_upper,
         "market": mkt_upper,
         "generatedAt": format_ist_datetime(curr_ms),
         "summary": {
             "walletBalance": round(wallet_balance, 2),
-            "days": days_clamped,
-            "retentionDays": RETENTION_DAYS,
+            "days": parsed_days if parsed_days else "ALL",
+            "retentionDays": "PERMANENT",
             "totalBetsCount": len(bets_list),
             "wonBetsCount": won_count,
             "lostBetsCount": lost_count,
@@ -1785,15 +1913,12 @@ def api_markets_history():
 def api_bets():
     uid = (request.args.get("userId") or get_cookie_uid() or "").strip()
     if not uid or uid == "Guest":
-        return jsonify({"userId": None, "retentionDays": RETENTION_DAYS, "days": RETENTION_DAYS, "activeBets": [], "betHistory": []})
+        return jsonify({"userId": None, "retentionDays": "PERMANENT", "days": "ALL", "activeBets": [], "betHistory": []})
 
     m_code = request.args.get("market")
     m_code = m_code.upper() if m_code else None
     curr_ms = now_ms()
-    try:
-        req_days = max(1, min(3650, int(request.args.get("days", RETENTION_DAYS))))
-    except Exception:
-        req_days = RETENTION_DAYS
+    parsed_days = _parse_days_arg(request.args.get("days", "ALL"), default_all=True)
 
     with db_lock:
         cur_p_map = {mk: calculate_authoritative_round(mk, curr_ms)["period"] for mk in MARKET_KEYS}
@@ -1804,7 +1929,7 @@ def api_bets():
             if key in checked_rounds:
                 continue
             checked_rounds.add(key)
-            if pb.market in cur_p_map and int(pb.period) < int(cur_p_map[pb.market]):
+            if pb.market in cur_p_map and str(pb.period).isdigit() and int(pb.period) < int(cur_p_map[pb.market]):
                 sr = Round.query.filter_by(round_id=pb.round_id, status="SETTLED").first()
                 if sr and sr.result_number is not None:
                     win_n, d_m = int(sr.result_number), sr.draw_mode or "AUTO_RANDOM"
@@ -1821,17 +1946,95 @@ def api_bets():
         if m_code:
             aq = aq.filter(Bet.market == m_code)
             hq = hq.filter(Bet.market == m_code)
+        if parsed_days:
+            cutoff_ms = curr_ms - (parsed_days * 86400 * 1000)
+            hq = hq.filter((Bet.created_at_ms >= cutoff_ms) | (Bet.created_at_ms == 0))
 
         active_rows = aq.order_by(Bet.created_at_ms.desc()).all()
         history_rows = hq.order_by(Bet.created_at_ms.desc()).all()
 
     return jsonify({
         "userId": uid,
-        "retentionDays": RETENTION_DAYS,
-        "days": req_days,
+        "retentionDays": "PERMANENT",
+        "days": parsed_days if parsed_days else "ALL",
         "activeBets": [bet_to_dict(b) for b in active_rows],
         "betHistory": [bet_to_dict(b) for b in history_rows],
     })
+
+
+@app.route("/api/bets/recover", methods=["POST"])
+def api_bets_recover():
+    """Idempotently restores any historical user bet slips into PostgreSQL without modifying wallet balance."""
+    payload = request.get_json(silent=True) or {}
+    uid = str(payload.get("userId") or get_cookie_uid() or "").strip()
+    slips = payload.get("slips")
+    if not uid or uid == "Guest":
+        return jsonify({"success": False, "error": "Missing userId"}), 400
+    if not isinstance(slips, list):
+        return jsonify({"success": True, "recovered": 0})
+
+    recovered = 0
+    curr_ms = now_ms()
+    with db_lock:
+        try:
+            u = User.query.get(uid)
+            if not u:
+                return jsonify({"success": False, "error": "User not found"}), 404
+            cur_p_map = {mk: calculate_authoritative_round(mk, curr_ms)["period"] for mk in MARKET_KEYS}
+            rounds_to_settle = set()
+
+            for s in slips[:1000]:
+                if not isinstance(s, dict):
+                    continue
+                bid = str(s.get("id") or "").strip()
+                if not bid or Bet.query.get(bid):
+                    continue
+                m_code = str(s.get("marketId") or s.get("market") or "MIAMI").upper().strip()
+                if m_code not in MARKET_KEYS:
+                    continue
+                period = str(s.get("period") or "").strip()
+                if not period:
+                    continue
+                amt = round(float(s.get("amount") or 0.0), 2)
+                if amt <= 0:
+                    continue
+                fee = round(float(s.get("platformFee") if s.get("platformFee") is not None else round(amt * 0.03, 2)), 2)
+                net_amt = round(float(s.get("netAmount") if s.get("netAmount") else round(amt - fee, 2)), 2)
+                mult = float(s.get("mult") or s.get("multiplier") or 2.0)
+                pot = round(float(s.get("potentialPayout") or round(net_amt * mult, 2)), 2)
+                st = str(s.get("status") or "PENDING").upper().strip()
+                if st not in ("PENDING", "LOCKED", "WON", "LOST", "CANCELLED", "REFUNDED"):
+                    st = "PENDING"
+                ts_ms = int(s.get("createdAtMs") or 0) or _parse_ts_ms(s.get("time"), curr_ms)
+                rid = str(s.get("roundId") or f"RND_{m_code}_{period}")
+
+                db.session.add(Bet(
+                    bet_id=bid, user_id=uid, user_name=u.name, market=m_code,
+                    round_id=rid, period=period, amount=amt,
+                    platform_fee=fee, net_amount=net_amt,
+                    prediction_type=str(s.get("type") or "COLOR").upper(),
+                    prediction_target=str(s.get("target") or "GREEN").upper(),
+                    multiplier=mult, potential_payout=pot, status=st,
+                    result_text=str(s.get("result") or "Awaiting Draw"),
+                    win_amount=round(float(s.get("winAmount") or 0.0), 2),
+                    loss_amount=round(float(s.get("lossAmount") or 0.0), 2),
+                    created_at=format_ist_datetime(ts_ms), created_at_ms=ts_ms,
+                ))
+                recovered += 1
+                if st in ("PENDING", "LOCKED") and m_code in cur_p_map and period.isdigit() and int(period) < int(cur_p_map[m_code]):
+                    rounds_to_settle.add((m_code, rid, period))
+
+            if recovered > 0:
+                u.bets_count = max(int(u.bets_count or 0), Bet.query.filter_by(user_id=uid).count())
+                db.session.commit()
+                for m_code, rid, period in rounds_to_settle:
+                    sr = Round.query.filter_by(round_id=rid, status="SETTLED").first()
+                    win_n = int(sr.result_number) if (sr and sr.result_number is not None) else generate_provably_fair_outcome(m_code, period)["number"]
+                    settle_round_in_db(m_code, rid, period, win_n, sr.draw_mode if sr else "AUTO_RANDOM", "SYSTEM_RECOVERY")
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({"success": False, "error": str(exc)}), 500
+    return jsonify({"success": True, "recovered": recovered})
 
 
 @app.route("/api/bets/place", methods=["POST"])
@@ -2560,7 +2763,7 @@ def api_statement():
     uid = (request.args.get("userId") or get_cookie_uid() or "").strip()
     if not uid or uid == "Guest":
         return jsonify({"success": False, "error": "Missing userId"}), 400
-    req_days = int(request.args.get("days", RETENTION_DAYS))
+    req_days = request.args.get("days", "ALL")
     return jsonify(build_user_statement(uid, days=req_days, category=request.args.get("category", "ALL"), market_filter=request.args.get("market", "ALL")))
 
 
@@ -2569,9 +2772,9 @@ def api_statement_export():
     uid = (request.args.get("userId") or get_cookie_uid() or "").strip()
     if not uid or uid == "Guest":
         return jsonify({"success": False, "error": "Missing userId"}), 400
-    stmt = build_user_statement(uid, days=int(request.args.get("days", RETENTION_DAYS)), category=request.args.get("category", "ALL"), market_filter=request.args.get("market", "ALL"))
+    stmt = build_user_statement(uid, days=request.args.get("days", "ALL"), category=request.args.get("category", "ALL"), market_filter=request.args.get("market", "ALL"))
     safe_uid = "".join(ch for ch in uid if ch.isalnum() or ch in ("-", "_")) or "user"
-    fname = f"ColourKing_{stmt['days']}Day_Statement_{safe_uid}_{get_ist_now().strftime('%Y%m%d')}.csv"
+    fname = f"ColourKing_{stmt['days']}_Statement_{safe_uid}_{get_ist_now().strftime('%Y%m%d')}.csv"
     return Response(export_statement_csv(stmt), mimetype="text/csv; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
 

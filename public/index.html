@@ -1624,17 +1624,17 @@
           </div>
         </div>
 
-        <!-- My Bet Slips History Section (90-Day Records & P&L) -->
+        <!-- My Bet Slips History Section (All Permanent Saved Records & P&L) -->
         <div class="card">
           <div class="section-title">
-            <span>📋 My Bet Slips (90-Day Records)</span>
+            <span>📋 My Bet Slips (All Saved Records)</span>
             <div style="display:flex; align-items:center; gap:6px;">
               <button class="chip-filter-btn" style="padding:3px 8px; font-size:10px; border-color:var(--gold); color:var(--gold);" onclick="downloadAccountStatement('BETS')">📥 CSV Statement</button>
               <span id="userBetSlipsCountBadge" class="section-badge">0 Slips</span>
             </div>
           </div>
 
-          <!-- 90-Day Bet Profit / Loss Quick Strip -->
+          <!-- Bet Profit / Loss Quick Strip -->
           <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; margin-bottom:8px;">
             <div style="background:var(--card-highlight); padding:6px 8px; border-radius:8px; text-align:center;">
               <span style="font-size:9px; color:var(--text-muted);">Wagered</span>
@@ -1651,8 +1651,9 @@
           </div>
 
           <!-- Date Range + Market Filter Chips -->
-          <div class="filter-chips-row" style="margin-bottom:6px;">
-            <button class="chip-filter-btn active" onclick="setStatementDays(90, this)">90 Days</button>
+          <div class="filter-chips-row" id="slipsDaysFilterRow" style="margin-bottom:6px;">
+            <button class="chip-filter-btn active" onclick="setStatementDays('ALL', this)">All Time</button>
+            <button class="chip-filter-btn" onclick="setStatementDays(90, this)">90 Days</button>
             <button class="chip-filter-btn" onclick="setStatementDays(30, this)">30 Days</button>
             <button class="chip-filter-btn" onclick="setStatementDays(7, this)">7 Days</button>
           </div>
@@ -1667,7 +1668,7 @@
           </div>
 
           <div class="bets-list" id="userBetSlipsList">
-            <p style="font-size:12px; color:var(--text-muted); text-align:center; padding:10px;">All bet records up to 90 days (Market, Period #, Result, Profit/Loss & Status) are stored and shown here!</p>
+            <p style="font-size:12px; color:var(--text-muted); text-align:center; padding:10px;">All your placed bet records (Market, Period #, Result, Profit/Loss & Status) are permanently saved in your account and always shown here.</p>
           </div>
           <div class="history-pagination-bar" id="betSlipsPaginationBar" style="display:none; margin-top:10px;">
             <button class="btn-pagination" id="btnBetSlipsPrev" onclick="prevBetSlipsPage()">◀ Prev 10</button>
@@ -1792,11 +1793,11 @@
           </div>
         </div>
 
-        <!-- 90-Day Financial Statement Summary -->
+        <!-- Permanent Financial Statement Summary -->
         <div class="card" style="border:1px solid var(--cyan); padding:12px;">
           <div class="section-title" style="margin-bottom:8px;">
-            <span>📊 Account Statement Summary (<span id="stmtDaysLabel">90</span> Days)</span>
-            <span class="section-badge" style="background:rgba(0,229,255,0.15); color:var(--cyan);">90-Day Vault</span>
+            <span>📊 Account Statement Summary (<span id="stmtDaysLabel">All Time</span>)</span>
+            <span class="section-badge" style="background:rgba(0,229,255,0.15); color:var(--cyan);">Permanent Vault</span>
           </div>
 
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
@@ -1824,7 +1825,8 @@
 
           <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; align-items:center;">
             <div style="display:flex; gap:4px;" id="walletDaysFilterRow">
-              <button class="chip-filter-btn active" onclick="setStatementDays(90, this)">90D</button>
+              <button class="chip-filter-btn active" onclick="setStatementDays('ALL', this)">All</button>
+              <button class="chip-filter-btn" onclick="setStatementDays(90, this)">90D</button>
               <button class="chip-filter-btn" onclick="setStatementDays(30, this)">30D</button>
               <button class="chip-filter-btn" onclick="setStatementDays(7, this)">7D</button>
             </div>
@@ -2590,11 +2592,11 @@
     </div>
   </div>
 
-  <!-- 90-Day Account Statement Modal -->
+  <!-- Permanent Account Statement Modal -->
   <div class="modal-overlay" id="statementModal">
     <div class="modal-content" style="max-width:460px; max-height:85vh; overflow-y:auto;">
       <div class="modal-header">
-        <div class="modal-title" style="color:var(--gold);">📊 90-Day Wallet &amp; Bet Statement</div>
+        <div class="modal-title" style="color:var(--gold);">📊 Permanent Wallet &amp; Bet Statement</div>
         <button class="btn-close" onclick="closeModal('statementModal')">✕</button>
       </div>
       <div id="statementModalSummary" style="font-size:12px; display:flex; flex-direction:column; gap:8px;"></div>
@@ -3100,11 +3102,11 @@
       }
     };
 
-    // User Placed Bet Slips History (Scoped per userId; SQLite is single source of truth)
+    // User Placed Bet Slips History (Permanently stored per userId; never auto-deleted)
     let userBetSlipsHistory = [];
-    const RETENTION_90D_MS = 90 * 24 * 60 * 60 * 1000;
-    let statementDaysFilter = 90;
+    let statementDaysFilter = 'ALL';
     let latestStatementData = null;
+    const recoveredBetIdsSent = new Set();
 
     function getBetSlipsStorageKey(uid = currentUserId) {
       return (uid && uid !== 'Guest') ? `colour_king_user_bet_slips_${uid}` : null;
@@ -3130,19 +3132,72 @@
       return [];
     }
 
-    function pruneAndSaveBetSlips(slips) {
-      const cutoff = Date.now() - RETENTION_90D_MS;
-      const kept = (Array.isArray(slips) ? slips : []).filter(s => {
-        const ts = Number(s && (s.createdAtMs || 0));
-        return !ts || ts >= cutoff;
-      });
+    function mergeAndSaveBetSlips(incomingSlips, syncMissingToServer = false) {
       const key = getBetSlipsStorageKey();
+      const map = new Map();
+
+      const addToMap = (list, overwrite) => {
+        if (!Array.isArray(list)) return;
+        for (let i = 0; i < list.length; i++) {
+          const raw = list[i];
+          if (!raw || !raw.id) continue;
+          if (raw.userId && currentUserId && raw.userId !== currentUserId) continue;
+          const id = String(raw.id);
+          if (overwrite || !map.has(id)) {
+            map.set(id, Object.assign({}, raw, { userId: raw.userId || currentUserId }));
+          }
+        }
+      };
+
+      // 1. Preserve ALL existing locally cached & in-memory slips for current user
       if (key) {
         try {
-          localStorage.setItem(key, JSON.stringify(kept));
+          const saved = localStorage.getItem(key);
+          if (saved) addToMap(JSON.parse(saved), false);
         } catch (e) {}
       }
-      return kept;
+      addToMap(userBetSlipsHistory, false);
+
+      // 2. Overlay authoritative incoming server/updated slips (never deletes non-returned slips)
+      const serverIds = new Set();
+      if (Array.isArray(incomingSlips)) {
+        incomingSlips.forEach(s => { if (s && s.id) serverIds.add(String(s.id)); });
+        addToMap(incomingSlips, true);
+      }
+
+      const merged = Array.from(map.values()).sort((a, b) => Number(b.createdAtMs || 0) - Number(a.createdAtMs || 0));
+      if (key) {
+        try {
+          localStorage.setItem(key, JSON.stringify(merged));
+        } catch (e) {}
+      }
+
+      // 3. If backend missed any locally-saved slips (e.g. after server/DB migration), auto-recover them safely
+      if (syncMissingToServer && hasBackendConnection() && currentUserId && currentUserId !== 'Guest') {
+        const missingForServer = merged.filter(s => s.id && !serverIds.has(String(s.id)) && !recoveredBetIdsSent.has(String(s.id)));
+        if (missingForServer.length > 0) {
+          missingForServer.forEach(s => recoveredBetIdsSent.add(String(s.id)));
+          const uidSnap = currentUserId;
+          fetch(apiUrl('/api/bets/recover'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ userId: uidSnap, slips: missingForServer })
+          })
+            .then(r => r.ok ? r.json() : null)
+            .then(resp => {
+              if (resp && resp.recovered > 0 && currentUserId === uidSnap) {
+                loadUserBetsFromBackend();
+              }
+            })
+            .catch(() => {});
+        }
+      }
+      return merged;
+    }
+
+    function pruneAndSaveBetSlips(slips) {
+      return mergeAndSaveBetSlips(slips, false);
     }
 
     if (currentUserId) {
@@ -4015,12 +4070,19 @@
       }
     }
 
+    function getStatementCutoffMs() {
+      if (statementDaysFilter === 'ALL' || !statementDaysFilter || Number(statementDaysFilter) <= 0) {
+        return 0;
+      }
+      return Date.now() - (Number(statementDaysFilter) * 24 * 60 * 60 * 1000);
+    }
+
     function nextBetSlipsPage() {
-      const cutoffMs = Date.now() - (statementDaysFilter * 24 * 60 * 60 * 1000);
+      const cutoffMs = getStatementCutoffMs();
       const filteredCount = userBetSlipsHistory.filter(s => {
         const mOk = activeSlipFilter === 'ALL' || s.marketId === activeSlipFilter;
         const ts = Number(s.createdAtMs || 0);
-        const dOk = !ts || ts >= cutoffMs;
+        const dOk = !cutoffMs || !ts || ts >= cutoffMs;
         return mOk && dOk;
       }).length;
       const totalPages = Math.max(1, Math.ceil(filteredCount / betSlipsPerPage));
@@ -4032,16 +4094,18 @@
     }
 
     function setStatementDays(days, btn) {
-      statementDaysFilter = Number(days) || 90;
+      const raw = String(days || 'ALL').trim().toUpperCase();
+      statementDaysFilter = (raw === 'ALL' || raw === '0' || !Number(raw)) ? 'ALL' : Number(raw);
       betSlipsCurrentPage = 0;
-      document.querySelectorAll('#walletDaysFilterRow .chip-filter-btn, #tab-arena .filter-chips-row .chip-filter-btn').forEach(b => {
-        if (['90D', '30D', '7D', '90 Days', '30 Days', '7 Days'].includes(b.innerText.trim())) {
-          const isMatch = b.innerText.trim().startsWith(String(statementDaysFilter));
-          b.classList.toggle('active', isMatch);
-        }
+      document.querySelectorAll('#walletDaysFilterRow .chip-filter-btn, #slipsDaysFilterRow .chip-filter-btn').forEach(b => {
+        const txt = b.innerText.trim().toUpperCase();
+        const isMatch = statementDaysFilter === 'ALL'
+          ? (txt === 'ALL' || txt === 'ALL TIME')
+          : txt.startsWith(String(statementDaysFilter));
+        b.classList.toggle('active', isMatch);
       });
       const lbl = document.getElementById('stmtDaysLabel');
-      if (lbl) lbl.innerText = String(statementDaysFilter);
+      if (lbl) lbl.innerText = statementDaysFilter === 'ALL' ? 'All Time' : `${statementDaysFilter} Days`;
       renderBetSlips();
       renderWalletLedger();
       loadUserBetsFromBackend();
@@ -4051,11 +4115,11 @@
     function renderBetSlips() {
       const container = document.getElementById('userBetSlipsList');
       if (!container) return;
-      const cutoffMs = Date.now() - (statementDaysFilter * 24 * 60 * 60 * 1000);
+      const cutoffMs = getStatementCutoffMs();
       const filtered = userBetSlipsHistory.filter(s => {
         const mOk = activeSlipFilter === 'ALL' || s.marketId === activeSlipFilter;
         const ts = Number(s.createdAtMs || 0);
-        const dOk = !ts || ts >= cutoffMs;
+        const dOk = !cutoffMs || !ts || ts >= cutoffMs;
         return mOk && dOk;
       });
       document.getElementById('userBetSlipsCountBadge').innerText = `${filtered.length} Slips`;
@@ -4086,7 +4150,8 @@
 
       if (filtered.length === 0) {
         if (pagBar) pagBar.style.display = 'none';
-        container.innerHTML = `<p style="font-size:12px; color:var(--text-muted); text-align:center; padding:10px;">No placed bet slips found in last ${statementDaysFilter} days for ${activeSlipFilter}.</p>`;
+        const winText = statementDaysFilter === 'ALL' ? 'saved account history' : `last ${statementDaysFilter} days`;
+        container.innerHTML = `<p style="font-size:12px; color:var(--text-muted); text-align:center; padding:10px;">No placed bet slips found in ${winText} for ${activeSlipFilter}.</p>`;
         return;
       }
 
@@ -4687,7 +4752,7 @@
       }
     }
 
-    // Load User Bets Directly From Backend (90-Day Database Single Source of Truth)
+    // Load User Bets Directly From Backend (Permanent Vault; Never Overwrites Local Saved Slips With Empty)
     async function loadUserBetsFromBackend() {
       if (!hasBackendConnection() || !currentUserId || currentUserId === 'Guest') return;
       if (isLoadingUserBets) {
@@ -4723,7 +4788,7 @@
               lastKnownBetStatuses[b.id] = curStatus;
             });
 
-            userBetSlipsHistory = pruneAndSaveBetSlips(data.betHistory);
+            userBetSlipsHistory = mergeAndSaveBetSlips(data.betHistory, true);
           }
           if (Array.isArray(data.activeBets)) {
             ['MIAMI', 'VEGAS', 'PARIS', 'DUBAI'].forEach(mKey => {
@@ -5371,9 +5436,9 @@
     }
 
     function computeLocalStatementSummary() {
-      const cutoff = Date.now() - (statementDaysFilter * 24 * 60 * 60 * 1000);
+      const cutoff = getStatementCutoffMs();
       let wagered = 0, won = 0, dep = 0, wd = 0, refEarn = 0, wonCnt = 0, lostCnt = 0;
-      const slipsInWin = userBetSlipsHistory.filter(s => !s.createdAtMs || Number(s.createdAtMs) >= cutoff);
+      const slipsInWin = userBetSlipsHistory.filter(s => !cutoff || !s.createdAtMs || Number(s.createdAtMs) >= cutoff);
       slipsInWin.forEach(s => {
         const st = (s.status || '').toUpperCase();
         const amt = Number(s.amount || 0);
@@ -5420,15 +5485,18 @@
       const refEl = document.getElementById('walletTotalReferEarn');
       if (refEl) refEl.innerText = `₹${Number(s.totalReferEarn || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+      const daysVal = s.days || statementDaysFilter;
+      const winLabel = String(daysVal) === 'ALL' ? 'All time approved' : `Last ${daysVal} days approved`;
+
       const depEl = document.getElementById('walletTotalDeposit');
       if (depEl) depEl.innerText = `₹${Number(s.totalDeposit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
       const depSub = document.getElementById('walletDepositPendingSub');
-      if (depSub) depSub.innerText = Number(s.pendingDepositTotal || 0) > 0 ? `In Process: ₹${Number(s.pendingDepositTotal).toFixed(0)}` : `Last ${s.days || statementDaysFilter} days approved`;
+      if (depSub) depSub.innerText = Number(s.pendingDepositTotal || 0) > 0 ? `In Process: ₹${Number(s.pendingDepositTotal).toFixed(0)}` : winLabel;
 
       const wdEl = document.getElementById('walletTotalWithdraw');
       if (wdEl) wdEl.innerText = `₹${Number(s.totalWithdrawal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
       const wdSub = document.getElementById('walletWithdrawPendingSub');
-      if (wdSub) wdSub.innerText = Number(s.pendingWithdrawalTotal || 0) > 0 ? `In Process: ₹${Number(s.pendingWithdrawalTotal).toFixed(0)}` : `Last ${s.days || statementDaysFilter} days approved`;
+      if (wdSub) wdSub.innerText = Number(s.pendingWithdrawalTotal || 0) > 0 ? `In Process: ₹${Number(s.pendingWithdrawalTotal).toFixed(0)}` : winLabel;
     }
 
     function filterWalletLedgerEntries() {
@@ -5451,7 +5519,8 @@
       document.getElementById('ledgerCountBadge').innerText = `${list.length} Entries`;
 
       if (list.length === 0) {
-        container.innerHTML = `<p style="font-size:12px; color:var(--text-muted); text-align:center; padding:14px;">No statement transactions found for ${ledgerFilterType} in the last ${statementDaysFilter} days.</p>`;
+        const winText = statementDaysFilter === 'ALL' ? 'all saved history' : `the last ${statementDaysFilter} days`;
+        container.innerHTML = `<p style="font-size:12px; color:var(--text-muted); text-align:center; padding:14px;">No statement transactions found for ${ledgerFilterType} in ${winText}.</p>`;
         return;
       }
 
@@ -5503,7 +5572,7 @@
           <div style="background:var(--card-highlight); padding:10px; border-radius:10px;">
             <div style="color:var(--text-muted); font-size:10px;">ACCOUNT HOLDER</div>
             <div style="font-weight:900; color:#FFF;">${currentUserName} (${currentUserId || 'Guest'})</div>
-            <div style="color:var(--cyan); font-size:11px; margin-top:2px;">Window: Last ${statementDaysFilter} Days (90-Day Storage Active)</div>
+            <div style="color:var(--cyan); font-size:11px; margin-top:2px;">Window: ${statementDaysFilter === 'ALL' ? 'All Permanent Records' : `Last ${statementDaysFilter} Days`} (Permanent Storage Active)</div>
           </div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
             <div style="background:var(--card); padding:10px; border-radius:8px; border:1px solid var(--border);">
@@ -5548,8 +5617,8 @@
       const s = (latestStatementData && latestStatementData.summary) ? latestStatementData.summary : computeLocalStatementSummary();
       const esc = (v) => '"' + String(v === null || v === undefined ? '' : v).replace(/"/g, '""') + '"';
       const rows = [
-        ['COLOUR KING - 90-DAY ACCOUNT & BETTING STATEMENT'],
-        ['User ID', currentUserId || 'Guest', 'User Name', currentUserName, 'Window', `Last ${statementDaysFilter} Days`],
+        ['COLOUR KING - PERMANENT ACCOUNT & BETTING STATEMENT'],
+        ['User ID', currentUserId || 'Guest', 'User Name', currentUserName, 'Window', statementDaysFilter === 'ALL' ? 'All Permanent Records' : `Last ${statementDaysFilter} Days`],
         [],
         ['FINANCIAL SUMMARY (INR)'],
         ['Current Wallet Balance', Number(s.walletBalance || userBalance).toFixed(2)],
@@ -5567,7 +5636,7 @@
           tx.status || ''
         ]);
       });
-      rows.push([], ['90-DAY BETTING RECORDS HISTORY'], ['Placed At (IST)', 'Bet ID', 'Market', 'Period', 'Type', 'Target', 'Multiplier', 'Stake', 'Status', 'Win Amount', 'Net P&L', 'Result']);
+      rows.push([], ['PERMANENT BETTING RECORDS HISTORY'], ['Placed At (IST)', 'Bet ID', 'Market', 'Period', 'Type', 'Target', 'Multiplier', 'Stake', 'Status', 'Win Amount', 'Net P&L', 'Result']);
       userBetSlipsHistory.forEach(b => {
         const st = (b.status || '').toUpperCase();
         const amt = Number(b.amount || 0);
@@ -5586,7 +5655,7 @@
       }
       const uid = currentUserId;
       const cat = categoryOverride || ledgerFilterType || 'ALL';
-      const fname = `ColourKing_${statementDaysFilter}Day_Statement_${uid}_${formatISTFileDate()}.csv`;
+      const fname = `ColourKing_${statementDaysFilter}_Statement_${uid}_${formatISTFileDate()}.csv`;
       try {
         let csvText = '';
         if (hasBackendConnection()) {
@@ -5640,7 +5709,7 @@
             walletLedger = stmt.statementEntries;
           }
           if (Array.isArray(stmt.bets)) {
-            userBetSlipsHistory = pruneAndSaveBetSlips(stmt.bets);
+            userBetSlipsHistory = mergeAndSaveBetSlips(stmt.bets, false);
             renderBetSlips();
           }
           renderWalletLedger();
