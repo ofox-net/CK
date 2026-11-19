@@ -741,10 +741,6 @@
       </div>
 
       <div class="header-right">
-        <div title="Server-Synced Indian Standard Time (Asia/Kolkata)" style="display:flex; flex-direction:column; align-items:flex-end; padding:5px 10px; border-radius:8px; background:rgba(0,229,255,0.1); border:1px solid rgba(0,229,255,0.32); line-height:1.2;">
-          <span style="font-size:9px; font-weight:800; color:var(--cyan); letter-spacing:0.4px;">🇮🇳 INDIAN CLOCK (IST +05:30)</span>
-          <span id="adminHeaderIstClock" style="font-size:12px; font-weight:900; font-family:monospace; color:#FFF;">--:--:-- IST</span>
-        </div>
         <div class="portal-link-pill" onclick="copyPortalLink()" title="Click to copy Web Admin Link">
           <span>🔗</span> <span id="portalLinkDisplay">.../admin.html</span>
           <span style="font-size:10px; color:var(--cyan); margin-left:4px;">[COPY]</span>
@@ -1066,7 +1062,6 @@
                 <span style="font-size:11px; color:var(--text-muted);">ACTIVE PERIOD:</span>
                 <h4 style="font-size:18px; color:var(--gold); font-weight:900;" id="activeDeciderPeriod">#202610311025</h4>
                 <div style="font-size:11px; color:var(--cyan); margin-top:2px;" id="activeDeciderStatus">Status: Bet Open (Time Left: 02:45)</div>
-                <div style="font-size:10px; color:var(--gold); font-family:monospace; margin-top:3px;" id="deciderIstClock">🇮🇳 --:--:-- IST</div>
               </div>
               <div style="text-align:right;">
                 <span class="badge badge-approved" id="deciderBetStatusBadge">Bet Open</span>
@@ -1316,6 +1311,47 @@
               </thead>
               <tbody id="affiliateTableBody">
                 <!-- Dynamically populated via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top:16px;">
+          <div class="panel-header">
+            <div>
+              <h3 class="panel-title">💰 6-Level Commission History Ledger</h3>
+              <p class="panel-subtitle">Permanent audit ledger of every Tier 1–6 referral commission credited to sponsor wallets</p>
+            </div>
+            <span class="badge badge-approved" id="adminCommissionCountBadge">0 Records</span>
+          </div>
+          <div class="filter-bar">
+            <select class="form-control" style="max-width:180px; padding:6px 10px; font-size:12px;" id="filterAdminCommLevel" onchange="renderCommissionHistoryTable()">
+              <option value="ALL">All Levels (L1–L6)</option>
+              <option value="1">Level 1 (1.00%)</option>
+              <option value="2">Level 2 (0.75%)</option>
+              <option value="3">Level 3 (0.60%)</option>
+              <option value="4">Level 4 (0.50%)</option>
+              <option value="5">Level 5 (0.30%)</option>
+              <option value="6">Level 6 (0.20%)</option>
+            </select>
+            <input type="text" class="search-input" placeholder="Search beneficiary, source player, or Bet ID..." id="searchAdminCommInput" oninput="renderCommissionHistoryTable()" />
+          </div>
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID & Bet Ref</th>
+                  <th>Sponsor (Beneficiary)</th>
+                  <th>Source Player</th>
+                  <th>Level & Rate</th>
+                  <th>Eligible Stake</th>
+                  <th>Commission Earned</th>
+                  <th>Status</th>
+                  <th>Time (IST)</th>
+                </tr>
+              </thead>
+              <tbody id="adminCommissionHistoryBody">
+                <!-- Dynamically populated from PostgreSQL/SQLite -->
               </tbody>
             </table>
           </div>
@@ -1975,6 +2011,7 @@
     let serverLiveWagers = {};
     let serverMarketStats = {};
     let supportTickets = [];
+    let referralCommissions = [];
     let activeSupportTicketId = null;
     let currentSupportFilter = 'ALL';
 
@@ -3324,6 +3361,51 @@
       if (topMetaEl) topMetaEl.innerText = topPromoter
         ? `${Number(topPromoter.teamMembersCount || 0)} Team Members • ₹${Number(topPromoter.totalEarnedCommission || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })} Earned`
         : '0 Team Members • ₹0.00 Earned';
+      renderCommissionHistoryTable();
+    }
+
+    function renderCommissionHistoryTable() {
+      const tbody = document.getElementById('adminCommissionHistoryBody');
+      const badge = document.getElementById('adminCommissionCountBadge');
+      if (!tbody) return;
+      const lvlFilter = document.getElementById('filterAdminCommLevel')?.value || 'ALL';
+      const q = (document.getElementById('searchAdminCommInput')?.value || '').toLowerCase();
+
+      const rows = (Array.isArray(referralCommissions) ? referralCommissions : []).filter(rc => {
+        const lvlOk = lvlFilter === 'ALL' || String(rc.level || '') === lvlFilter;
+        const qOk = !q ||
+          String(rc.id || '').toLowerCase().includes(q) ||
+          String(rc.beneficiaryUserName || rc.beneficiaryUserId || '').toLowerCase().includes(q) ||
+          String(rc.sourceUserName || rc.sourceUserId || '').toLowerCase().includes(q) ||
+          String(rc.sourceBetId || '').toLowerCase().includes(q);
+        return lvlOk && qOk;
+      });
+      if (badge) badge.innerText = `${rows.length} Records`;
+      if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:18px; color:var(--text-muted);">No 6-level commission records found.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = rows.map(rc => `
+        <tr>
+          <td>
+            <strong style="color:var(--gold); font-family:monospace;">${escapeAdminHtml(rc.id)}</strong><br/>
+            <span style="font-size:11px; color:var(--text-muted); font-family:monospace;">Bet: ${escapeAdminHtml(rc.sourceBetId || '-')}</span>
+          </td>
+          <td>
+            <strong style="color:#FFF;">${escapeAdminHtml(rc.beneficiaryUserName || rc.beneficiaryUserId)}</strong><br/>
+            <span style="font-size:11px; color:var(--cyan); font-family:monospace;">${escapeAdminHtml(rc.beneficiaryUserId)}</span>
+          </td>
+          <td>
+            <strong style="color:#FFF;">${escapeAdminHtml(rc.sourceUserName || rc.sourceUserId)}</strong><br/>
+            <span style="font-size:11px; color:var(--text-muted); font-family:monospace;">${escapeAdminHtml(rc.sourceUserId)}</span>
+          </td>
+          <td><span class="badge badge-approved">Level ${Number(rc.level || 1)} (${(Number(rc.rate || 0.01) * 100).toFixed(2)}%)</span></td>
+          <td style="font-family:monospace;">₹${Number(rc.eligibleAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+          <td><strong style="color:var(--green); font-family:monospace;">+₹${Number(rc.commissionAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></td>
+          <td><span class="badge badge-approved">${escapeAdminHtml(rc.status || 'SETTLED')}</span></td>
+          <td style="font-size:11px; color:var(--cyan);">${resolveAdminIST(rc.time, rc.createdAtMs, true)}</td>
+        </tr>
+      `).join('');
     }
 
     function openAffiliateMembersModal(userId) {
@@ -3412,12 +3494,6 @@
               deciderStatus.innerText = `Status: Betting Open (${dfmt} remaining)`;
             }
           }
-
-          const istNowMs = getAdminSyncedNowMs();
-          const hdrClock = document.getElementById('adminHeaderIstClock');
-          if (hdrClock) hdrClock.innerText = formatIndianDateTimeString(new Date(istNowMs)) + ' IST';
-          const decIst = document.getElementById('deciderIstClock');
-          if (decIst) decIst.innerText = '🇮🇳 ' + formatIndianTimeString(new Date(istNowMs)).toUpperCase() + ' IST';
 
           if (adminTickCount % 8 === 0 || selSync.secondsLeft === 0) {
             syncAdminMarketsLive();
@@ -3954,6 +4030,9 @@
       }
       if (Array.isArray(data.affiliates)) {
         affiliateList = data.affiliates;
+      }
+      if (Array.isArray(data.referral_commissions)) {
+        referralCommissions = data.referral_commissions;
       }
       if (data.draw_overrides) {
         const badge = document.getElementById('adminOverrideBadge');

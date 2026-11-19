@@ -264,33 +264,13 @@ fun WalletBalancesCard(
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(18.dp)) {
-            var walletIstClock by remember { mutableStateOf(GlobalRoundClock.formatIstTime12h()) }
-            LaunchedEffect(Unit) {
-                while (isActive) {
-                    walletIstClock = GlobalRoundClock.formatIstTime12h()
-                    delay(500L)
-                }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "AVAILABLE BALANCE",
-                    color = TextSecondary,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 1.sp
-                )
-                Text(
-                    text = "🇮🇳 $walletIstClock",
-                    color = ElectricCyan,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace
-                )
-            }
+            Text(
+                text = "AVAILABLE BALANCE",
+                color = TextSecondary,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 1.sp
+            )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = MoneyUtils.formatCents(wallet?.availableBalance ?: 0L),
@@ -743,13 +723,6 @@ fun DepositDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        var depIstClock by remember { mutableStateOf(GlobalRoundClock.formatIstDateTime()) }
-                        LaunchedEffect(Unit) {
-                            while (isActive) {
-                                depIstClock = GlobalRoundClock.formatIstDateTime()
-                                delay(500L)
-                            }
-                        }
                         Text(
                             text = "+ Add Deposit Funds",
                             color = TextPrimary,
@@ -757,11 +730,10 @@ fun DepositDialog(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Admin Bank & UPI Gateway • 🇮🇳 $depIstClock",
+                            text = "Admin Bank & UPI Gateway",
                             color = NeonGreen,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            fontFamily = FontFamily.Monospace
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
                     IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {
@@ -1090,13 +1062,6 @@ fun WithdrawDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        var wdIstClock by remember { mutableStateOf(GlobalRoundClock.formatIstDateTime()) }
-                        LaunchedEffect(Unit) {
-                            while (isActive) {
-                                wdIstClock = GlobalRoundClock.formatIstDateTime()
-                                delay(500L)
-                            }
-                        }
                         Text(
                             text = "Request Fund Withdrawal",
                             color = TextPrimary,
@@ -1104,10 +1069,9 @@ fun WithdrawDialog(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Escrow Queue • 🇮🇳 $wdIstClock",
-                            color = ElectricCyan,
-                            fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace
+                            text = "Admin Payout Approval Queue",
+                            color = TextMuted,
+                            fontSize = 11.sp
                         )
                     }
                     IconButton(onClick = onDismiss, modifier = Modifier.size(48.dp)) {

@@ -902,46 +902,29 @@ fun RoundStatusCard(
                     )
                 }
 
-                Column(horizontalAlignment = Alignment.End) {
-                    var istClockText by remember { mutableStateOf(GlobalRoundClock.formatIstTime12h()) }
-                    LaunchedEffect(Unit) {
-                        while (isActive) {
-                            istClockText = GlobalRoundClock.formatIstTime12h()
-                            delay(500L)
-                        }
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(20.dp),
-                        color = if (isBettingOpen) NeonGreen.copy(alpha = 0.2f) else NeonRed.copy(alpha = 0.2f),
-                        border = borderStroke(1.dp, if (isBettingOpen) NeonGreen else NeonRed)
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (isBettingOpen) NeonGreen.copy(alpha = 0.2f) else NeonRed.copy(alpha = 0.2f),
+                    border = borderStroke(1.dp, if (isBettingOpen) NeonGreen else NeonRed)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(if (isBettingOpen) NeonGreen else NeonRed)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = if (isBettingOpen) "Bet Open" else "Bet Close",
-                                color = if (isBettingOpen) NeonGreen else NeonRed,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(if (isBettingOpen) NeonGreen else NeonRed)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (isBettingOpen) "Bet Open" else "Bet Close",
+                            color = if (isBettingOpen) NeonGreen else NeonRed,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "🇮🇳 $istClockText",
-                        color = ElectricCyan,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
                 }
             }
 
@@ -1767,21 +1750,6 @@ fun BetPlacementDialog(
                                     fontSize = 11.sp
                                 )
                             }
-                            var modalIstClock by remember { mutableStateOf(GlobalRoundClock.formatIstDateTime()) }
-                            LaunchedEffect(Unit) {
-                                while (isActive) {
-                                    modalIstClock = GlobalRoundClock.formatIstDateTime()
-                                    delay(500L)
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "🇮🇳 $modalIstClock",
-                                color = ElectricCyan,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace
-                            )
                         }
                     }
 

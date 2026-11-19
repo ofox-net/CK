@@ -28,6 +28,17 @@ from email.policy import default as email_default_policy
 from datetime import datetime, timezone, timedelta
 
 try:
+    import flask as _flask_pkg  # noqa: F401
+    import flask_sqlalchemy as _fsql_pkg  # noqa: F401
+    HAS_FLASK_ORM = True
+except Exception:
+    HAS_FLASK_ORM = False
+
+if HAS_FLASK_ORM:
+    from app import app as flask_app, run_flask_server as _run_flask_server  # noqa: F401
+    app = flask_app
+
+try:
     import pg8000.dbapi as _pg8000
 except Exception:
     _pg8000 = None
@@ -351,52 +362,56 @@ def restore_user_from_token_if_missing(conn, token_data, now_ms, verified_plain_
     c.execute("SELECT * FROM users WHERE id = ?", (uid,))
     return c.fetchone(), True
 
-def _get_pg_connection():
+def _get_pg_connection(retries=1):
     if not DATABASE_URL:
         return None
-    try:
-        parsed = urllib.parse.urlparse(DATABASE_URL)
-        host = parsed.hostname or "localhost"
-        port = int(parsed.port or 5432)
-        database = (parsed.path or "").lstrip("/") or "postgres"
-        user = urllib.parse.unquote(parsed.username or "postgres")
-        password = urllib.parse.unquote(parsed.password or "")
-        query_params = urllib.parse.parse_qs(parsed.query or "")
-        sslmode = (query_params.get("sslmode", [""])[0] or "").lower()
-        use_ssl = (host not in ("localhost", "127.0.0.1", "::1")) and (sslmode != "disable")
+    parsed = urllib.parse.urlparse(DATABASE_URL)
+    host = parsed.hostname or "localhost"
+    port = int(parsed.port or 5432)
+    database = (parsed.path or "").lstrip("/") or "postgres"
+    user = urllib.parse.unquote(parsed.username or "postgres")
+    password = urllib.parse.unquote(parsed.password or "")
+    query_params = urllib.parse.parse_qs(parsed.query or "")
+    sslmode = (query_params.get("sslmode", [""])[0] or "").lower()
+    use_ssl = (host not in ("localhost", "127.0.0.1", "::1")) and (sslmode != "disable")
 
-        if _pg8000:
-            kwargs = {
-                "host": host,
-                "port": port,
-                "database": database,
-                "user": user,
-                "password": password,
-                "timeout": 8,
-            }
-            if use_ssl:
-                ctx = ssl.create_default_context()
-                kwargs["ssl_context"] = ctx
-            conn = _pg8000.connect(**kwargs)
-            _cloud_status["pgConnected"] = True
-            _cloud_status["pgLastError"] = ""
-            return conn
-        if _psycopg3:
-            conn = _psycopg3.connect(DATABASE_URL, connect_timeout=8)
-            _cloud_status["pgConnected"] = True
-            _cloud_status["pgLastError"] = ""
-            return conn
-        if _psycopg2:
-            conn = _psycopg2.connect(DATABASE_URL, connect_timeout=8)
-            _cloud_status["pgConnected"] = True
-            _cloud_status["pgLastError"] = ""
-            return conn
-        _cloud_status["pgLastError"] = "No PostgreSQL Python driver installed"
-        return None
-    except Exception as e:
-        _cloud_status["pgConnected"] = False
-        _cloud_status["pgLastError"] = str(e)[:220]
-        return None
+    last_err = ""
+    for attempt in range(max(1, int(retries))):
+        try:
+            if _pg8000:
+                kwargs = {
+                    "host": host,
+                    "port": port,
+                    "database": database,
+                    "user": user,
+                    "password": password,
+                    "timeout": 12,
+                }
+                if use_ssl:
+                    kwargs["ssl_context"] = ssl.create_default_context()
+                conn = _pg8000.connect(**kwargs)
+                _cloud_status["pgConnected"] = True
+                _cloud_status["pgLastError"] = ""
+                return conn
+            if _psycopg3:
+                conn = _psycopg3.connect(DATABASE_URL, connect_timeout=12)
+                _cloud_status["pgConnected"] = True
+                _cloud_status["pgLastError"] = ""
+                return conn
+            if _psycopg2:
+                conn = _psycopg2.connect(DATABASE_URL, connect_timeout=12)
+                _cloud_status["pgConnected"] = True
+                _cloud_status["pgLastError"] = ""
+                return conn
+            _cloud_status["pgLastError"] = "No PostgreSQL Python driver installed"
+            return None
+        except Exception as e:
+            last_err = str(e)[:220]
+            if attempt + 1 < retries:
+                time.sleep(1.5)
+    _cloud_status["pgConnected"] = False
+    _cloud_status["pgLastError"] = last_err
+    return None
 
 def _ensure_pg_schema(pg_conn):
     cur = pg_conn.cursor()
@@ -488,6 +503,7 @@ def _sync_to_cloud_worker(db_b64, version, users_rows):
                                 version = EXCLUDED.version,
                                 updated_at_ms = EXCLUDED.updated_at_ms,
                                 db_b64 = EXCLUDED.db_b64
+                            WHERE ck_sqlite_backup.version <= EXCLUDED.version
                         """, (int(version), now_ms, db_b64))
                     pg.commit()
                     cur.close()
@@ -585,7 +601,7 @@ def commit_and_persist(conn, critical=False):
 def restore_from_cloud_if_needed(conn):
     restored_any = False
     if DATABASE_URL:
-        pg = _get_pg_connection()
+        pg = _get_pg_connection(retries=3)
         if pg:
             try:
                 _ensure_pg_schema(pg)
@@ -1122,6 +1138,24 @@ def calculate_authoritative_round(market_code, now_ms=None):
         "status": status
     }
 
+def get_period_window_ms_ist(period_str):
+    try:
+        s = str(period_str or "").strip()
+        if len(s) < 11 or not s.isdigit():
+            return (0, 0, 0)
+        y = int(s[0:4])
+        m = int(s[4:6])
+        d = int(s[6:8])
+        p_num = int(s[8:])
+        ref_11am = datetime(y, m, d, 11, 0, 0, tzinfo=IST_TZ)
+        round_index = p_num - 221
+        start_ms = int((ref_11am.timestamp() + (round_index * ROUND_DURATION_SEC)) * 1000)
+        lock_ms = start_ms + ((ROUND_DURATION_SEC - LOCK_CUTOFF_SEC) * 1000)
+        end_ms = start_ms + (ROUND_DURATION_SEC * 1000)
+        return (start_ms, lock_ms, end_ms)
+    except Exception:
+        return (0, 0, 0)
+
 def generate_provably_fair_outcome(market_code, period):
     seed_str = f"COLOUR_KING_AVALANCHE_2026_{market_code}_{period}_PROVABLY_FAIR"
     h = 0x811c9dc5
@@ -1187,13 +1221,22 @@ def settle_round_in_db(conn, market_code, round_id, period, winning_number, draw
         color = "violet"
         col_class = "red-violet" if winning_number == 0 else "green-violet"
 
-    now_ts = format_ist_datetime()
+    p_start_ms, p_lock_ms, p_end_ms = get_period_window_ms_ist(period)
+    if draw_mode == "MANUAL_ADMIN":
+        now_ts = format_ist_datetime()
+        eff_end_ms = int(time.time() * 1000)
+    else:
+        eff_end_ms = p_end_ms if p_end_ms > 0 else int(time.time() * 1000)
+        now_ts = format_ist_datetime(eff_end_ms)
 
     # 1. Update or Insert round into rounds table
     c.execute("""
         INSERT INTO rounds (round_id, market, period, start_time_ms, lock_time_ms, end_time_ms, status, result_number, result_color, result_col_class, is_big, draw_mode, declared_at, declared_by)
         VALUES (?, ?, ?, ?, ?, ?, 'SETTLED', ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(round_id) DO UPDATE SET
+            start_time_ms = excluded.start_time_ms,
+            lock_time_ms = excluded.lock_time_ms,
+            end_time_ms = excluded.end_time_ms,
             status = 'SETTLED',
             result_number = excluded.result_number,
             result_color = excluded.result_color,
@@ -1202,7 +1245,7 @@ def settle_round_in_db(conn, market_code, round_id, period, winning_number, draw
             draw_mode = excluded.draw_mode,
             declared_at = excluded.declared_at,
             declared_by = excluded.declared_by
-    """, (round_id, market_code, period, 0, 0, 0, winning_number, color, col_class, 1 if is_big else 0, draw_mode, now_ts, declared_by))
+    """, (round_id, market_code, period, p_start_ms, p_lock_ms, eff_end_ms, winning_number, color, col_class, 1 if is_big else 0, draw_mode, now_ts, declared_by))
 
     # 2. Fetch all unsettled bets for this market and period
     c.execute("""
@@ -1905,7 +1948,7 @@ def build_user_affiliates(conn, uid):
     c.execute("""
         SELECT * FROM referral_commissions
         WHERE beneficiary_user_id = ? AND status != 'REVERSED'
-        ORDER BY created_at_ms DESC LIMIT 100
+        ORDER BY created_at_ms DESC LIMIT 1000
     """, (uid,))
     recent_commissions = [{
         "id": r["id"],
@@ -2714,6 +2757,8 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     latest_result = None
                     if last_res:
                         res_end_ms = int(last_res["end_time_ms"] or 0) if "end_time_ms" in last_res.keys() else 0
+                        if res_end_ms <= 0 and str(last_res["draw_mode"] or "") != "MANUAL_ADMIN":
+                            res_end_ms = get_period_window_ms_ist(last_res["period"])[2]
                         latest_result = {
                             "period": last_res["period"],
                             "number": last_res["result_number"],
@@ -2721,7 +2766,8 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                             "colClass": last_res["result_col_class"],
                             "isBig": bool(last_res["is_big"]),
                             "drawMode": last_res["draw_mode"],
-                            "time": to_ist_display(last_res["declared_at"], res_end_ms, mode="datetime")
+                            "time": to_ist_display(last_res["declared_at"], res_end_ms, mode="datetime"),
+                            "timestampMs": res_end_ms
                         }
 
                     # Count active bets in current period
@@ -2777,6 +2823,8 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 records = []
                 for r in rows:
                     r_end_ms = int(r["end_time_ms"] or 0) if "end_time_ms" in r.keys() else 0
+                    if r_end_ms <= 0 and str(r["draw_mode"] or "") != "MANUAL_ADMIN":
+                        r_end_ms = get_period_window_ms_ist(r["period"])[2]
                     records.append({
                         "period": r["period"],
                         "number": r["result_number"],
@@ -2784,7 +2832,8 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                         "colClass": r["result_col_class"],
                         "isBig": bool(r["is_big"]),
                         "drawMode": r["draw_mode"],
-                        "time": to_ist_display(r["declared_at"], r_end_ms, mode="datetime")
+                        "time": to_ist_display(r["declared_at"], r_end_ms, mode="datetime"),
+                        "timestampMs": r_end_ms
                     })
                 conn.close()
             self._send_json({ "market": m_code, "records": records })
@@ -2865,14 +2914,14 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 if m_code:
                     c.execute("""
                         SELECT * FROM bets
-                        WHERE user_id = ? AND market = ? AND created_at_ms >= ?
-                        ORDER BY created_at_ms DESC LIMIT 5000
+                        WHERE user_id = ? AND market = ? AND (created_at_ms >= ? OR created_at_ms = 0)
+                        ORDER BY created_at_ms DESC
                     """, (uid, m_code, cutoff_ms))
                 else:
                     c.execute("""
                         SELECT * FROM bets
-                        WHERE user_id = ? AND created_at_ms >= ?
-                        ORDER BY created_at_ms DESC LIMIT 5000
+                        WHERE user_id = ? AND (created_at_ms >= ? OR created_at_ms = 0)
+                        ORDER BY created_at_ms DESC
                     """, (uid, cutoff_ms))
                 history_rows = c.fetchall()
 
@@ -3121,7 +3170,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     users_list[r["id"]] = u_obj
                     users_array.append(u_obj)
 
-                c.execute("SELECT * FROM deposits ORDER BY created_at_ms DESC, created_at DESC LIMIT 500")
+                c.execute("SELECT * FROM deposits ORDER BY created_at_ms DESC, created_at DESC")
                 deposits_list = []
                 for r in c.fetchall():
                     d_ms = _parse_ts_ms(r["created_at"], r["created_at_ms"] if "created_at_ms" in r.keys() else 0)
@@ -3132,7 +3181,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                         "status": r["status"], "reason": r["reason"]
                     })
 
-                c.execute("SELECT * FROM withdrawals ORDER BY created_at_ms DESC, created_at DESC LIMIT 500")
+                c.execute("SELECT * FROM withdrawals ORDER BY created_at_ms DESC, created_at DESC")
                 withdrawals_list = []
                 for r in c.fetchall():
                     w_ms = _parse_ts_ms(r["created_at"], r["created_at_ms"] if "created_at_ms" in r.keys() else 0)
@@ -3208,7 +3257,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                             "time": dec_time_ist
                         })
 
-                c.execute("SELECT * FROM bets ORDER BY created_at_ms DESC LIMIT 1000")
+                c.execute("SELECT * FROM bets ORDER BY created_at_ms DESC")
                 bets_list = [{
                     "id": r["bet_id"],
                     "market": r["market"],
@@ -3227,7 +3276,25 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     "createdAtMs": _parse_ts_ms(r["created_at"], r["created_at_ms"])
                 } for r in c.fetchall()]
 
-                c.execute("SELECT * FROM admin_audit_logs ORDER BY id DESC LIMIT 100")
+                users_name_map = {r["id"]: r["name"] for r in all_user_rows}
+                c.execute("SELECT * FROM referral_commissions ORDER BY created_at_ms DESC")
+                commissions_list = [{
+                    "id": r["id"],
+                    "beneficiaryUserId": r["beneficiary_user_id"],
+                    "beneficiaryUserName": users_name_map.get(r["beneficiary_user_id"], r["beneficiary_user_id"]),
+                    "sourceUserId": r["source_user_id"],
+                    "sourceUserName": r["source_user_name"] or users_name_map.get(r["source_user_id"], r["source_user_id"]),
+                    "sourceBetId": r["source_bet_id"] or "",
+                    "level": int(r["level"] or 1),
+                    "rate": float(r["rate"] or 0.01),
+                    "eligibleAmount": round(float(r["eligible_amount"] or 0.0), 2),
+                    "commissionAmount": round(float(r["commission_amount"] or 0.0), 2),
+                    "status": r["status"] or "SETTLED",
+                    "time": to_ist_display(r["created_at"], r["created_at_ms"], mode="datetime"),
+                    "createdAtMs": _parse_ts_ms(r["created_at"], r["created_at_ms"])
+                } for r in c.fetchall()]
+
+                c.execute("SELECT * FROM admin_audit_logs ORDER BY id DESC LIMIT 500")
                 audit_logs = [{
                     "id": r["id"],
                     "actor": r["actor"],
@@ -3290,6 +3357,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 "declared_results": declared_results,
                 "declared_results_list": declared_results_list,
                 "bets": bets_list,
+                "referral_commissions": commissions_list,
                 "audit_logs": audit_logs,
                 "affiliates": affiliates_list,
                 "live_wagers": live_wagers,
@@ -3507,11 +3575,37 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json(overrides)
             return
 
+        if path == "/api/admin/commissions":
+            with db_lock:
+                conn = get_db()
+                c = conn.cursor()
+                c.execute("SELECT id, name FROM users")
+                users_map = {r["id"]: r["name"] for r in c.fetchall()}
+                c.execute("SELECT * FROM referral_commissions ORDER BY created_at_ms DESC")
+                comms = [{
+                    "id": r["id"],
+                    "beneficiaryUserId": r["beneficiary_user_id"],
+                    "beneficiaryUserName": users_map.get(r["beneficiary_user_id"], r["beneficiary_user_id"]),
+                    "sourceUserId": r["source_user_id"],
+                    "sourceUserName": r["source_user_name"] or users_map.get(r["source_user_id"], r["source_user_id"]),
+                    "sourceBetId": r["source_bet_id"] or "",
+                    "level": int(r["level"] or 1),
+                    "rate": float(r["rate"] or 0.01),
+                    "eligibleAmount": round(float(r["eligible_amount"] or 0.0), 2),
+                    "commissionAmount": round(float(r["commission_amount"] or 0.0), 2),
+                    "status": r["status"] or "SETTLED",
+                    "time": to_ist_display(r["created_at"], r["created_at_ms"], mode="datetime"),
+                    "createdAtMs": _parse_ts_ms(r["created_at"], r["created_at_ms"])
+                } for r in c.fetchall()]
+                conn.close()
+            self._send_json({ "success": True, "commissions": comms })
+            return
+
         if path == "/api/admin/audit-logs":
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
-                c.execute("SELECT * FROM admin_audit_logs ORDER BY id DESC LIMIT 100")
+                c.execute("SELECT * FROM admin_audit_logs ORDER BY id DESC LIMIT 500")
                 logs = [{
                     "id": r["id"], "actor": r["actor"], "action": r["action"],
                     "entity": r["entity"], "desc": r["desc"],
@@ -4840,13 +4934,16 @@ def _flush_on_shutdown(signum, _frame):
     sys.exit(0)
 
 if __name__ == "__main__":
-    signal.signal(signal.SIGTERM, _flush_on_shutdown)
-    signal.signal(signal.SIGINT, _flush_on_shutdown)
-    init_database()
-    sync_round_lifecycle_once()
-    daemon_thread = threading.Thread(target=background_round_lifecycle_daemon, daemon=True)
-    daemon_thread.start()
+    if HAS_FLASK_ORM:
+        _run_flask_server()
+    else:
+        signal.signal(signal.SIGTERM, _flush_on_shutdown)
+        signal.signal(signal.SIGINT, _flush_on_shutdown)
+        init_database()
+        sync_round_lifecycle_once()
+        daemon_thread = threading.Thread(target=background_round_lifecycle_daemon, daemon=True)
+        daemon_thread.start()
 
-    with ThreadedTCPServer(("", PORT), AppHandler) as httpd:
-        print(f"Colour King Master Real-Time Threaded Server running on port {PORT} (DB: {DB_FILE}, PostgreSQL: {'ENABLED' if DATABASE_URL else 'LOCAL'}).")
-        httpd.serve_forever()
+        with ThreadedTCPServer(("", PORT), AppHandler) as httpd:
+            print(f"Colour King Master Real-Time Threaded Server running on port {PORT} (DB: {DB_FILE}, PostgreSQL: {'ENABLED' if DATABASE_URL else 'LOCAL'}).")
+            httpd.serve_forever()

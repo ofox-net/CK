@@ -58,42 +58,15 @@ fun AdminScreen(
     ) {
         item {
             Spacer(modifier = Modifier.height(10.dp))
-            var adminIstClock by remember { mutableStateOf(GlobalRoundClock.formatIstDateTime()) }
-            LaunchedEffect(Unit) {
-                while (isActive) {
-                    adminIstClock = GlobalRoundClock.formatIstDateTime()
-                    delay(500L)
-                }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(imageVector = Icons.Default.AdminPanelSettings, contentDescription = "Admin Controls", tint = GoldAccent)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Platform Administration",
-                        color = TextPrimary,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = ElectricCyan.copy(alpha = 0.12f),
-                    border = borderStroke(1.dp, ElectricCyan.copy(alpha = 0.35f))
-                ) {
-                    Text(
-                        text = "🇮🇳 $adminIstClock",
-                        color = ElectricCyan,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
-                }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(imageVector = Icons.Default.AdminPanelSettings, contentDescription = "Admin Controls", tint = GoldAccent)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Platform Administration",
+                    color = TextPrimary,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
             Text(
                 text = "Multi-tenant orchestration, risk controls, withdrawal escrow & audit trail",

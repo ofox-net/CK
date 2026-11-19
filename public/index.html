@@ -1363,11 +1363,6 @@
         </div>
       </div>
       <div class="header-right">
-        <!-- Live Indian Clock (IST) Pill -->
-        <div title="Indian Standard Time (UTC+05:30)" style="display:flex; flex-direction:column; align-items:flex-end; padding:4px 8px; border-radius:10px; background:rgba(0,229,255,0.09); border:1px solid rgba(0,229,255,0.28); line-height:1.15;">
-          <span style="font-size:8px; font-weight:800; color:var(--cyan); letter-spacing:0.4px;">🇮🇳 IST +05:30</span>
-          <span id="headerIstClock" style="font-size:11px; font-weight:900; font-family:monospace; color:#FFF;">--:--:--</span>
-        </div>
         <!-- Persistent Global Sound Toggle Button -->
         <button id="soundToggleBtn" class="sound-toggle-btn" onclick="toggleGlobalSound()" title="Sound FX" aria-label="Toggle Sound Effects">
           <span id="soundToggleIcon">🔊</span>
@@ -1439,12 +1434,9 @@
               </div>
               <div class="round-period-sub" id="currentMarketTagline">South Beach Neon • 3 Min • Provably Fair SHA-256</div>
             </div>
-            <div style="display:flex; flex-direction:column; align-items:flex-end; gap:4px;">
-              <div class="status-badge open" id="bettingStatusBadge">
-                <div class="status-dot"></div>
-                <span id="bettingStatusText">Bet Open</span>
-              </div>
-              <div style="font-size:10px; font-family:monospace; color:var(--cyan); font-weight:800;" id="roundIstClock">🇮🇳 --:--:-- IST</div>
+            <div class="status-badge open" id="bettingStatusBadge">
+              <div class="status-dot"></div>
+              <span id="bettingStatusText">Bet Open</span>
             </div>
           </div>
 
@@ -1788,12 +1780,9 @@
       <div class="tab-pane" id="tab-wallet">
         <!-- Balance Overview Card -->
         <div class="card" style="background:linear-gradient(135deg, #1B2944, #111A2E); border:1px solid var(--gold);">
-          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
             <span style="font-size:11px; color:var(--gold); font-weight:800; letter-spacing:0.5px;">TOTAL AVAILABLE BALANCE</span>
-            <div style="display:flex; align-items:center; gap:6px;">
-              <span id="walletIstClock" style="font-size:10px; color:var(--cyan); font-family:monospace; font-weight:800;">🇮🇳 --:--:-- IST</span>
-              <span class="badge-pill badge-green">Synced Real-Time</span>
-            </div>
+            <span class="badge-pill badge-green">Synced Real-Time</span>
           </div>
           <div style="font-size:32px; font-weight:900; color:#FFF; margin:4px 0; font-family:monospace;" id="walletTabBalance">₹0.00</div>
           
@@ -1955,6 +1944,30 @@
             </table>
           </div>
         </div>
+
+        <!-- Live 6-Level Commission History Ledger -->
+        <div class="card">
+          <div class="section-title">
+            <span>💰 6-Level Commission History</span>
+            <span class="section-badge" id="affCommCountBadge" style="background:rgba(0,230,118,0.18); color:var(--green);">0 Entries</span>
+          </div>
+          <div class="table-container">
+            <table class="records-table">
+              <thead>
+                <tr>
+                  <th>Time (IST)</th>
+                  <th>Tier / Rate</th>
+                  <th>From Player</th>
+                  <th>Bet Stake</th>
+                  <th>Commission</th>
+                </tr>
+              </thead>
+              <tbody id="affiliateCommissionHistoryBody">
+                <!-- Populated via JS from PostgreSQL/SQLite -->
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       <!-- ========================================== -->
@@ -2111,10 +2124,9 @@
           </div>
           <div>
             <div id="betModalTargetTitle" style="font-size:16px; font-weight:900; color:#FFF; line-height:1.2;">GREEN</div>
-            <div style="display:flex; align-items:center; gap:6px; margin-top:2px; flex-wrap:wrap;">
+            <div style="display:flex; align-items:center; gap:6px; margin-top:2px;">
               <span id="betModalPayoutBadge" style="background:rgba(0,230,118,0.2); color:var(--green); font-size:11px; font-weight:800; padding:2px 6px; border-radius:4px;">2.0x Payout</span>
               <span id="betModalTypeSubtitle" style="font-size:11px; color:var(--text-muted);">COLOR Bet</span>
-              <span id="betModalIstClock" style="font-size:10px; color:var(--cyan); font-family:monospace; font-weight:800;">🇮🇳 --:--:-- IST</span>
             </div>
           </div>
         </div>
@@ -2260,10 +2272,7 @@
   <div class="modal-overlay" id="depositModal">
     <div class="modal-content">
       <div class="modal-header">
-        <div>
-          <div class="modal-title">+ Add Deposit Funds</div>
-          <div id="depositModalIstClock" style="font-size:10px; color:var(--cyan); font-family:monospace; font-weight:800; margin-top:2px;">🇮🇳 --:--:-- IST</div>
-        </div>
+        <div class="modal-title">+ Add Deposit Funds</div>
         <button class="btn-close" onclick="closeModal('depositModal')">✕</button>
       </div>
 
@@ -2351,10 +2360,7 @@
   <div class="modal-overlay" id="withdrawModal">
     <div class="modal-content">
       <div class="modal-header">
-        <div>
-          <div class="modal-title">↑ Request Fund Withdrawal</div>
-          <div id="withdrawModalIstClock" style="font-size:10px; color:var(--cyan); font-family:monospace; font-weight:800; margin-top:2px;">🇮🇳 --:--:-- IST</div>
-        </div>
+        <div class="modal-title">↑ Request Fund Withdrawal</div>
         <button class="btn-close" onclick="closeModal('withdrawModal')">✕</button>
       </div>
 
@@ -2884,7 +2890,6 @@
           const t1 = Date.now();
           const latency = (t1 - t0) / 2;
           serverClockOffsetMs = data.server_time_ms - (t1 - latency);
-          updateLiveUserISTClocks();
         }
       } catch (e) {}
     }
@@ -2972,22 +2977,17 @@
       return txt;
     }
 
-    function updateLiveUserISTClocks() {
-      const nowMs = getSyncedNowMs();
-      const clockText = formatISTTime(nowMs, true);
-      const dateTimeText = formatISTDateTime(nowMs);
-      const hEl = document.getElementById('headerIstClock');
-      if (hEl) hEl.innerText = clockText.replace(/\s*IST$/, '');
-      const rEl = document.getElementById('roundIstClock');
-      if (rEl) rEl.innerText = `🇮🇳 ${clockText}`;
-      const wEl = document.getElementById('walletIstClock');
-      if (wEl) wEl.innerText = `🇮🇳 ${clockText}`;
-      const bmEl = document.getElementById('betModalIstClock');
-      if (bmEl) bmEl.innerText = `🇮🇳 ${dateTimeText}`;
-      const dmEl = document.getElementById('depositModalIstClock');
-      if (dmEl) dmEl.innerText = `🇮🇳 ${dateTimeText}`;
-      const wmEl = document.getElementById('withdrawModalIstClock');
-      if (wmEl) wmEl.innerText = `🇮🇳 ${dateTimeText}`;
+    function getPeriodEndTimeMsIST(periodStr) {
+      const s = String(periodStr || '').trim();
+      if (!/^\d{11,}$/.test(s)) return 0;
+      const y = parseInt(s.slice(0, 4), 10);
+      const m = parseInt(s.slice(4, 6), 10);
+      const d = parseInt(s.slice(6, 8), 10);
+      const pNum = parseInt(s.slice(8), 10);
+      if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d) || !Number.isFinite(pNum)) return 0;
+      const ist11AmUtcMs = Date.UTC(y, m - 1, d, 11, 0, 0, 0) - (5.5 * 3600 * 1000);
+      const roundIndex = pNum - 221;
+      return ist11AmUtcMs + ((roundIndex + 1) * 180 * 1000);
     }
 
     // Global IST (+05:30) Server-Synchronized Clock Engine
@@ -3154,6 +3154,7 @@
 
     // 6-Level Subordinates Team Directory & Affiliate Stats (Synced live from SQLite /api/affiliates)
     let affiliateTeam = [];
+    let affiliateCommissions = [];
     let affiliateSummary = {
       referralCode: '',
       lifetimeCommission: 0,
@@ -3435,17 +3436,25 @@
     }
 
     function getStoredOrDeterministicResult(mKey, periodStr, timestamp) {
+      const periodEndMs = getPeriodEndTimeMsIST(periodStr);
       if (declaredResultsStore[mKey] && declaredResultsStore[mKey][periodStr]) {
-        return declaredResultsStore[mKey][periodStr];
+        const existing = declaredResultsStore[mKey][periodStr];
+        if (!existing.mode && !existing.drawMode && periodEndMs > 0) {
+          existing.timestampMs = periodEndMs;
+          existing.time = formatISTDateTime(periodEndMs);
+        }
+        return existing;
       }
       const det = getDeterministicPeriodResult(mKey, periodStr);
+      const fallbackMs = periodEndMs > 0 ? periodEndMs : getSyncedNowMs();
       const record = {
         period: periodStr,
         number: det.number,
         isBig: det.isBig,
         color: det.color,
         colClass: det.colClass,
-        time: resolveISTTimestamp(timestamp, getSyncedNowMs(), false),
+        time: timestamp ? resolveISTTimestamp(timestamp, 0, true) : formatISTDateTime(fallbackMs),
+        timestampMs: timestamp ? 0 : fallbackMs,
         hash: det.hash
       };
       if (!declaredResultsStore[mKey]) declaredResultsStore[mKey] = {};
@@ -3715,9 +3724,13 @@
         st.pastRecords = [];
         for (let i = 1; i <= 100; i++) {
           const prevPeriod = `${datePrefix}${Math.max(1, curNum - i)}`;
-          const recMs = getSyncedNowMs() - i * 180 * 1000;
-          const timeStr = formatISTClock24(recMs);
+          const recMs = getPeriodEndTimeMsIST(prevPeriod) || (getSyncedNowMs() - i * 180 * 1000);
+          const timeStr = formatISTDateTime(recMs);
           const rec = getStoredOrDeterministicResult(k, prevPeriod, timeStr);
+          if (!rec.mode && !rec.drawMode && recMs > 0) {
+            rec.timestampMs = recMs;
+            rec.time = timeStr;
+          }
           st.pastRecords.push(rec);
         }
         if (st.pastRecords.length > 0) {
@@ -3975,7 +3988,8 @@
       document.getElementById('paBigSmallDisplay').innerText = isBig ? 'BIG (5-9)' : 'SMALL (0-4)';
       document.getElementById('paColorDisplay').innerText = color.toUpperCase();
       const tsEl = document.getElementById('paTimeDisplay');
-      if (tsEl) tsEl.innerText = resolveISTTimestamp(timeStr, 0, true);
+      const fallbackMs = getPeriodEndTimeMsIST(period);
+      if (tsEl) tsEl.innerText = timeStr ? resolveISTTimestamp(timeStr, 0, true) : (fallbackMs > 0 ? formatISTDateTime(fallbackMs) : formatISTDateTime(getSyncedNowMs()));
       document.getElementById('periodAuditModal').classList.add('active');
       playSound('betClick');
     }
@@ -4817,7 +4831,9 @@
                     isBig: m.latest_result.isBig,
                     color: m.latest_result.color,
                     colClass: colClass,
-                    time: resolveISTTimestamp(m.latest_result.time, m.latest_result.timestampMs || getSyncedNowMs(), true)
+                    time: resolveISTTimestamp(m.latest_result.time, m.latest_result.timestampMs || 0, true),
+                    timestampMs: Number(m.latest_result.timestampMs || 0),
+                    drawMode: m.latest_result.drawMode || ''
                   };
                   const idx = st.pastRecords.findIndex(r => String(r.period) === newRec.period);
                   if (idx >= 0) {
@@ -4875,7 +4891,9 @@
                 isBig: Boolean(r.isBig),
                 color: r.color,
                 colClass: r.colClass || (r.number === 0 ? 'red-violet' : r.number === 5 ? 'green-violet' : ([1,3,7,9].includes(r.number) ? 'green' : 'red')),
-                time: r.time
+                time: resolveISTTimestamp(r.time, r.timestampMs || 0, true),
+                timestampMs: Number(r.timestampMs || 0),
+                drawMode: r.drawMode || ''
               };
               recordMap.set(norm.period, norm);
               if (!declaredResultsStore[mKey]) declaredResultsStore[mKey] = {};
@@ -4973,7 +4991,6 @@
           });
 
           const activeSt = marketStates[currentMarketId];
-          updateLiveUserISTClocks();
           if (activeSt.secondsLeft !== lastRenderedSecond || currentMarketId !== lastRenderedMarket || rolledOver) {
             lastRenderedSecond = activeSt.secondsLeft;
             lastRenderedMarket = currentMarketId;
@@ -5132,11 +5149,14 @@
       const st = marketStates[roadmapSelectedMarketId];
       const container = document.getElementById('rmBeadMatrixGrid');
       if (!container) return;
-      container.innerHTML = st.pastRecords.slice(0, 100).map(r => `
-        <div class="bead-circle ${r.color}" onclick="openPeriodAudit('${r.period}', ${r.number}, '${r.color}', ${r.isBig})">
+      container.innerHTML = st.pastRecords.slice(0, 100).map(r => {
+        const safeTimeAttr = String(resolveISTTimestamp(r.time, r.timestampMs || 0, true)).replace(/'/g, "\\'");
+        return `
+        <div class="bead-circle ${r.color}" onclick="openPeriodAudit('${r.period}', ${r.number}, '${r.color}', ${r.isBig}, '${safeTimeAttr}')">
           ${r.number}
         </div>
-      `).join('');
+      `;
+      }).join('');
     }
 
     // CASINO PROVIDERS CATALOG & SIMULATOR
@@ -5868,20 +5888,40 @@
     function renderAffiliateTeam() {
       updateAffiliateStatsUI();
       const tbody = document.getElementById('affiliateTeamTableBody');
-      if (!tbody) return;
-      if (!Array.isArray(affiliateTeam) || affiliateTeam.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:14px; font-size:12px;">No subordinates yet. Share your referral code to build your 6-tier team!</td></tr>`;
-        return;
+      if (tbody) {
+        if (!Array.isArray(affiliateTeam) || affiliateTeam.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:14px; font-size:12px;">No subordinates yet. Share your referral code to build your 6-tier team!</td></tr>`;
+        } else {
+          tbody.innerHTML = affiliateTeam.map(m => `
+            <tr>
+              <td><span class="badge-pill badge-green">Tier ${m.tier}</span></td>
+              <td style="font-weight:700;">${escapeSupportHtml(m.name)}</td>
+              <td style="color:var(--text-muted);">${escapeSupportHtml(m.joined || '-')}</td>
+              <td style="font-family:monospace;">₹${Number(m.turnover || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              <td style="color:var(--green); font-weight:800; font-family:monospace;">+₹${Number(m.commission || 0).toFixed(2)}</td>
+            </tr>
+          `).join('');
+        }
       }
-      tbody.innerHTML = affiliateTeam.map(m => `
-        <tr>
-          <td><span class="badge-pill badge-green">Tier ${m.tier}</span></td>
-          <td style="font-weight:700;">${m.name}</td>
-          <td style="color:var(--text-muted);">${m.joined || '-'}</td>
-          <td style="font-family:monospace;">₹${Number(m.turnover || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-          <td style="color:var(--green); font-weight:800; font-family:monospace;">+₹${Number(m.commission || 0).toFixed(2)}</td>
-        </tr>
-      `).join('');
+
+      const commBody = document.getElementById('affiliateCommissionHistoryBody');
+      const commBadge = document.getElementById('affCommCountBadge');
+      if (commBadge) commBadge.innerText = `${Array.isArray(affiliateCommissions) ? affiliateCommissions.length : 0} Entries`;
+      if (commBody) {
+        if (!Array.isArray(affiliateCommissions) || affiliateCommissions.length === 0) {
+          commBody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:14px; font-size:12px;">No commission payouts recorded yet. Earn 1.00% to 0.20% across Levels 1–6 whenever your team bets!</td></tr>`;
+        } else {
+          commBody.innerHTML = affiliateCommissions.map(rc => `
+            <tr>
+              <td style="font-size:10px; color:var(--cyan); font-family:monospace;">${escapeSupportHtml(rc.createdAt || '-')}</td>
+              <td><span class="badge-pill badge-green">L${Number(rc.level || 1)} (${(Number(rc.rate || 0.01) * 100).toFixed(2)}%)</span></td>
+              <td style="font-weight:700;">${escapeSupportHtml(rc.sourceUserName || rc.sourceUserId || '-')}</td>
+              <td style="font-family:monospace;">₹${Number(rc.eligibleAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              <td style="color:var(--green); font-weight:800; font-family:monospace;">+₹${Number(rc.commissionAmount || 0).toFixed(2)}</td>
+            </tr>
+          `).join('');
+        }
+      }
     }
 
     function syncUserAffiliates() {
@@ -5909,6 +5949,7 @@
             teamCount: Number(data.teamCount || 0)
           };
           affiliateTeam = Array.isArray(data.members) ? data.members : [];
+          affiliateCommissions = Array.isArray(data.recentCommissions) ? data.recentCommissions : [];
           renderAffiliateTeam();
         }).catch(() => {});
     }
@@ -6056,6 +6097,7 @@
       userBetSlipsHistory = [];
       walletLedger = [];
       affiliateTeam = [];
+      affiliateCommissions = [];
       affiliateSummary = { referralCode: '', lifetimeCommission: 0, todayCommission: 0, networkTurnover: 0, teamCount: 0 };
       lastKnownBetStatuses = {};
       resetUserSupportState();
@@ -6151,6 +6193,7 @@
       latestStatementData = null;
       walletLedger = [];
       affiliateTeam = [];
+      affiliateCommissions = [];
       lastKnownBetStatuses = {};
       loadSavedBetSlipsForCurrentUser();
       if (recToken) saveRecoveryVault(userObj, recToken);
@@ -6346,6 +6389,7 @@
       userBetSlipsHistory = [];
       walletLedger = [];
       affiliateTeam = [];
+      affiliateCommissions = [];
       affiliateSummary = { referralCode: '', lifetimeCommission: 0, todayCommission: 0, networkTurnover: 0, teamCount: 0 };
       resetUserSupportState();
       renderBetSlips();
