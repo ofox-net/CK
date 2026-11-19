@@ -24,7 +24,8 @@ data class BankConfigState(
     val ifsc: String = "SBIN0001824",
     val holder: String = "Colour King Gaming Enterprise Ltd",
     val minDep: Long = 100L,
-    val maxDep: Long = 100000L
+    val maxDep: Long = 100000L,
+    val qrImage: String = ""
 )
 
 data class ServerRoundOverride(
@@ -683,7 +684,8 @@ class BackendSyncService(
                 ifsc = bcObj.optString("ifsc", "SBIN0001824"),
                 holder = bcObj.optString("holder", "Colour King Gaming Enterprise Ltd"),
                 minDep = bcObj.optLong("minDep", 100L),
-                maxDep = bcObj.optLong("maxDep", 100000L)
+                maxDep = bcObj.optLong("maxDep", 100000L),
+                qrImage = bcObj.optString("qrImage", "")
             )
         } else BankConfigState()
 

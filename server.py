@@ -186,6 +186,7 @@ DEFAULT_BANK_CONFIG = {
     "upiName": "Colour King Official Pay",
     "minDeposit": 100,
     "maxDeposit": 100000,
+    "qrImage": "",
     "instructions": "1. Scan QR code or pay to the UPI ID above.\n2. Enter the 12-digit UTR reference number in the app.\n3. Balance will be approved and credited within 2 minutes."
 }
 
@@ -4742,12 +4743,23 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
+                if "qrImage" not in payload:
+                    c.execute("SELECT value FROM app_state WHERE key = 'bank_config'")
+                    ex_row = c.fetchone()
+                    if ex_row:
+                        try:
+                            ex_cfg = json.loads(ex_row[0])
+                            if isinstance(ex_cfg, dict) and ex_cfg.get("qrImage"):
+                                payload["qrImage"] = ex_cfg.get("qrImage")
+                        except Exception:
+                            pass
                 c.execute("INSERT OR REPLACE INTO app_state (key, value, updated_at) VALUES ('bank_config', ?, CURRENT_TIMESTAMP)", (json.dumps(payload),))
+                qr_note = " (Custom QR Active)" if payload.get("qrImage") else ""
                 c.execute("""
                     INSERT INTO admin_audit_logs (actor, action, entity, desc)
                     VALUES ('ColourPrince', 'BANK_CONFIG_UPDATE', 'PAYMENT_GATEWAYS', ?)
-                """, (f"Updated Bank {payload.get('bankName', '')} / UPI {payload.get('upiId', '')}",))
-                _, sse_ev = bump_state_version(conn, "bank_config_updated", {"upiId": payload.get("upiId")})
+                """, (f"Updated Bank {payload.get('bankName', '')} / UPI {payload.get('upiId', '')}{qr_note}",))
+                _, sse_ev = bump_state_version(conn, "bank_config_updated", {"upiId": payload.get("upiId"), "hasQr": bool(payload.get("qrImage"))})
                 commit_and_persist(conn, critical=True)
                 conn.close()
             notify_sse_clients(sse_ev)
@@ -4759,7 +4771,18 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 conn = get_db()
                 c = conn.cursor()
                 if isinstance(payload.get("bank_config"), dict):
-                    c.execute("INSERT OR REPLACE INTO app_state (key, value, updated_at) VALUES ('bank_config', ?, CURRENT_TIMESTAMP)", (json.dumps(payload["bank_config"]),))
+                    incoming_bc = dict(payload["bank_config"])
+                    if "qrImage" not in incoming_bc:
+                        c.execute("SELECT value FROM app_state WHERE key = 'bank_config'")
+                        ex_row = c.fetchone()
+                        if ex_row:
+                            try:
+                                ex_cfg = json.loads(ex_row[0])
+                                if isinstance(ex_cfg, dict) and ex_cfg.get("qrImage"):
+                                    incoming_bc["qrImage"] = ex_cfg.get("qrImage")
+                            except Exception:
+                                pass
+                    c.execute("INSERT OR REPLACE INTO app_state (key, value, updated_at) VALUES ('bank_config', ?, CURRENT_TIMESTAMP)", (json.dumps(incoming_bc),))
                 if isinstance(payload.get("platform_settings"), dict):
                     c.execute("INSERT OR REPLACE INTO app_state (key, value, updated_at) VALUES ('platform_settings', ?, CURRENT_TIMESTAMP)", (json.dumps(payload["platform_settings"]),))
                 # Note: Never mutate, overwrite, or delete `users` rows via bulk sync-state; users are exclusively managed via /api/users/*, /api/user/adjust, and /api/user/status.

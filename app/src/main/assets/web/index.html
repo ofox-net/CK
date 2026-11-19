@@ -2287,28 +2287,32 @@
 
         <!-- Dynamic QR Code & UPI Visual -->
         <div style="display:flex; gap:12px; align-items:center; background:#0B132B; padding:10px; border-radius:10px; border:1px dashed var(--gold);">
-          <div style="background:#FFF; padding:4px; border-radius:8px; display:inline-block; flex-shrink:0;">
-            <svg width="74" height="74" viewBox="0 0 100 100" fill="#000">
-              <rect width="100" height="100" fill="#FFF"/>
-              <rect x="8" y="8" width="26" height="26" fill="#000"/>
-              <rect x="13" y="13" width="16" height="16" fill="#FFF"/>
-              <rect x="16" y="16" width="10" height="10" fill="#000"/>
-              <rect x="66" y="8" width="26" height="26" fill="#000"/>
-              <rect x="71" y="13" width="16" height="16" fill="#FFF"/>
-              <rect x="74" y="16" width="10" height="10" fill="#000"/>
-              <rect x="8" y="66" width="26" height="26" fill="#000"/>
-              <rect x="13" y="71" width="16" height="16" fill="#FFF"/>
-              <rect x="16" y="74" width="10" height="10" fill="#000"/>
-              <rect x="42" y="12" width="16" height="6" fill="#000"/>
-              <rect x="45" y="24" width="10" height="10" fill="#000"/>
-              <rect x="12" y="42" width="6" height="16" fill="#000"/>
-              <rect x="24" y="45" width="10" height="10" fill="#000"/>
-              <rect x="42" y="42" width="16" height="16" fill="#D500F9"/>
-              <rect x="65" y="45" width="22" height="8" fill="#000"/>
-              <rect x="45" y="68" width="10" height="18" fill="#000"/>
-              <rect x="66" y="66" width="26" height="26" fill="#000"/>
-              <rect x="72" y="72" width="14" height="14" fill="#FFF"/>
-            </svg>
+          <div style="display:flex; flex-direction:column; align-items:center; gap:3px; flex-shrink:0;">
+            <div style="background:#FFF; padding:5px; border-radius:8px; display:inline-flex; align-items:center; justify-content:center; width:88px; height:88px;">
+              <img id="userModalQrImg" src="" alt="Scan & Pay QR Code" onclick="openQrZoomModal()" style="display:none; width:100%; height:100%; object-fit:contain; border-radius:4px; cursor:pointer;" title="Tap to enlarge QR" />
+              <svg id="userModalQrSvg" width="76" height="76" viewBox="0 0 100 100" fill="#000">
+                <rect width="100" height="100" fill="#FFF"/>
+                <rect x="8" y="8" width="26" height="26" fill="#000"/>
+                <rect x="13" y="13" width="16" height="16" fill="#FFF"/>
+                <rect x="16" y="16" width="10" height="10" fill="#000"/>
+                <rect x="66" y="8" width="26" height="26" fill="#000"/>
+                <rect x="71" y="13" width="16" height="16" fill="#FFF"/>
+                <rect x="74" y="16" width="10" height="10" fill="#000"/>
+                <rect x="8" y="66" width="26" height="26" fill="#000"/>
+                <rect x="13" y="71" width="16" height="16" fill="#FFF"/>
+                <rect x="16" y="74" width="10" height="10" fill="#000"/>
+                <rect x="42" y="12" width="16" height="6" fill="#000"/>
+                <rect x="45" y="24" width="10" height="10" fill="#000"/>
+                <rect x="12" y="42" width="6" height="16" fill="#000"/>
+                <rect x="24" y="45" width="10" height="10" fill="#000"/>
+                <rect x="42" y="42" width="16" height="16" fill="#D500F9"/>
+                <rect x="65" y="45" width="22" height="8" fill="#000"/>
+                <rect x="45" y="68" width="10" height="18" fill="#000"/>
+                <rect x="66" y="66" width="26" height="26" fill="#000"/>
+                <rect x="72" y="72" width="14" height="14" fill="#FFF"/>
+              </svg>
+            </div>
+            <span id="userModalQrZoomHint" onclick="openQrZoomModal()" style="display:none; font-size:9px; color:var(--cyan); font-weight:700; cursor:pointer;">🔍 Tap to Zoom</span>
           </div>
           <div style="flex:1; min-width:0;">
             <div style="font-size:10px; color:var(--text-muted);">UPI ID (Scan QR or Copy):</div>
@@ -2353,6 +2357,24 @@
       <div style="display:flex; flex-direction:column; gap:6px;">
         <button class="btn-primary" onclick="submitUserDepositRequest()">Submit Deposit Request with UTR</button>
         <button class="btn-secondary" onclick="closeModal('depositModal')">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Enlarged Scan & Pay QR Modal -->
+  <div class="modal-overlay" id="qrZoomModal" style="z-index:10050;" onclick="if(event.target===this) closeModal('qrZoomModal')">
+    <div class="modal-content" style="max-width:340px; align-items:center; text-align:center; gap:10px;">
+      <div class="modal-header" style="width:100%;">
+        <div class="modal-title" style="color:var(--gold);">📷 Scan &amp; Pay via UPI</div>
+        <button class="btn-close" onclick="closeModal('qrZoomModal')">✕</button>
+      </div>
+      <div style="background:#FFF; padding:12px; border-radius:14px; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 0 20px rgba(255,215,0,0.28);">
+        <img id="qrZoomModalImg" src="" alt="Full Size Payment QR" style="width:230px; height:230px; object-fit:contain; border-radius:8px;" />
+      </div>
+      <div style="font-size:13px; color:var(--gold); font-family:monospace; font-weight:800;" id="qrZoomUpiId">colourking@icici</div>
+      <div style="display:flex; gap:8px; width:100%;">
+        <button class="btn-primary" style="flex:1;" onclick="copyModalUpi()">📋 Copy UPI ID</button>
+        <button class="btn-secondary" onclick="closeModal('qrZoomModal')">Close</button>
       </div>
     </div>
   </div>
@@ -3553,29 +3575,9 @@
       const versionChanged = (newVer !== -1 && newVer !== lastUserStateVersion);
       if (newVer !== -1) lastUserStateVersion = newVer;
 
-      // 1. Reflect Admin Bank Details & Deposit Limits in real-time
+      // 1. Reflect Admin Bank Details, QR Image & Deposit Limits in real-time
       if (state.bank_config) {
-        const bc = state.bank_config;
-        const uDisplay = document.getElementById('userModalUpiDisplay');
-        const uName = document.getElementById('userModalUpiName');
-        const bName = document.getElementById('userModalBankName');
-        const acc = document.getElementById('userModalAccNo');
-        const ifsc = document.getElementById('userModalIfsc');
-        const holder = document.getElementById('userModalHolder');
-        const depInput = document.getElementById('userDepositAmountInput');
-        if (uDisplay && bc.upiId && uDisplay.innerText !== bc.upiId) uDisplay.innerText = bc.upiId;
-        if (uName && bc.upiName && uName.innerText !== bc.upiName) uName.innerText = bc.upiName;
-        if (bName && bc.bankName && bName.innerText !== bc.bankName) bName.innerText = bc.bankName;
-        if (acc && bc.accNo && acc.innerText !== bc.accNo) acc.innerText = bc.accNo;
-        if (ifsc && bc.ifsc && ifsc.innerText !== bc.ifsc) ifsc.innerText = bc.ifsc;
-        if (holder && bc.holder && holder.innerText !== bc.holder) holder.innerText = bc.holder;
-        if (typeof bc.minDep === 'number' && bc.minDep > 0) activeBankLimits.minDep = bc.minDep;
-        if (typeof bc.maxDep === 'number' && bc.maxDep > 0) activeBankLimits.maxDep = bc.maxDep;
-        if (depInput) {
-          depInput.min = activeBankLimits.minDep;
-          depInput.max = activeBankLimits.maxDep;
-          depInput.placeholder = `₹${activeBankLimits.minDep.toLocaleString()} - ₹${activeBankLimits.maxDep.toLocaleString()}`;
-        }
+        applyBankConfigToDepositModal(state.bank_config);
       }
 
       // 2. Reflect Admin Manual Draw Overrides in real-time
@@ -5754,19 +5756,75 @@
       }
     }
 
+    let latestDepositQrData = '';
+
+    function applyBankConfigToDepositModal(bc) {
+      if (!bc || typeof bc !== 'object') return;
+      const uDisplay = document.getElementById('userModalUpiDisplay');
+      const uName = document.getElementById('userModalUpiName');
+      const bName = document.getElementById('userModalBankName');
+      const acc = document.getElementById('userModalAccNo');
+      const ifsc = document.getElementById('userModalIfsc');
+      const holder = document.getElementById('userModalHolder');
+      const depInput = document.getElementById('userDepositAmountInput');
+      if (uDisplay && bc.upiId && uDisplay.innerText !== bc.upiId) uDisplay.innerText = bc.upiId;
+      if (uName && bc.upiName && uName.innerText !== bc.upiName) uName.innerText = bc.upiName;
+      if (bName && bc.bankName && bName.innerText !== bc.bankName) bName.innerText = bc.bankName;
+      if (acc && bc.accNo && acc.innerText !== bc.accNo) acc.innerText = bc.accNo;
+      if (ifsc && bc.ifsc && ifsc.innerText !== bc.ifsc) ifsc.innerText = bc.ifsc;
+      if (holder && bc.holder && holder.innerText !== bc.holder) holder.innerText = bc.holder;
+      const minD = Number(bc.minDep || bc.minDeposit || 0);
+      const maxD = Number(bc.maxDep || bc.maxDeposit || 0);
+      if (minD > 0) activeBankLimits.minDep = minD;
+      if (maxD > 0) activeBankLimits.maxDep = maxD;
+      if (depInput) {
+        depInput.min = activeBankLimits.minDep;
+        depInput.max = activeBankLimits.maxDep;
+        depInput.placeholder = `₹${activeBankLimits.minDep.toLocaleString()} - ₹${activeBankLimits.maxDep.toLocaleString()}`;
+      }
+
+      const qrUrl = String(bc.qrImage || '').trim();
+      latestDepositQrData = qrUrl;
+      const qrImg = document.getElementById('userModalQrImg');
+      const qrSvg = document.getElementById('userModalQrSvg');
+      const qrHint = document.getElementById('userModalQrZoomHint');
+      if (qrImg && qrSvg) {
+        if (qrUrl) {
+          if (qrImg.getAttribute('src') !== qrUrl) qrImg.src = qrUrl;
+          qrImg.style.display = 'block';
+          qrSvg.style.display = 'none';
+          if (qrHint) qrHint.style.display = 'inline-block';
+        } else {
+          qrImg.removeAttribute('src');
+          qrImg.style.display = 'none';
+          qrSvg.style.display = 'block';
+          if (qrHint) qrHint.style.display = 'none';
+        }
+      }
+      const zoomImg = document.getElementById('qrZoomModalImg');
+      const zoomUpi = document.getElementById('qrZoomUpiId');
+      if (zoomImg && qrUrl && zoomImg.getAttribute('src') !== qrUrl) zoomImg.src = qrUrl;
+      if (zoomUpi && bc.upiId) zoomUpi.innerText = bc.upiId;
+    }
+
+    function openQrZoomModal() {
+      if (!latestDepositQrData) return;
+      const zoomImg = document.getElementById('qrZoomModalImg');
+      const zoomUpi = document.getElementById('qrZoomUpiId');
+      const curUpi = document.getElementById('userModalUpiDisplay')?.innerText || '';
+      if (zoomImg) zoomImg.src = latestDepositQrData;
+      if (zoomUpi) zoomUpi.innerText = curUpi;
+      document.getElementById('qrZoomModal').classList.add('active');
+    }
+
     // DEPOSIT & WITHDRAWAL SUBMISSION
     function openDepositModal() {
       if (hasBackendConnection()) {
-        fetch(apiUrl('/api/bank-config')).then(r => r.json()).then(data => {
-          if (data && data.bankName) {
-            if (data.upiId) document.getElementById('userModalUpiDisplay').innerText = data.upiId;
-            if (data.upiName) document.getElementById('userModalUpiName').innerText = data.upiName;
-            if (data.bankName) document.getElementById('userModalBankName').innerText = data.bankName;
-            if (data.accNo) document.getElementById('userModalAccNo').innerText = data.accNo;
-            if (data.ifsc) document.getElementById('userModalIfsc').innerText = data.ifsc;
-            if (data.holder) document.getElementById('userModalHolder').innerText = data.holder;
-          }
-        }).catch(()=>{});
+        fetch(apiUrl('/api/bank-config?t=' + Date.now()), { cache: 'no-store' })
+          .then(r => r.json())
+          .then(data => {
+            if (data) applyBankConfigToDepositModal(data);
+          }).catch(()=>{});
       }
       document.getElementById('depositModal').classList.add('active');
       playSound('betClick');

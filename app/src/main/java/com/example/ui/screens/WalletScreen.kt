@@ -1,5 +1,8 @@
 package com.example.ui.screens
 
+import android.graphics.BitmapFactory
+import android.util.Base64
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -17,6 +20,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.foundation.verticalScroll
@@ -755,19 +761,42 @@ fun DepositDialog(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            // QR Visual Box
+                            // QR Visual Box (Admin-uploaded QR or fallback icon)
+                            val qrImageBitmap: ImageBitmap? = remember(bankConfig.qrImage) {
+                                try {
+                                    val raw = bankConfig.qrImage.trim()
+                                    if (raw.startsWith("data:image", ignoreCase = true) && raw.contains("base64,")) {
+                                        val b64 = raw.substringAfter("base64,")
+                                        val bytes = Base64.decode(b64, Base64.DEFAULT)
+                                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                                    } else null
+                                } catch (_: Exception) {
+                                    null
+                                }
+                            }
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
                                 color = Color.White,
-                                modifier = Modifier.size(72.dp)
+                                modifier = Modifier.size(80.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Default.QrCode2,
-                                        contentDescription = "UPI QR Code",
-                                        tint = Color.Black,
-                                        modifier = Modifier.size(60.dp)
-                                    )
+                                    if (qrImageBitmap != null) {
+                                        Image(
+                                            bitmap = qrImageBitmap,
+                                            contentDescription = "UPI QR Code",
+                                            contentScale = ContentScale.Fit,
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(4.dp)
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.QrCode2,
+                                            contentDescription = "UPI QR Code",
+                                            tint = Color.Black,
+                                            modifier = Modifier.size(64.dp)
+                                        )
+                                    }
                                 }
                             }
 

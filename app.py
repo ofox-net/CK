@@ -77,6 +77,7 @@ DEFAULT_BANK_CONFIG = {
     "upiName": "Colour King Official Pay",
     "minDeposit": 100,
     "maxDeposit": 100000,
+    "qrImage": "",
     "instructions": (
         "1. Scan QR code or pay to the UPI ID above.\n"
         "2. Enter the 12-digit UTR reference number in the app.\n"
@@ -3035,12 +3036,19 @@ def api_admin_declare_result():
 @app.route("/api/bank-config", methods=["GET", "POST"])
 def api_bank_config():
     if request.method == "GET":
-        return jsonify(get_app_state_json("bank_config", DEFAULT_BANK_CONFIG))
+        cfg = get_app_state_json("bank_config", DEFAULT_BANK_CONFIG)
+        if isinstance(cfg, dict) and "qrImage" not in cfg:
+            cfg["qrImage"] = ""
+        return jsonify(cfg)
     payload = request.get_json(silent=True) or {}
     with db_lock:
+        existing = get_app_state_json("bank_config", DEFAULT_BANK_CONFIG)
+        if isinstance(existing, dict) and "qrImage" not in payload and existing.get("qrImage"):
+            payload["qrImage"] = existing.get("qrImage")
         set_app_state_value("bank_config", json.dumps(payload))
-        log_admin_action("ColourPrince", "BANK_CONFIG_UPDATE", "PAYMENT_GATEWAYS", f"Updated Bank {payload.get('bankName', '')} / UPI {payload.get('upiId', '')}")
-        _, sse_ev = bump_state_version("bank_config_updated", {"upiId": payload.get("upiId")})
+        qr_note = " (Custom QR Active)" if payload.get("qrImage") else ""
+        log_admin_action("ColourPrince", "BANK_CONFIG_UPDATE", "PAYMENT_GATEWAYS", f"Updated Bank {payload.get('bankName', '')} / UPI {payload.get('upiId', '')}{qr_note}")
+        _, sse_ev = bump_state_version("bank_config_updated", {"upiId": payload.get("upiId"), "hasQr": bool(payload.get("qrImage"))})
         db.session.commit()
     notify_sse_clients(sse_ev)
     return jsonify({"success": True, "bank_config": payload})
@@ -3051,7 +3059,11 @@ def api_admin_sync_state():
     payload = request.get_json(silent=True) or {}
     with db_lock:
         if isinstance(payload.get("bank_config"), dict):
-            set_app_state_value("bank_config", json.dumps(payload["bank_config"]))
+            incoming_bc = dict(payload["bank_config"])
+            existing_bc = get_app_state_json("bank_config", DEFAULT_BANK_CONFIG)
+            if isinstance(existing_bc, dict) and "qrImage" not in incoming_bc and existing_bc.get("qrImage"):
+                incoming_bc["qrImage"] = existing_bc.get("qrImage")
+            set_app_state_value("bank_config", json.dumps(incoming_bc))
         if isinstance(payload.get("platform_settings"), dict):
             set_app_state_value("platform_settings", json.dumps(payload["platform_settings"]))
         new_ver, sse_ev = bump_state_version("admin_sync")

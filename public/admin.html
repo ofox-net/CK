@@ -1416,6 +1416,17 @@
                 </div>
               </div>
 
+              <!-- Payment QR Image Upload & Change Controls -->
+              <div class="form-group" style="background:rgba(0,229,255,0.06); border:1px dashed var(--cyan); border-radius:10px; padding:12px;">
+                <label style="color:var(--cyan); font-weight:800; margin-bottom:6px; display:block;">📷 Payment QR Code Image (Shown on User Deposit Page)</label>
+                <input type="file" id="adminQrFileInput" accept="image/*" style="display:none;" onchange="handleAdminQrFileSelected(event)" />
+                <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                  <button type="button" class="btn btn-cyan btn-sm" id="btnUploadQrMain" onclick="triggerAdminQrPicker()">📤 Upload QR Image</button>
+                  <button type="button" class="btn btn-red btn-sm" id="btnRemoveQrMain" style="display:none;" onclick="removeAdminQrImage()">🗑️ Reset Default</button>
+                  <span id="adminQrStatusText" style="font-size:11px; color:var(--text-muted);">Using default QR placeholder (upload your UPI QR photo)</span>
+                </div>
+              </div>
+
               <h4 style="font-size:13px; color:var(--amber); margin:16px 0 10px 0; border-bottom:1px solid var(--border); padding-bottom:4px;">
                 3. Deposit Limits & User Notes
               </h4>
@@ -1453,9 +1464,10 @@
             </p>
 
             <div style="background:linear-gradient(135deg, #121A2C, #0E1626); border:2px dashed var(--gold); border-radius:14px; padding:20px; display:flex; flex-direction:column; align-items:center; text-align:center; gap:12px;">
-              <div style="background:#FFF; padding:12px; border-radius:12px; display:inline-block; box-shadow:0 0 15px rgba(255,215,0,0.3);">
-                <!-- Dynamic QR SVG representation -->
-                <svg width="140" height="140" viewBox="0 0 100 100" fill="#000">
+              <div style="background:#FFF; padding:10px; border-radius:12px; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 0 15px rgba(255,215,0,0.3); min-width:160px; min-height:160px;">
+                <img id="previewQrImage" src="" alt="Live Deposit QR Code" style="display:none; width:152px; height:152px; object-fit:contain; border-radius:8px;" />
+                <!-- Fallback QR SVG placeholder -->
+                <svg id="previewQrSvgPlaceholder" width="140" height="140" viewBox="0 0 100 100" fill="#000">
                   <rect width="100" height="100" fill="#FFF"/>
                   <rect x="10" y="10" width="25" height="25" fill="#000"/>
                   <rect x="15" y="15" width="15" height="15" fill="#FFF"/>
@@ -1476,6 +1488,11 @@
                   <rect x="65" y="65" width="25" height="25" fill="#000"/>
                   <rect x="72" y="72" width="10" height="10" fill="#FFF"/>
                 </svg>
+              </div>
+
+              <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:center;">
+                <button type="button" class="btn btn-cyan btn-sm" id="btnUploadQrPreview" onclick="triggerAdminQrPicker()">📤 Upload QR</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="btnResetQrPreview" style="display:none; border-color:var(--red); color:var(--red);" onclick="removeAdminQrImage()">🗑️ Reset Default</button>
               </div>
 
               <div>
@@ -1992,6 +2009,7 @@
       upiName: "Colour King Official Pay",
       minDeposit: 100,
       maxDeposit: 100000,
+      qrImage: "",
       instructions: "1. Scan QR code or pay to the UPI ID above.\n2. Enter the 12-digit UTR reference number in the app.\n3. Balance will be approved and credited within 2 minutes."
     };
 
@@ -2976,12 +2994,152 @@
     }
 
     function updateBankPreviewCard() {
-      document.getElementById('previewUpiIdDisplay').innerText = bankConfig.upiId;
-      document.getElementById('previewUpiNameDisplay').innerText = bankConfig.upiName;
-      document.getElementById('previewBankName').innerText = bankConfig.bankName;
-      document.getElementById('previewAccNo').innerText = bankConfig.accNo;
-      document.getElementById('previewIfsc').innerText = bankConfig.ifsc;
-      document.getElementById('previewHolder').innerText = bankConfig.holder;
+      document.getElementById('previewUpiIdDisplay').innerText = bankConfig.upiId || '';
+      document.getElementById('previewUpiNameDisplay').innerText = bankConfig.upiName || '';
+      document.getElementById('previewBankName').innerText = bankConfig.bankName || '';
+      document.getElementById('previewAccNo').innerText = bankConfig.accNo || '';
+      document.getElementById('previewIfsc').innerText = bankConfig.ifsc || '';
+      document.getElementById('previewHolder').innerText = bankConfig.holder || '';
+
+      const qrData = String(bankConfig.qrImage || '').trim();
+      const hasCustomQr = !!qrData;
+      const qrImg = document.getElementById('previewQrImage');
+      const qrSvg = document.getElementById('previewQrSvgPlaceholder');
+      const btnMain = document.getElementById('btnUploadQrMain');
+      const btnMainRem = document.getElementById('btnRemoveQrMain');
+      const btnPrev = document.getElementById('btnUploadQrPreview');
+      const btnPrevRem = document.getElementById('btnResetQrPreview');
+      const statusTxt = document.getElementById('adminQrStatusText');
+
+      if (qrImg && qrSvg) {
+        if (hasCustomQr) {
+          if (qrImg.getAttribute('src') !== qrData) qrImg.src = qrData;
+          qrImg.style.display = 'block';
+          qrSvg.style.display = 'none';
+        } else {
+          qrImg.removeAttribute('src');
+          qrImg.style.display = 'none';
+          qrSvg.style.display = 'block';
+        }
+      }
+      if (btnMain) btnMain.innerText = hasCustomQr ? '🔄 Change QR Image' : '📤 Upload QR Image';
+      if (btnMainRem) btnMainRem.style.display = hasCustomQr ? 'inline-flex' : 'none';
+      if (btnPrev) btnPrev.innerText = hasCustomQr ? '🔄 Change QR' : '📤 Upload QR';
+      if (btnPrevRem) btnPrevRem.style.display = hasCustomQr ? 'inline-flex' : 'none';
+      if (statusTxt) {
+        statusTxt.innerText = hasCustomQr
+          ? '✅ Custom QR active & visible on user deposit page'
+          : 'Using default QR placeholder (upload your UPI QR photo)';
+        statusTxt.style.color = hasCustomQr ? 'var(--green)' : 'var(--text-muted)';
+      }
+    }
+
+    function triggerAdminQrPicker() {
+      const inp = document.getElementById('adminQrFileInput');
+      if (!inp) return;
+      inp.value = '';
+      inp.click();
+    }
+
+    function compressQrImageDataUrl(rawDataUrl, callback) {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const maxDim = 640;
+          let w = img.naturalWidth || img.width || 400;
+          let h = img.naturalHeight || img.height || 400;
+          if (w > maxDim || h > maxDim) {
+            const ratio = Math.min(maxDim / w, maxDim / h);
+            w = Math.max(1, Math.round(w * ratio));
+            h = Math.max(1, Math.round(h * ratio));
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+          let out = canvas.toDataURL('image/png');
+          if (out.length > 450000) {
+            out = canvas.toDataURL('image/jpeg', 0.90);
+          }
+          callback(out);
+        } catch (err) {
+          callback(rawDataUrl);
+        }
+      };
+      img.onerror = () => callback(rawDataUrl);
+      img.src = rawDataUrl;
+    }
+
+    function handleAdminQrFileSelected(event) {
+      const file = event && event.target && event.target.files ? event.target.files[0] : null;
+      if (!file) return;
+      if (!file.type || !file.type.startsWith('image/')) {
+        showToast('❌ Please select a valid QR image file (PNG, JPG, WebP).');
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        showToast('❌ QR image must be under 10 MB.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const rawUrl = ev && ev.target ? ev.target.result : '';
+        if (!rawUrl) {
+          showToast('❌ Failed to read QR image.');
+          return;
+        }
+        compressQrImageDataUrl(String(rawUrl), (optimizedUrl) => {
+          bankConfig = Object.assign({}, bankConfig, {
+            bankName: (document.getElementById('bankName')?.value || bankConfig.bankName || '').trim(),
+            holder: (document.getElementById('bankHolder')?.value || bankConfig.holder || '').trim(),
+            accNo: (document.getElementById('bankAccNo')?.value || bankConfig.accNo || '').trim(),
+            ifsc: (document.getElementById('bankIfsc')?.value || bankConfig.ifsc || '').trim(),
+            branch: (document.getElementById('bankBranch')?.value || bankConfig.branch || '').trim(),
+            upiId: (document.getElementById('upiId')?.value || bankConfig.upiId || '').trim(),
+            upiName: (document.getElementById('upiName')?.value || bankConfig.upiName || '').trim(),
+            minDeposit: parseFloat(document.getElementById('minDeposit')?.value) || bankConfig.minDeposit || 100,
+            maxDeposit: parseFloat(document.getElementById('maxDeposit')?.value) || bankConfig.maxDeposit || 100000,
+            instructions: (document.getElementById('depositInstructions')?.value || bankConfig.instructions || '').trim(),
+            qrImage: optimizedUrl
+          });
+          persistBankConfigToServer('CUSTOM_QR_UPLOADED', '📷 Payment QR uploaded & synced live to User Deposit page!');
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function removeAdminQrImage() {
+      if (!bankConfig.qrImage) return;
+      bankConfig = Object.assign({}, bankConfig, { qrImage: '' });
+      persistBankConfigToServer('QR_RESET_DEFAULT', '🗑️ Custom QR removed — reverted to default placeholder QR.');
+    }
+
+    function persistBankConfigToServer(actionLabel, toastMsg) {
+      fetch('/api/bank-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bankConfig)
+      }).then(() => pullAdminStateFromServer()).catch(() => {});
+
+      auditLogs.unshift({
+        time: nowAdminISTDisplay(),
+        actor: "ColourPrince",
+        action: actionLabel || "BANK_CONFIG_UPDATE",
+        entity: "PAYMENT_GATEWAYS",
+        desc: actionLabel === 'CUSTOM_QR_UPLOADED'
+          ? `Uploaded/changed Payment QR image for UPI ${bankConfig.upiId}`
+          : (actionLabel === 'QR_RESET_DEFAULT'
+            ? `Reset Payment QR back to default placeholder`
+            : `Updated bank to ${bankConfig.bankName} (${bankConfig.accNo}) and UPI to ${bankConfig.upiId}`)
+      });
+
+      persistAllState(true);
+      updateBankPreviewCard();
+      renderAuditTable();
+      showToast(toastMsg);
     }
 
     function saveBankDetails(e) {
@@ -2996,28 +3154,11 @@
         upiName: document.getElementById('upiName').value.trim(),
         minDeposit: parseFloat(document.getElementById('minDeposit').value) || 100,
         maxDeposit: parseFloat(document.getElementById('maxDeposit').value) || 100000,
+        qrImage: bankConfig.qrImage || '',
         instructions: document.getElementById('depositInstructions').value.trim()
       };
 
-      // Persist to database backend so user deposit modal updates in real-time
-      fetch('/api/bank-config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bankConfig)
-      }).then(() => pullAdminStateFromServer()).catch(() => {});
-
-      auditLogs.unshift({
-        time: nowAdminISTDisplay(),
-        actor: "ColourPrince",
-        action: "BANK_CONFIG_UPDATE",
-        entity: "PAYMENT_GATEWAYS",
-        desc: `Updated bank to ${bankConfig.bankName} (${bankConfig.accNo}) and UPI to ${bankConfig.upiId}`
-      });
-
-      persistAllState(true);
-      updateBankPreviewCard();
-      renderAuditTable();
-      showToast('💾 Bank and UPI deposit settings saved to SQLite & reflected live on user app!');
+      persistBankConfigToServer('BANK_CONFIG_UPDATE', '💾 Bank, UPI & QR settings saved and reflected live on user app!');
     }
 
     // ----------------------------------------------------
