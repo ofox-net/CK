@@ -653,6 +653,7 @@ fun LedgerItemCard(entry: WalletLedgerEntity) {
                             "BET" -> "🎲"
                             "WIN" -> "🏆"
                             "REFERRAL_COMMISSION" -> "🤝"
+                            "AFFILIATE_CLAIM" -> "💸"
                             "REFUND" -> "↩️"
                             else -> "🪙"
                         },

@@ -1038,43 +1038,51 @@ def build_user_affiliates(uid: str):
             })
         frontier = next_frontier
 
-    lifetime_comm = float(
-        db.session.query(func.coalesce(func.sum(ReferralCommission.commission_amount), 0.0))
-        .filter(ReferralCommission.beneficiary_user_id == uid, ReferralCommission.status != "REVERSED")
-        .scalar() or 0.0
-    )
-
-    ist_mid = get_ist_now().replace(hour=0, minute=0, second=0, microsecond=0)
-    today_start_ms = int(ist_mid.timestamp() * 1000)
-    today_comm = float(
-        db.session.query(func.coalesce(func.sum(ReferralCommission.commission_amount), 0.0))
-        .filter(
-            ReferralCommission.beneficiary_user_id == uid,
-            ReferralCommission.created_at_ms >= today_start_ms,
-            ReferralCommission.status != "REVERSED",
-        )
-        .scalar() or 0.0
-    )
-
-    network_turnover = round(sum(m["turnover"] for m in members), 2)
-    if network_turnover <= 0:
-        network_turnover = round(
-            float(
-                db.session.query(func.coalesce(func.sum(ReferralCommission.eligible_amount), 0.0))
-                .filter(ReferralCommission.beneficiary_user_id == uid, ReferralCommission.status != "REVERSED")
-                .scalar() or 0.0
-            ),
-            2,
-        )
-
-    # Return full Commission History (no narrow cutoff hiding older entries)
-    comm_rows = (
+    # Fetch all non-reversed commissions for this user once for exact L1-L6 breakdown
+    all_comm_rows = (
         ReferralCommission.query
         .filter(ReferralCommission.beneficiary_user_id == uid, ReferralCommission.status != "REVERSED")
         .order_by(ReferralCommission.created_at_ms.desc())
-        .limit(1000)
         .all()
     )
+
+    level_breakdown = []
+    for lvl, rate_val in REFERRAL_TIER_RATES:
+        lvl_members = [m for m in members if m["tier"] == lvl]
+        lvl_comms = [r for r in all_comm_rows if int(r.level or 1) == lvl]
+        lvl_earned = round(sum(float(r.commission_amount or 0.0) for r in lvl_comms), 2)
+        lvl_unclaimed = round(sum(float(r.commission_amount or 0.0) for r in lvl_comms if str(r.status or "").upper() in ("UNCLAIMED", "PENDING")), 2)
+        lvl_claimed = round(sum(float(r.commission_amount or 0.0) for r in lvl_comms if str(r.status or "").upper() in ("CLAIMED", "SETTLED", "COMPLETED")), 2)
+        lvl_turnover = round(sum(m["turnover"] for m in lvl_members), 2)
+        if lvl_turnover <= 0 and lvl_comms:
+            lvl_turnover = round(sum(float(r.eligible_amount or 0.0) for r in lvl_comms), 2)
+        level_breakdown.append({
+            "level": lvl,
+            "label": f"Level {lvl} (Direct)" if lvl == 1 else f"Level {lvl}",
+            "rate": rate_val,
+            "ratePercent": round(rate_val * 100.0, 2),
+            "membersCount": len(lvl_members),
+            "turnover": lvl_turnover,
+            "earnedCommission": lvl_earned,
+            "unclaimedCommission": lvl_unclaimed,
+            "claimedCommission": lvl_claimed,
+        })
+
+    lifetime_comm = round(sum(float(r.commission_amount or 0.0) for r in all_comm_rows), 2)
+    claimable_balance = round(sum(float(r.commission_amount or 0.0) for r in all_comm_rows if str(r.status or "").upper() in ("UNCLAIMED", "PENDING")), 2)
+
+    ist_mid = get_ist_now().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start_ms = int(ist_mid.timestamp() * 1000)
+    today_comm = round(sum(
+        float(r.commission_amount or 0.0)
+        for r in all_comm_rows
+        if _parse_ts_ms(r.created_at, r.created_at_ms or 0) >= today_start_ms
+    ), 2)
+
+    network_turnover = round(sum(m["turnover"] for m in members), 2)
+    if network_turnover <= 0:
+        network_turnover = round(sum(float(r.eligible_amount or 0.0) for r in all_comm_rows), 2)
+
     recent_commissions = [{
         "id": r.id,
         "beneficiaryUserId": r.beneficiary_user_id,
@@ -1085,22 +1093,48 @@ def build_user_affiliates(uid: str):
         "rate": float(r.rate or 0.01),
         "eligibleAmount": round(float(r.eligible_amount or 0.0), 2),
         "commissionAmount": round(float(r.commission_amount or 0.0), 2),
-        "status": r.status or "SETTLED",
+        "status": str(r.status or "UNCLAIMED").upper(),
         "createdAt": to_ist_display(r.created_at, r.created_at_ms, mode="datetime"),
         "createdAtMs": _parse_ts_ms(r.created_at, r.created_at_ms),
-    } for r in comm_rows]
+    } for r in all_comm_rows[:1000]]
+
+    # Permanent Affiliate Claim Transactions Ledger (every Claim action with exact IST date & time)
+    claim_tx_rows = (
+        Transaction.query
+        .filter(Transaction.user_id == uid, Transaction.type == "AFFILIATE_CLAIM")
+        .order_by(Transaction.created_at_ms.desc())
+        .all()
+    )
+    claim_history = [{
+        "id": tx.tx_id,
+        "title": tx.title or "Affiliate Bonus Claimed",
+        "ref": tx.ref or "Credited to Main Wallet",
+        "amount": round(float(tx.amount or 0.0), 2),
+        "balanceBefore": round(float(tx.balance_before or 0.0), 2),
+        "balanceAfter": round(float(tx.balance_after or 0.0), 2),
+        "status": "CREDITED",
+        "createdAt": to_ist_display(tx.created_at, tx.created_at_ms, mode="datetime"),
+        "createdAtMs": _parse_ts_ms(tx.created_at, tx.created_at_ms or 0),
+    } for tx in claim_tx_rows]
+    total_claimed = round(sum(c["amount"] for c in claim_history), 2)
 
     return {
         "userId": uid,
         "userName": root_u.name,
         "referralCode": ref_code,
-        "lifetimeCommission": round(lifetime_comm, 2),
-        "todayCommission": round(today_comm, 2),
+        "lifetimeCommission": lifetime_comm,
+        "claimableBalance": claimable_balance,
+        "unclaimedCommission": claimable_balance,
+        "totalClaimed": total_claimed,
+        "claimCount": len(claim_history),
+        "todayCommission": today_comm,
         "networkTurnover": network_turnover,
         "teamCount": len(members),
-        "directCount": sum(1 for m in members if m.tier == 1) if hasattr(members, "tier") else sum(1 for m in members if m["tier"] == 1),
+        "directCount": sum(1 for m in members if m["tier"] == 1),
+        "levelBreakdown": level_breakdown,
         "members": members,
         "recentCommissions": recent_commissions,
+        "claimHistory": claim_history,
     }
 
 
@@ -1252,7 +1286,7 @@ def build_user_statement(uid: str, days="ALL", category="ALL", market_filter="AL
             continue
         if tx_type == "WITHDRAWAL" and str(tx.ref or "") in seen_wd_refs:
             continue
-        if tx_type in ("COMMISSION", "REFERRAL_COMMISSION"):
+        if tx_type in ("COMMISSION", "REFERRAL_COMMISSION", "AFFILIATE_CLAIM"):
             tot_ref_earn += amt
             cat = "REFERRAL"
         elif tx_type in ("BET", "WIN"):
@@ -1276,6 +1310,10 @@ def build_user_statement(uid: str, days="ALL", category="ALL", market_filter="AL
         })
 
     for rc in ref_rows:
+        rc_st = str(rc.status or "").upper()
+        # Unclaimed commissions live in the Claim Vault (not main wallet); Claimed rows already have an AFFILIATE_CLAIM wallet tx.
+        if rc_st in ("UNCLAIMED", "PENDING", "CLAIMED", "REVERSED"):
+            continue
         comm_amt = float(rc.commission_amount or 0.0)
         ts_ms = int(rc.created_at_ms or 0)
         already = any(
@@ -1289,7 +1327,7 @@ def build_user_statement(uid: str, days="ALL", category="ALL", market_filter="AL
                 "title": f"Tier {rc.level} Refer & Earn ({float(rc.rate)*100:.2f}%)",
                 "ref": f"From {rc.source_user_name or rc.source_user_id} (Bet {rc.source_bet_id or ''})",
                 "amount": round(comm_amt, 2), "balanceBefore": None, "balanceAfter": None,
-                "status": str(rc.status or "SETTLED").upper(), "reason": None,
+                "status": rc_st or "SETTLED", "reason": None,
                 "time": format_ist_datetime(ts_ms), "timestampMs": ts_ms,
             })
 
@@ -1301,7 +1339,7 @@ def build_user_statement(uid: str, days="ALL", category="ALL", market_filter="AL
     elif cat_upper == "WIN":
         filtered = [e for e in entries if e["type"] == "WIN"]
     elif cat_upper in ("REFERRAL", "COMMISSION", "REFER"):
-        filtered = [e for e in entries if e["category"] == "REFERRAL" or e["type"] in ("COMMISSION", "REFERRAL_COMMISSION")]
+        filtered = [e for e in entries if e["category"] == "REFERRAL" or e["type"] in ("COMMISSION", "REFERRAL_COMMISSION", "AFFILIATE_CLAIM")]
     elif cat_upper == "DEPOSIT":
         filtered = [e for e in entries if e["type"] == "DEPOSIT"]
     elif cat_upper == "WITHDRAWAL":
@@ -2107,7 +2145,7 @@ def api_bets_place():
                 status="COMPLETED", created_at=now_str, created_at_ms=curr_ms,
             ))
 
-            # 6-Level Downline Commission Distribution (permanently saved in referral_commissions + transactions)
+            # 6-Level Downline Commission Accrual (held in UNCLAIMED affiliate vault until sponsor explicitly claims to wallet)
             cur_sponsor_id = u.referred_by
             visited = {uid}
             for tier_lvl, comm_rate in REFERRAL_TIER_RATES:
@@ -2119,23 +2157,12 @@ def api_bets_place():
                     break
                 comm_amt = round(amount * comm_rate, 2)
                 if comm_amt > 0:
-                    sp_bal = float(sp.balance or 0.0)
-                    sp_new = round(sp_bal + comm_amt, 2)
-                    sp.balance = sp_new
                     db.session.add(ReferralCommission(
                         id=f"REF-L{tier_lvl}-{curr_ms}-{random.randint(100, 999)}",
                         beneficiary_user_id=sp.id, source_user_id=uid, source_user_name=u.name,
                         source_bet_id=bet_id, level=tier_lvl, rate=comm_rate,
                         eligible_amount=amount, commission_amount=comm_amt,
-                        status="SETTLED", created_at=now_str, created_at_ms=curr_ms,
-                    ))
-                    db.session.add(Transaction(
-                        tx_id=f"TX-REF-L{tier_lvl}-{curr_ms}-{random.randint(100, 999)}",
-                        user_id=sp.id, type="REFERRAL_COMMISSION",
-                        title=f"Tier {tier_lvl} Refer & Earn ({comm_rate*100:.2f}%)",
-                        ref=f"From {u.name} ({m_code} Bet ₹{amount:.2f})",
-                        amount=comm_amt, balance_before=sp_bal, balance_after=sp_new,
-                        status="COMPLETED", created_at=now_str, created_at_ms=curr_ms,
+                        status="UNCLAIMED", created_at=now_str, created_at_ms=curr_ms,
                     ))
                 cur_sponsor_id = sp.referred_by
 
@@ -2157,50 +2184,10 @@ def api_bets_place():
 
 @app.route("/api/bets/cancel", methods=["POST"])
 def api_bets_cancel():
-    payload = request.get_json(silent=True) or {}
-    curr_ms = now_ms()
-    bet_id = str(payload.get("betId", "")).strip()
-    uid = str(payload.get("userId") or get_cookie_uid() or "").strip()
-
-    with db_lock:
-        try:
-            b = Bet.query.filter_by(bet_id=bet_id, user_id=uid).first()
-            if not b:
-                return jsonify({"success": False, "error": "Bet not found"}), 404
-            if b.status != "PENDING":
-                return jsonify({"success": False, "error": f"Cannot cancel bet in {b.status} status"}), 400
-            auth = calculate_authoritative_round(b.market, curr_ms)
-            if auth["is_betting_locked"] or auth["period"] != b.period:
-                return jsonify({"success": False, "error": "Cannot cancel bet: Round is already locked or finished!"}), 400
-
-            u = User.query.get(uid)
-            curr_bal = float(u.balance)
-            refund_amt = float(b.amount)
-            new_bal = round(curr_bal + refund_amt, 2)
-            u.balance = new_bal
-
-            now_str = format_ist_datetime(curr_ms)
-            b.status = "CANCELLED"
-            b.result_text = "Cancelled & Refunded"
-            b.win_amount = 0.0
-            b.loss_amount = 0.0
-            b.settled_at = now_str
-
-            db.session.add(Transaction(
-                tx_id=f"TX-REF-{curr_ms}-{random.randint(100, 999)}",
-                user_id=uid, type="REFUND", title=f"Refund {b.market} #{b.period}",
-                ref=f"Target {b.prediction_target} Cancelled", amount=refund_amt,
-                balance_before=curr_bal, balance_after=new_bal,
-                status="COMPLETED", created_at=now_str, created_at_ms=curr_ms,
-            ))
-            _, sse_ev = bump_state_version("bet_cancelled", {"userId": uid, "betId": bet_id})
-            db.session.commit()
-        except Exception as exc:
-            db.session.rollback()
-            return jsonify({"success": False, "error": str(exc)}), 500
-
-    notify_sse_clients(sse_ev)
-    return jsonify({"success": True, "message": f"Bet {bet_id} cancelled and ₹{refund_amt:.2f} refunded.", "newBalance": new_bal, "settledAt": now_str})
+    return jsonify({
+        "success": False,
+        "error": "Once a bet is submitted, it cannot be cancelled or refunded."
+    }), 403
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2790,6 +2777,103 @@ def api_affiliates():
     return jsonify(aff)
 
 
+@app.route("/api/affiliates/claim", methods=["POST"])
+def api_affiliates_claim():
+    payload = request.get_json(silent=True) or {}
+    uid = str(payload.get("userId") or get_cookie_uid() or "").strip()
+    if not uid or uid == "Guest":
+        return jsonify({"success": False, "error": "Missing userId"}), 400
+
+    sse_ev = None
+    with db_lock:
+        try:
+            u = User.query.get(uid)
+            if not u:
+                return jsonify({"success": False, "error": "User not found"}), 404
+            if str(u.status or "").upper() == "BLOCKED":
+                return jsonify({"success": False, "error": "Account temporarily restricted by Admin"}), 403
+
+            unclaimed_rows = (
+                ReferralCommission.query
+                .filter(
+                    ReferralCommission.beneficiary_user_id == uid,
+                    ReferralCommission.status.in_(["UNCLAIMED", "PENDING"]),
+                )
+                .order_by(ReferralCommission.created_at_ms.asc())
+                .all()
+            )
+            claim_amt = round(sum(float(r.commission_amount or 0.0) for r in unclaimed_rows), 2)
+            if not unclaimed_rows or claim_amt <= 0.0:
+                return jsonify({"success": False, "error": "No unclaimed affiliate commission available to claim."}), 400
+
+            curr_ms = now_ms()
+            now_str = format_ist_datetime(curr_ms)
+            curr_bal = float(u.balance or 0.0)
+            new_bal = round(curr_bal + claim_amt, 2)
+            u.balance = new_bal
+
+            for rc in unclaimed_rows:
+                rc.status = "CLAIMED"
+
+            claim_tx_id = f"TX-AFFCLAIM-{curr_ms}-{random.randint(100, 999)}"
+            claim_tx = Transaction(
+                tx_id=claim_tx_id,
+                user_id=uid,
+                type="AFFILIATE_CLAIM",
+                title=f"Affiliate Commission Claimed (+₹{claim_amt:.2f})",
+                ref=f"Claimed {len(unclaimed_rows)} L1–L6 Commission(s) to Main Wallet",
+                amount=claim_amt,
+                balance_before=curr_bal,
+                balance_after=new_bal,
+                status="COMPLETED",
+                created_at=now_str,
+                created_at_ms=curr_ms,
+            )
+            db.session.add(claim_tx)
+            _, sse_ev = bump_state_version("affiliate_claimed", {"userId": uid, "claimedAmount": claim_amt, "claimTxId": claim_tx_id})
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({"success": False, "error": f"Failed to claim affiliate commission: {exc}"}), 500
+
+    notify_sse_clients(sse_ev)
+    updated_aff = build_user_affiliates(uid)
+    return jsonify({
+        "success": True,
+        "message": f"Claimed ₹{claim_amt:.2f} affiliate earnings into main wallet!",
+        "claimedAmount": claim_amt,
+        "claimedCount": len(unclaimed_rows),
+        "newBalance": new_bal,
+        "claimTransaction": {
+            "id": claim_tx_id,
+            "title": claim_tx.title,
+            "ref": claim_tx.ref,
+            "amount": claim_amt,
+            "balanceBefore": round(curr_bal, 2),
+            "balanceAfter": new_bal,
+            "status": "CREDITED",
+            "createdAt": now_str,
+            "createdAtMs": curr_ms,
+        },
+        "affiliates": updated_aff,
+    })
+
+
+@app.route("/api/admin/verify-login", methods=["POST"])
+def api_admin_verify_login():
+    payload = request.get_json(silent=True) or {}
+    username = str(payload.get("username") or "").strip()
+    password = str(payload.get("password") or "").strip()
+    mpin = str(payload.get("mpin") or "").strip()
+    step = str(payload.get("step") or "FULL").upper().strip()
+
+    if username != "ColourPrince" or password != "Prince@124735":
+        return jsonify({"success": False, "error": "Invalid administrator username or password."}), 401
+    if step in ("MPIN", "FULL") and mpin != "124735":
+        return jsonify({"success": False, "error": "Invalid 6-digit Security MPIN."}), 401
+    return jsonify({"success": True, "adminName": "ColourPrince"})
+
+
 @app.route("/api/admin/commissions", methods=["GET"])
 def api_admin_commissions():
     rows = ReferralCommission.query.order_by(ReferralCommission.created_at_ms.desc()).all()
@@ -2925,6 +3009,9 @@ def api_state():
             "refCode": aff["referralCode"], "referredBy": u.referred_by or "OFFICIAL_PROMO",
             "directMembersCount": aff["directCount"], "teamMembersCount": aff["teamCount"],
             "totalEarnedCommission": aff["lifetimeCommission"],
+            "claimableBalance": aff["claimableBalance"],
+            "totalClaimed": aff["totalClaimed"],
+            "levelBreakdown": aff["levelBreakdown"],
             "yesterdayCommission": aff["todayCommission"], "todayCommission": aff["todayCommission"],
             "networkTurnover": aff["networkTurnover"],
             "members": [{

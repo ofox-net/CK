@@ -76,6 +76,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _serverAffiliateStats = MutableStateFlow<ServerAffiliateStats?>(null)
     val serverAffiliateStats = _serverAffiliateStats.asStateFlow()
 
+    private val _isClaimingAffiliate = MutableStateFlow(false)
+    val isClaimingAffiliate = _isClaimingAffiliate.asStateFlow()
+
     private val _supportThread = MutableStateFlow<ServerSupportThread?>(null)
     val supportThread = _supportThread.asStateFlow()
 
@@ -519,6 +522,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     "user_status_changed" -> if (ev.targetUserId == targetUid) {
                         backendSyncService.forceSyncNow()
+                    }
+                    "affiliate_claimed" -> if (ev.targetUserId == targetUid) {
+                        backendSyncService.forceSyncNow()
+                        _serverAffiliateStats.value = backendSyncService.fetchUserAffiliates(targetUid)
                     }
                     "support_reply", "support_updated", "support_message" -> {
                         if (ev.targetUserId == null || ev.targetUserId == targetUid) {
@@ -1221,30 +1228,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val serverUserId = getServerUserId()
             val currentMarket = _selectedMarket.value
 
-            // 1. Check if user already has an active bet on this button/selection in this round
-            val existingBet = currentRoundActiveBets.value[selection]
-            if (existingBet != null) {
-                // TOGGLE OFF: Cancel and instantly refund to wallet!
-                lastLocalMutationAtMs = System.currentTimeMillis()
-                when (val cancelRes = walletService.cancelAndRefundBet(tenantId, userId, existingBet.amount, round.roundId, existingBet.id)) {
-                    is WalletResult.Error -> postNotification("Cancel failed: ${cancelRes.message}", false)
-                    is WalletResult.Success -> {
-                        database.betDao().updateBet(existingBet.copy(status = BetStatus.REFUNDED.name, actualPayout = 0L))
-                        viewModelScope.launch {
-                            backendSyncService.cancelBetOnServer(
-                                serverUserId = serverUserId,
-                                betId = existingBet.id,
-                                marketCode = currentMarket.name.uppercase(),
-                                period = round.roundNumber.toString()
-                            )
-                        }
-                        postNotification("❌ Bet on $selection refunded. Result is Refunded!", true)
-                    }
-                }
-                return@launch
-            }
-
-            // 2. TOGGLE ON: Place new bet on this selection!
+            // Place new bet on this selection (bets are final & non-refundable once submitted)
             val cfg = gameConfig.value ?: GameConfigEntity(id = "default", tenantId = tenantId)
             if (amountCents < cfg.minBet) {
                 postNotification("Minimum bet is ${MoneyUtils.formatCents(cfg.minBet)}", false)
@@ -1576,6 +1560,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             )
             postNotification("Game configuration saved!")
+        }
+    }
+
+    fun claimAffiliateEarnings() {
+        if (_isClaimingAffiliate.value) return
+        val serverUid = getServerUserId()
+        viewModelScope.launch {
+            _isClaimingAffiliate.value = true
+            try {
+                val res = backendSyncService.claimAffiliateEarnings(serverUid)
+                if (res.success) {
+                    if (res.updatedStats != null) {
+                        _serverAffiliateStats.value = res.updatedStats
+                    } else {
+                        _serverAffiliateStats.value = backendSyncService.fetchUserAffiliates(serverUid)
+                    }
+                    val wallet = database.walletDao().getWallet(_activeTenantId.value, _activeUserId.value)
+                    if (wallet != null && res.newBalanceRupees != null) {
+                        val newCents = backendSyncService.rupeesToCents(res.newBalanceRupees)
+                        database.walletDao().updateWallet(
+                            wallet.copy(
+                                availableBalance = newCents,
+                                version = wallet.version + 1,
+                                updatedAt = System.currentTimeMillis()
+                            )
+                        )
+                    }
+                    backendSyncService.forceSyncNow()
+                    playSoundEffect(soundFileName = "win-fanfare.mp3")
+                    postNotification(res.message, true)
+                } else {
+                    postNotification(res.message, false)
+                }
+            } finally {
+                _isClaimingAffiliate.value = false
+            }
         }
     }
 }

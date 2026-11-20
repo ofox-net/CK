@@ -34,6 +34,7 @@ enum class LedgerEntryType {
     REFUND,
     BONUS,
     REFERRAL_COMMISSION,
+    AFFILIATE_CLAIM,
     ADMIN_ADJUSTMENT,
     REVERSAL,
     FEE
@@ -77,6 +78,8 @@ enum class BetStatus {
 }
 
 enum class CommissionStatus {
+    UNCLAIMED,
+    CLAIMED,
     PENDING,
     SETTLED,
     REVERSED

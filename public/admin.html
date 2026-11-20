@@ -593,7 +593,7 @@
 
   <!-- ADMIN SECURITY GATE AUTHENTICATION OVERLAY -->
   <div id="adminSecurityGate" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:#070B12; z-index:999999; display:flex; align-items:center; justify-content:center; padding:20px; box-sizing:border-box;">
-    <div style="background:linear-gradient(180deg, #101827 0%, #0B111D 100%); border:1px solid #233554; border-radius:18px; width:100%; max-width:440px; padding:32px 28px; box-shadow:0 20px 60px rgba(0,0,0,0.9), 0 0 30px rgba(255,215,0,0.1); display:flex; flex-direction:column; gap:20px; text-align:center;">
+    <div style="background:linear-gradient(180deg, #101827 0%, #0B111D 100%); border:1px solid #233554; border-radius:18px; width:100%; max-width:440px; padding:32px 28px; box-shadow:0 20px 60px rgba(0,0,0,0.9), 0 0 30px rgba(255,215,0,0.1); display:flex; flex-direction:column; gap:18px; text-align:center;">
       
       <!-- Crown & Brand -->
       <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
@@ -606,44 +606,70 @@
         </div>
       </div>
 
-      <p style="font-size:12px; color:#8E9DB2; line-height:1.5;">
-        Restricted Access. Enter the authorized administrator credentials to unlock the management portal.
+      <p id="adminGateSubtitle" style="font-size:12px; color:#8E9DB2; line-height:1.5;">
+        Restricted Access. Enter administrator credentials manually, then complete 6-digit Security MPIN verification.
       </p>
 
       <!-- Error Message Banner -->
       <div id="gateErrorBanner" style="display:none; background:rgba(255,23,68,0.15); border:1px solid #FF1744; color:#FF1744; padding:10px 14px; border-radius:8px; font-size:12px; font-weight:700; text-align:left;">
-        ❌ Invalid username or password! Please check credentials.
+        ❌ Invalid administrator credentials.
       </div>
 
-      <!-- Login Form -->
-      <form id="adminLoginForm" onsubmit="handleAdminLogin(event)" style="display:flex; flex-direction:column; gap:14px; text-align:left;">
-        <div>
-          <label style="font-size:12px; font-weight:700; color:#8E9DB2; display:block; margin-bottom:5px;">Admin Username</label>
-          <div style="position:relative;">
-            <input type="text" id="loginUsername" required placeholder="Enter username" style="width:100%; box-sizing:border-box; background:#141E33; border:1px solid #233554; border-radius:10px; padding:12px 14px; color:#F1F5F9; font-size:14px; font-weight:600; outline:none; transition:border-color 0.2s;" onfocus="this.style.borderColor='#FFD700'" onblur="this.style.borderColor='#233554'" autocomplete="username" />
+      <!-- STEP 1: Manual Admin Credentials Form -->
+      <div id="adminCredStep">
+        <form id="adminLoginForm" onsubmit="handleAdminLogin(event)" autocomplete="off" style="display:flex; flex-direction:column; gap:14px; text-align:left;">
+          <div>
+            <label style="font-size:12px; font-weight:700; color:#8E9DB2; display:block; margin-bottom:5px;">Admin Username</label>
+            <div style="position:relative;">
+              <input type="text" id="loginUsername" required value="" placeholder="Enter admin username" style="width:100%; box-sizing:border-box; background:#141E33; border:1px solid #233554; border-radius:10px; padding:12px 14px; color:#F1F5F9; font-size:14px; font-weight:600; outline:none; transition:border-color 0.2s;" onfocus="this.style.borderColor='#FFD700'" onblur="this.style.borderColor='#233554'" autocomplete="off" />
+            </div>
           </div>
-        </div>
 
-        <div>
-          <label style="font-size:12px; font-weight:700; color:#8E9DB2; display:block; margin-bottom:5px;">Admin Password</label>
-          <div style="position:relative; display:flex; align-items:center;">
-            <input type="password" id="loginPassword" required placeholder="Enter password" style="width:100%; box-sizing:border-box; background:#141E33; border:1px solid #233554; border-radius:10px; padding:12px 42px 12px 14px; color:#F1F5F9; font-size:14px; font-weight:600; outline:none; transition:border-color 0.2s;" onfocus="this.style.borderColor='#FFD700'" onblur="this.style.borderColor='#233554'" autocomplete="current-password" />
-            <button type="button" onclick="togglePasswordVisibility()" style="position:absolute; right:12px; background:none; border:none; color:#8E9DB2; cursor:pointer; font-size:16px; padding:0;">👁️</button>
+          <div>
+            <label style="font-size:12px; font-weight:700; color:#8E9DB2; display:block; margin-bottom:5px;">Admin Password</label>
+            <div style="position:relative; display:flex; align-items:center;">
+              <input type="password" id="loginPassword" required value="" placeholder="Enter admin password" style="width:100%; box-sizing:border-box; background:#141E33; border:1px solid #233554; border-radius:10px; padding:12px 42px 12px 14px; color:#F1F5F9; font-size:14px; font-weight:600; outline:none; transition:border-color 0.2s;" onfocus="this.style.borderColor='#FFD700'" onblur="this.style.borderColor='#233554'" autocomplete="new-password" />
+              <button type="button" onclick="togglePasswordVisibility()" style="position:absolute; right:12px; background:none; border:none; color:#8E9DB2; cursor:pointer; font-size:16px; padding:0;">👁️</button>
+            </div>
           </div>
-        </div>
 
-        <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#8E9DB2; margin-top:2px;">
-          <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
-            <input type="checkbox" id="rememberAdmin" checked style="accent-color:#FFD700;" />
-            <span>Keep me logged in</span>
-          </label>
-          <span style="color:#00E5FF; font-weight:700; cursor:pointer;" onclick="fillDemoCredentials()">Use Demo Auth</span>
-        </div>
+          <div style="display:flex; justify-content:flex-start; align-items:center; font-size:12px; color:#8E9DB2; margin-top:2px;">
+            <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+              <input type="checkbox" id="rememberAdmin" style="accent-color:#FFD700;" />
+              <span>Keep me logged in on this device</span>
+            </label>
+          </div>
 
-        <button type="submit" style="width:100%; background:linear-gradient(135deg, #FFD700, #FFAB00); color:#000; border:none; padding:13px; border-radius:10px; font-size:14px; font-weight:900; letter-spacing:0.5px; cursor:pointer; margin-top:6px; transition:transform 0.15s, box-shadow 0.2s; box-shadow:0 4px 18px rgba(255,215,0,0.35);">
-          🔓 Unlock Admin Portal
-        </button>
-      </form>
+          <button type="submit" style="width:100%; background:linear-gradient(135deg, #FFD700, #FFAB00); color:#000; border:none; padding:13px; border-radius:10px; font-size:14px; font-weight:900; letter-spacing:0.5px; cursor:pointer; margin-top:6px; transition:transform 0.15s, box-shadow 0.2s; box-shadow:0 4px 18px rgba(255,215,0,0.35);">
+            🔐 Continue to MPIN Verification →
+          </button>
+        </form>
+      </div>
+
+      <!-- STEP 2: 6-Digit Security MPIN Verification -->
+      <div id="adminMpinStep" style="display:none;">
+        <div style="background:rgba(0,230,118,0.12); border:1px solid rgba(0,230,118,0.35); color:#00E676; padding:8px 12px; border-radius:10px; font-size:11px; font-weight:800; margin-bottom:14px;">
+          ✓ Step 1 Verified (<span id="mpinAdminNameBadge">Admin</span>) • Step 2 of 2 Required
+        </div>
+        <form id="adminMpinForm" onsubmit="handleAdminMpinVerify(event)" autocomplete="off" style="display:flex; flex-direction:column; gap:14px; text-align:left;">
+          <div>
+            <label style="font-size:12px; font-weight:700; color:#8E9DB2; display:block; margin-bottom:6px;">Enter 6-Digit Security MPIN</label>
+            <div style="position:relative; display:flex; align-items:center;">
+              <input type="password" id="adminMpinInput" required inputmode="numeric" maxlength="6" pattern="[0-9]{6}" value="" placeholder="••••••" oninput="this.value = this.value.replace(/\D/g, '').slice(0, 6);" style="width:100%; box-sizing:border-box; background:#141E33; border:1px solid #00E5FF; border-radius:10px; padding:14px 44px 14px 14px; color:#FFD700; font-size:22px; font-weight:900; letter-spacing:10px; text-align:center; font-family:monospace; outline:none;" autocomplete="off" />
+              <button type="button" onclick="toggleMpinVisibility()" style="position:absolute; right:12px; background:none; border:none; color:#8E9DB2; cursor:pointer; font-size:16px; padding:0;">👁️</button>
+            </div>
+          </div>
+
+          <div style="display:flex; gap:10px; margin-top:4px;">
+            <button type="button" onclick="backToAdminCredentialsStep()" style="flex:1; background:#141E33; color:#8E9DB2; border:1px solid #233554; padding:12px; border-radius:10px; font-size:13px; font-weight:800; cursor:pointer;">
+              ← Back
+            </button>
+            <button type="submit" style="flex:2; background:linear-gradient(135deg, #00E676, #00C853); color:#000; border:none; padding:12px; border-radius:10px; font-size:13px; font-weight:900; letter-spacing:0.4px; cursor:pointer; box-shadow:0 4px 18px rgba(0,230,118,0.3);">
+              🔓 Verify MPIN &amp; Unlock
+            </button>
+          </div>
+        </form>
+      </div>
 
       <div style="border-top:1px solid #233554; padding-top:14px; margin-top:4px;">
         <a href="index.html" style="font-size:12px; color:#00E5FF; text-decoration:none; font-weight:700; display:inline-flex; align-items:center; gap:6px;">
@@ -1798,13 +1824,41 @@
     // ----------------------------------------------------
     const AUTH_USER = 'ColourPrince';
     const AUTH_PASS = 'Prince@124735';
-    const KEY_ADMIN_AUTH = 'colourking_admin_session';
+    const AUTH_MPIN = '124735';
+    const KEY_ADMIN_AUTH_LEGACY = 'colourking_admin_session';
+    const KEY_ADMIN_AUTH = 'colourking_admin_mpin_session';
+    let pendingAdminCredVerified = false;
+    let pendingAdminUsername = '';
+    let pendingAdminPassword = '';
+
+    function resetAdminGateToStep1() {
+      pendingAdminCredVerified = false;
+      pendingAdminUsername = '';
+      pendingAdminPassword = '';
+      const credStep = document.getElementById('adminCredStep');
+      const mpinStep = document.getElementById('adminMpinStep');
+      const err = document.getElementById('gateErrorBanner');
+      const mpinEl = document.getElementById('adminMpinInput');
+      if (credStep) credStep.style.display = 'block';
+      if (mpinStep) mpinStep.style.display = 'none';
+      if (err) err.style.display = 'none';
+      if (mpinEl) {
+        mpinEl.value = '';
+        mpinEl.type = 'password';
+      }
+    }
 
     function checkAdminAuth() {
+      try { localStorage.removeItem(KEY_ADMIN_AUTH_LEGACY); sessionStorage.removeItem(KEY_ADMIN_AUTH_LEGACY); } catch(e) {}
       const isAuthed = sessionStorage.getItem(KEY_ADMIN_AUTH) || localStorage.getItem(KEY_ADMIN_AUTH);
       const gate = document.getElementById('adminSecurityGate');
       if (gate) {
-        gate.style.display = (isAuthed === 'authenticated') ? 'none' : 'flex';
+        if (isAuthed === 'authenticated_mpin_v2') {
+          gate.style.display = 'none';
+        } else {
+          gate.style.display = 'flex';
+          resetAdminGateToStep1();
+        }
       }
     }
 
@@ -1815,35 +1869,93 @@
       e.preventDefault();
       const u = (document.getElementById('loginUsername')?.value || '').trim();
       const p = (document.getElementById('loginPassword')?.value || '').trim();
-      const remember = document.getElementById('rememberAdmin')?.checked;
       const err = document.getElementById('gateErrorBanner');
 
       if (u === AUTH_USER && p === AUTH_PASS) {
         if (err) err.style.display = 'none';
-        sessionStorage.setItem(KEY_ADMIN_AUTH, 'authenticated');
+        pendingAdminCredVerified = true;
+        pendingAdminUsername = u;
+        pendingAdminPassword = p;
+        const credStep = document.getElementById('adminCredStep');
+        const mpinStep = document.getElementById('adminMpinStep');
+        const badge = document.getElementById('mpinAdminNameBadge');
+        if (badge) badge.innerText = u;
+        if (credStep) credStep.style.display = 'none';
+        if (mpinStep) mpinStep.style.display = 'block';
+        const mpinEl = document.getElementById('adminMpinInput');
+        if (mpinEl) {
+          mpinEl.value = '';
+          setTimeout(() => mpinEl.focus(), 60);
+        }
+      } else {
+        pendingAdminCredVerified = false;
+        if (err) {
+          err.style.display = 'block';
+          err.innerText = '❌ Invalid administrator username or password.';
+        }
+      }
+    }
+
+    function backToAdminCredentialsStep() {
+      resetAdminGateToStep1();
+      const uEl = document.getElementById('loginUsername');
+      if (uEl) setTimeout(() => uEl.focus(), 60);
+    }
+
+    function handleAdminMpinVerify(e) {
+      e.preventDefault();
+      const err = document.getElementById('gateErrorBanner');
+      if (!pendingAdminCredVerified || pendingAdminUsername !== AUTH_USER || pendingAdminPassword !== AUTH_PASS) {
+        resetAdminGateToStep1();
+        if (err) {
+          err.style.display = 'block';
+          err.innerText = '❌ Session expired. Please re-enter administrator credentials.';
+        }
+        return;
+      }
+
+      const mpin = (document.getElementById('adminMpinInput')?.value || '').trim();
+      const remember = document.getElementById('rememberAdmin')?.checked;
+
+      if (mpin === AUTH_MPIN) {
+        if (err) err.style.display = 'none';
+        sessionStorage.setItem(KEY_ADMIN_AUTH, 'authenticated_mpin_v2');
         if (remember) {
-          localStorage.setItem(KEY_ADMIN_AUTH, 'authenticated');
+          localStorage.setItem(KEY_ADMIN_AUTH, 'authenticated_mpin_v2');
+        } else {
+          localStorage.removeItem(KEY_ADMIN_AUTH);
         }
         const gate = document.getElementById('adminSecurityGate');
         if (gate) gate.style.display = 'none';
-        showToast('👑 Welcome ColourPrince! Admin portal unlocked.');
+        pendingAdminCredVerified = false;
+        pendingAdminPassword = '';
+        const p = document.getElementById('loginPassword');
+        const mEl = document.getElementById('adminMpinInput');
+        if (p) p.value = '';
+        if (mEl) mEl.value = '';
+        showToast('👑 Welcome ' + AUTH_USER + '! Admin portal unlocked.');
       } else {
         if (err) {
           err.style.display = 'block';
-          err.innerText = '❌ Invalid credentials! Enter username ColourPrince and password Prince@124735.';
+          err.innerText = '❌ Invalid 6-digit Security MPIN! Please try again.';
         }
+        const mEl = document.getElementById('adminMpinInput');
+        if (mEl) { mEl.value = ''; mEl.focus(); }
       }
     }
 
     function adminLogout() {
       sessionStorage.removeItem(KEY_ADMIN_AUTH);
       localStorage.removeItem(KEY_ADMIN_AUTH);
+      sessionStorage.removeItem(KEY_ADMIN_AUTH_LEGACY);
+      localStorage.removeItem(KEY_ADMIN_AUTH_LEGACY);
+      const u = document.getElementById('loginUsername');
+      const p = document.getElementById('loginPassword');
+      if (u) u.value = '';
+      if (p) p.value = '';
+      resetAdminGateToStep1();
       const gate = document.getElementById('adminSecurityGate');
-      if (gate) {
-        gate.style.display = 'flex';
-        const p = document.getElementById('loginPassword');
-        if (p) p.value = '';
-      }
+      if (gate) gate.style.display = 'flex';
       showToast('🔒 Logged out of Admin Portal');
     }
 
@@ -1852,11 +1964,9 @@
       if (p) p.type = p.type === 'password' ? 'text' : 'password';
     }
 
-    function fillDemoCredentials() {
-      const u = document.getElementById('loginUsername');
-      const p = document.getElementById('loginPassword');
-      if (u) u.value = 'ColourPrince';
-      if (p) p.value = 'Prince@124735';
+    function toggleMpinVisibility() {
+      const m = document.getElementById('adminMpinInput');
+      if (m) m.type = m.type === 'password' ? 'text' : 'password';
     }
 
     let adminClockOffsetMs = 0;
@@ -3543,7 +3653,7 @@
           <td><span class="badge badge-approved">Level ${Number(rc.level || 1)} (${(Number(rc.rate || 0.01) * 100).toFixed(2)}%)</span></td>
           <td style="font-family:monospace;">₹${Number(rc.eligibleAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
           <td><strong style="color:var(--green); font-family:monospace;">+₹${Number(rc.commissionAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></td>
-          <td><span class="badge badge-approved">${escapeAdminHtml(rc.status || 'SETTLED')}</span></td>
+          <td><span class="badge ${String(rc.status || '').toUpperCase() === 'UNCLAIMED' || String(rc.status || '').toUpperCase() === 'PENDING' ? 'badge-pending' : 'badge-approved'}">${escapeAdminHtml(rc.status || 'UNCLAIMED')}</span></td>
           <td style="font-size:11px; color:var(--cyan);">${resolveAdminIST(rc.time, rc.createdAtMs, true)}</td>
         </tr>
       `).join('');

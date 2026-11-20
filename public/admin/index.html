@@ -593,7 +593,7 @@
 
   <!-- ADMIN SECURITY GATE AUTHENTICATION OVERLAY -->
   <div id="adminSecurityGate" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:#070B12; z-index:999999; display:flex; align-items:center; justify-content:center; padding:20px; box-sizing:border-box;">
-    <div style="background:linear-gradient(180deg, #101827 0%, #0B111D 100%); border:1px solid #233554; border-radius:18px; width:100%; max-width:440px; padding:32px 28px; box-shadow:0 20px 60px rgba(0,0,0,0.9), 0 0 30px rgba(255,215,0,0.1); display:flex; flex-direction:column; gap:20px; text-align:center;">
+    <div style="background:linear-gradient(180deg, #101827 0%, #0B111D 100%); border:1px solid #233554; border-radius:18px; width:100%; max-width:440px; padding:32px 28px; box-shadow:0 20px 60px rgba(0,0,0,0.9), 0 0 30px rgba(255,215,0,0.1); display:flex; flex-direction:column; gap:18px; text-align:center;">
       
       <!-- Crown & Brand -->
       <div style="display:flex; flex-direction:column; align-items:center; gap:8px;">
@@ -606,44 +606,70 @@
         </div>
       </div>
 
-      <p style="font-size:12px; color:#8E9DB2; line-height:1.5;">
-        Restricted Access. Enter the authorized administrator credentials to unlock the management portal.
+      <p id="adminGateSubtitle" style="font-size:12px; color:#8E9DB2; line-height:1.5;">
+        Restricted Access. Enter administrator credentials manually, then complete 6-digit Security MPIN verification.
       </p>
 
       <!-- Error Message Banner -->
       <div id="gateErrorBanner" style="display:none; background:rgba(255,23,68,0.15); border:1px solid #FF1744; color:#FF1744; padding:10px 14px; border-radius:8px; font-size:12px; font-weight:700; text-align:left;">
-        ❌ Invalid username or password! Please check credentials.
+        ❌ Invalid administrator credentials.
       </div>
 
-      <!-- Login Form -->
-      <form id="adminLoginForm" onsubmit="handleAdminLogin(event)" style="display:flex; flex-direction:column; gap:14px; text-align:left;">
-        <div>
-          <label style="font-size:12px; font-weight:700; color:#8E9DB2; display:block; margin-bottom:5px;">Admin Username</label>
-          <div style="position:relative;">
-            <input type="text" id="loginUsername" required placeholder="Enter username" style="width:100%; box-sizing:border-box; background:#141E33; border:1px solid #233554; border-radius:10px; padding:12px 14px; color:#F1F5F9; font-size:14px; font-weight:600; outline:none; transition:border-color 0.2s;" onfocus="this.style.borderColor='#FFD700'" onblur="this.style.borderColor='#233554'" autocomplete="username" />
+      <!-- STEP 1: Manual Admin Credentials Form -->
+      <div id="adminCredStep">
+        <form id="adminLoginForm" onsubmit="handleAdminLogin(event)" autocomplete="off" style="display:flex; flex-direction:column; gap:14px; text-align:left;">
+          <div>
+            <label style="font-size:12px; font-weight:700; color:#8E9DB2; display:block; margin-bottom:5px;">Admin Username</label>
+            <div style="position:relative;">
+              <input type="text" id="loginUsername" required value="" placeholder="Enter admin username" style="width:100%; box-sizing:border-box; background:#141E33; border:1px solid #233554; border-radius:10px; padding:12px 14px; color:#F1F5F9; font-size:14px; font-weight:600; outline:none; transition:border-color 0.2s;" onfocus="this.style.borderColor='#FFD700'" onblur="this.style.borderColor='#233554'" autocomplete="off" />
+            </div>
           </div>
-        </div>
 
-        <div>
-          <label style="font-size:12px; font-weight:700; color:#8E9DB2; display:block; margin-bottom:5px;">Admin Password</label>
-          <div style="position:relative; display:flex; align-items:center;">
-            <input type="password" id="loginPassword" required placeholder="Enter password" style="width:100%; box-sizing:border-box; background:#141E33; border:1px solid #233554; border-radius:10px; padding:12px 42px 12px 14px; color:#F1F5F9; font-size:14px; font-weight:600; outline:none; transition:border-color 0.2s;" onfocus="this.style.borderColor='#FFD700'" onblur="this.style.borderColor='#233554'" autocomplete="current-password" />
-            <button type="button" onclick="togglePasswordVisibility()" style="position:absolute; right:12px; background:none; border:none; color:#8E9DB2; cursor:pointer; font-size:16px; padding:0;">👁️</button>
+          <div>
+            <label style="font-size:12px; font-weight:700; color:#8E9DB2; display:block; margin-bottom:5px;">Admin Password</label>
+            <div style="position:relative; display:flex; align-items:center;">
+              <input type="password" id="loginPassword" required value="" placeholder="Enter admin password" style="width:100%; box-sizing:border-box; background:#141E33; border:1px solid #233554; border-radius:10px; padding:12px 42px 12px 14px; color:#F1F5F9; font-size:14px; font-weight:600; outline:none; transition:border-color 0.2s;" onfocus="this.style.borderColor='#FFD700'" onblur="this.style.borderColor='#233554'" autocomplete="new-password" />
+              <button type="button" onclick="togglePasswordVisibility()" style="position:absolute; right:12px; background:none; border:none; color:#8E9DB2; cursor:pointer; font-size:16px; padding:0;">👁️</button>
+            </div>
           </div>
-        </div>
 
-        <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:#8E9DB2; margin-top:2px;">
-          <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
-            <input type="checkbox" id="rememberAdmin" checked style="accent-color:#FFD700;" />
-            <span>Keep me logged in</span>
-          </label>
-          <span style="color:#00E5FF; font-weight:700; cursor:pointer;" onclick="fillDemoCredentials()">Use Demo Auth</span>
-        </div>
+          <div style="display:flex; justify-content:flex-start; align-items:center; font-size:12px; color:#8E9DB2; margin-top:2px;">
+            <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+              <input type="checkbox" id="rememberAdmin" style="accent-color:#FFD700;" />
+              <span>Keep me logged in on this device</span>
+            </label>
+          </div>
 
-        <button type="submit" style="width:100%; background:linear-gradient(135deg, #FFD700, #FFAB00); color:#000; border:none; padding:13px; border-radius:10px; font-size:14px; font-weight:900; letter-spacing:0.5px; cursor:pointer; margin-top:6px; transition:transform 0.15s, box-shadow 0.2s; box-shadow:0 4px 18px rgba(255,215,0,0.35);">
-          🔓 Unlock Admin Portal
-        </button>
-      </form>
+          <button type="submit" style="width:100%; background:linear-gradient(135deg, #FFD700, #FFAB00); color:#000; border:none; padding:13px; border-radius:10px; font-size:14px; font-weight:900; letter-spacing:0.5px; cursor:pointer; margin-top:6px; transition:transform 0.15s, box-shadow 0.2s; box-shadow:0 4px 18px rgba(255,215,0,0.35);">
+            🔐 Continue to MPIN Verification →
+          </button>
+        </form>
+      </div>
+
+      <!-- STEP 2: 6-Digit Security MPIN Verification -->
+      <div id="adminMpinStep" style="display:none;">
+        <div style="background:rgba(0,230,118,0.12); border:1px solid rgba(0,230,118,0.35); color:#00E676; padding:8px 12px; border-radius:10px; font-size:11px; font-weight:800; margin-bottom:14px;">
+          ✓ Step 1 Verified (<span id="mpinAdminNameBadge">Admin</span>) • Step 2 of 2 Required
+        </div>
+        <form id="adminMpinForm" onsubmit="handleAdminMpinVerify(event)" autocomplete="off" style="display:flex; flex-direction:column; gap:14px; text-align:left;">
+          <div>
+            <label style="font-size:12px; font-weight:700; color:#8E9DB2; display:block; margin-bottom:6px;">Enter 6-Digit Security MPIN</label>
+            <div style="position:relative; display:flex; align-items:center;">
+              <input type="password" id="adminMpinInput" required inputmode="numeric" maxlength="6" pattern="[0-9]{6}" value="" placeholder="••••••" oninput="this.value = this.value.replace(/\D/g, '').slice(0, 6);" style="width:100%; box-sizing:border-box; background:#141E33; border:1px solid #00E5FF; border-radius:10px; padding:14px 44px 14px 14px; color:#FFD700; font-size:22px; font-weight:900; letter-spacing:10px; text-align:center; font-family:monospace; outline:none;" autocomplete="off" />
+              <button type="button" onclick="toggleMpinVisibility()" style="position:absolute; right:12px; background:none; border:none; color:#8E9DB2; cursor:pointer; font-size:16px; padding:0;">👁️</button>
+            </div>
+          </div>
+
+          <div style="display:flex; gap:10px; margin-top:4px;">
+            <button type="button" onclick="backToAdminCredentialsStep()" style="flex:1; background:#141E33; color:#8E9DB2; border:1px solid #233554; padding:12px; border-radius:10px; font-size:13px; font-weight:800; cursor:pointer;">
+              ← Back
+            </button>
+            <button type="submit" style="flex:2; background:linear-gradient(135deg, #00E676, #00C853); color:#000; border:none; padding:12px; border-radius:10px; font-size:13px; font-weight:900; letter-spacing:0.4px; cursor:pointer; box-shadow:0 4px 18px rgba(0,230,118,0.3);">
+              🔓 Verify MPIN &amp; Unlock
+            </button>
+          </div>
+        </form>
+      </div>
 
       <div style="border-top:1px solid #233554; padding-top:14px; margin-top:4px;">
         <a href="index.html" style="font-size:12px; color:#00E5FF; text-decoration:none; font-weight:700; display:inline-flex; align-items:center; gap:6px;">
@@ -1416,6 +1442,17 @@
                 </div>
               </div>
 
+              <!-- Payment QR Image Upload & Change Controls -->
+              <div class="form-group" style="background:rgba(0,229,255,0.06); border:1px dashed var(--cyan); border-radius:10px; padding:12px;">
+                <label style="color:var(--cyan); font-weight:800; margin-bottom:6px; display:block;">📷 Payment QR Code Image (Shown on User Deposit Page)</label>
+                <input type="file" id="adminQrFileInput" accept="image/*" style="display:none;" onchange="handleAdminQrFileSelected(event)" />
+                <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                  <button type="button" class="btn btn-cyan btn-sm" id="btnUploadQrMain" onclick="triggerAdminQrPicker()">📤 Upload QR Image</button>
+                  <button type="button" class="btn btn-red btn-sm" id="btnRemoveQrMain" style="display:none;" onclick="removeAdminQrImage()">🗑️ Reset Default</button>
+                  <span id="adminQrStatusText" style="font-size:11px; color:var(--text-muted);">Using default QR placeholder (upload your UPI QR photo)</span>
+                </div>
+              </div>
+
               <h4 style="font-size:13px; color:var(--amber); margin:16px 0 10px 0; border-bottom:1px solid var(--border); padding-bottom:4px;">
                 3. Deposit Limits & User Notes
               </h4>
@@ -1453,9 +1490,10 @@
             </p>
 
             <div style="background:linear-gradient(135deg, #121A2C, #0E1626); border:2px dashed var(--gold); border-radius:14px; padding:20px; display:flex; flex-direction:column; align-items:center; text-align:center; gap:12px;">
-              <div style="background:#FFF; padding:12px; border-radius:12px; display:inline-block; box-shadow:0 0 15px rgba(255,215,0,0.3);">
-                <!-- Dynamic QR SVG representation -->
-                <svg width="140" height="140" viewBox="0 0 100 100" fill="#000">
+              <div style="background:#FFF; padding:10px; border-radius:12px; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 0 15px rgba(255,215,0,0.3); min-width:160px; min-height:160px;">
+                <img id="previewQrImage" src="" alt="Live Deposit QR Code" style="display:none; width:152px; height:152px; object-fit:contain; border-radius:8px;" />
+                <!-- Fallback QR SVG placeholder -->
+                <svg id="previewQrSvgPlaceholder" width="140" height="140" viewBox="0 0 100 100" fill="#000">
                   <rect width="100" height="100" fill="#FFF"/>
                   <rect x="10" y="10" width="25" height="25" fill="#000"/>
                   <rect x="15" y="15" width="15" height="15" fill="#FFF"/>
@@ -1476,6 +1514,11 @@
                   <rect x="65" y="65" width="25" height="25" fill="#000"/>
                   <rect x="72" y="72" width="10" height="10" fill="#FFF"/>
                 </svg>
+              </div>
+
+              <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:center;">
+                <button type="button" class="btn btn-cyan btn-sm" id="btnUploadQrPreview" onclick="triggerAdminQrPicker()">📤 Upload QR</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="btnResetQrPreview" style="display:none; border-color:var(--red); color:var(--red);" onclick="removeAdminQrImage()">🗑️ Reset Default</button>
               </div>
 
               <div>
@@ -1781,13 +1824,41 @@
     // ----------------------------------------------------
     const AUTH_USER = 'ColourPrince';
     const AUTH_PASS = 'Prince@124735';
-    const KEY_ADMIN_AUTH = 'colourking_admin_session';
+    const AUTH_MPIN = '124735';
+    const KEY_ADMIN_AUTH_LEGACY = 'colourking_admin_session';
+    const KEY_ADMIN_AUTH = 'colourking_admin_mpin_session';
+    let pendingAdminCredVerified = false;
+    let pendingAdminUsername = '';
+    let pendingAdminPassword = '';
+
+    function resetAdminGateToStep1() {
+      pendingAdminCredVerified = false;
+      pendingAdminUsername = '';
+      pendingAdminPassword = '';
+      const credStep = document.getElementById('adminCredStep');
+      const mpinStep = document.getElementById('adminMpinStep');
+      const err = document.getElementById('gateErrorBanner');
+      const mpinEl = document.getElementById('adminMpinInput');
+      if (credStep) credStep.style.display = 'block';
+      if (mpinStep) mpinStep.style.display = 'none';
+      if (err) err.style.display = 'none';
+      if (mpinEl) {
+        mpinEl.value = '';
+        mpinEl.type = 'password';
+      }
+    }
 
     function checkAdminAuth() {
+      try { localStorage.removeItem(KEY_ADMIN_AUTH_LEGACY); sessionStorage.removeItem(KEY_ADMIN_AUTH_LEGACY); } catch(e) {}
       const isAuthed = sessionStorage.getItem(KEY_ADMIN_AUTH) || localStorage.getItem(KEY_ADMIN_AUTH);
       const gate = document.getElementById('adminSecurityGate');
       if (gate) {
-        gate.style.display = (isAuthed === 'authenticated') ? 'none' : 'flex';
+        if (isAuthed === 'authenticated_mpin_v2') {
+          gate.style.display = 'none';
+        } else {
+          gate.style.display = 'flex';
+          resetAdminGateToStep1();
+        }
       }
     }
 
@@ -1798,35 +1869,93 @@
       e.preventDefault();
       const u = (document.getElementById('loginUsername')?.value || '').trim();
       const p = (document.getElementById('loginPassword')?.value || '').trim();
-      const remember = document.getElementById('rememberAdmin')?.checked;
       const err = document.getElementById('gateErrorBanner');
 
       if (u === AUTH_USER && p === AUTH_PASS) {
         if (err) err.style.display = 'none';
-        sessionStorage.setItem(KEY_ADMIN_AUTH, 'authenticated');
+        pendingAdminCredVerified = true;
+        pendingAdminUsername = u;
+        pendingAdminPassword = p;
+        const credStep = document.getElementById('adminCredStep');
+        const mpinStep = document.getElementById('adminMpinStep');
+        const badge = document.getElementById('mpinAdminNameBadge');
+        if (badge) badge.innerText = u;
+        if (credStep) credStep.style.display = 'none';
+        if (mpinStep) mpinStep.style.display = 'block';
+        const mpinEl = document.getElementById('adminMpinInput');
+        if (mpinEl) {
+          mpinEl.value = '';
+          setTimeout(() => mpinEl.focus(), 60);
+        }
+      } else {
+        pendingAdminCredVerified = false;
+        if (err) {
+          err.style.display = 'block';
+          err.innerText = '❌ Invalid administrator username or password.';
+        }
+      }
+    }
+
+    function backToAdminCredentialsStep() {
+      resetAdminGateToStep1();
+      const uEl = document.getElementById('loginUsername');
+      if (uEl) setTimeout(() => uEl.focus(), 60);
+    }
+
+    function handleAdminMpinVerify(e) {
+      e.preventDefault();
+      const err = document.getElementById('gateErrorBanner');
+      if (!pendingAdminCredVerified || pendingAdminUsername !== AUTH_USER || pendingAdminPassword !== AUTH_PASS) {
+        resetAdminGateToStep1();
+        if (err) {
+          err.style.display = 'block';
+          err.innerText = '❌ Session expired. Please re-enter administrator credentials.';
+        }
+        return;
+      }
+
+      const mpin = (document.getElementById('adminMpinInput')?.value || '').trim();
+      const remember = document.getElementById('rememberAdmin')?.checked;
+
+      if (mpin === AUTH_MPIN) {
+        if (err) err.style.display = 'none';
+        sessionStorage.setItem(KEY_ADMIN_AUTH, 'authenticated_mpin_v2');
         if (remember) {
-          localStorage.setItem(KEY_ADMIN_AUTH, 'authenticated');
+          localStorage.setItem(KEY_ADMIN_AUTH, 'authenticated_mpin_v2');
+        } else {
+          localStorage.removeItem(KEY_ADMIN_AUTH);
         }
         const gate = document.getElementById('adminSecurityGate');
         if (gate) gate.style.display = 'none';
-        showToast('👑 Welcome ColourPrince! Admin portal unlocked.');
+        pendingAdminCredVerified = false;
+        pendingAdminPassword = '';
+        const p = document.getElementById('loginPassword');
+        const mEl = document.getElementById('adminMpinInput');
+        if (p) p.value = '';
+        if (mEl) mEl.value = '';
+        showToast('👑 Welcome ' + AUTH_USER + '! Admin portal unlocked.');
       } else {
         if (err) {
           err.style.display = 'block';
-          err.innerText = '❌ Invalid credentials! Enter username ColourPrince and password Prince@124735.';
+          err.innerText = '❌ Invalid 6-digit Security MPIN! Please try again.';
         }
+        const mEl = document.getElementById('adminMpinInput');
+        if (mEl) { mEl.value = ''; mEl.focus(); }
       }
     }
 
     function adminLogout() {
       sessionStorage.removeItem(KEY_ADMIN_AUTH);
       localStorage.removeItem(KEY_ADMIN_AUTH);
+      sessionStorage.removeItem(KEY_ADMIN_AUTH_LEGACY);
+      localStorage.removeItem(KEY_ADMIN_AUTH_LEGACY);
+      const u = document.getElementById('loginUsername');
+      const p = document.getElementById('loginPassword');
+      if (u) u.value = '';
+      if (p) p.value = '';
+      resetAdminGateToStep1();
       const gate = document.getElementById('adminSecurityGate');
-      if (gate) {
-        gate.style.display = 'flex';
-        const p = document.getElementById('loginPassword');
-        if (p) p.value = '';
-      }
+      if (gate) gate.style.display = 'flex';
       showToast('🔒 Logged out of Admin Portal');
     }
 
@@ -1835,11 +1964,9 @@
       if (p) p.type = p.type === 'password' ? 'text' : 'password';
     }
 
-    function fillDemoCredentials() {
-      const u = document.getElementById('loginUsername');
-      const p = document.getElementById('loginPassword');
-      if (u) u.value = 'ColourPrince';
-      if (p) p.value = 'Prince@124735';
+    function toggleMpinVisibility() {
+      const m = document.getElementById('adminMpinInput');
+      if (m) m.type = m.type === 'password' ? 'text' : 'password';
     }
 
     let adminClockOffsetMs = 0;
@@ -1992,6 +2119,7 @@
       upiName: "Colour King Official Pay",
       minDeposit: 100,
       maxDeposit: 100000,
+      qrImage: "",
       instructions: "1. Scan QR code or pay to the UPI ID above.\n2. Enter the 12-digit UTR reference number in the app.\n3. Balance will be approved and credited within 2 minutes."
     };
 
@@ -2976,12 +3104,152 @@
     }
 
     function updateBankPreviewCard() {
-      document.getElementById('previewUpiIdDisplay').innerText = bankConfig.upiId;
-      document.getElementById('previewUpiNameDisplay').innerText = bankConfig.upiName;
-      document.getElementById('previewBankName').innerText = bankConfig.bankName;
-      document.getElementById('previewAccNo').innerText = bankConfig.accNo;
-      document.getElementById('previewIfsc').innerText = bankConfig.ifsc;
-      document.getElementById('previewHolder').innerText = bankConfig.holder;
+      document.getElementById('previewUpiIdDisplay').innerText = bankConfig.upiId || '';
+      document.getElementById('previewUpiNameDisplay').innerText = bankConfig.upiName || '';
+      document.getElementById('previewBankName').innerText = bankConfig.bankName || '';
+      document.getElementById('previewAccNo').innerText = bankConfig.accNo || '';
+      document.getElementById('previewIfsc').innerText = bankConfig.ifsc || '';
+      document.getElementById('previewHolder').innerText = bankConfig.holder || '';
+
+      const qrData = String(bankConfig.qrImage || '').trim();
+      const hasCustomQr = !!qrData;
+      const qrImg = document.getElementById('previewQrImage');
+      const qrSvg = document.getElementById('previewQrSvgPlaceholder');
+      const btnMain = document.getElementById('btnUploadQrMain');
+      const btnMainRem = document.getElementById('btnRemoveQrMain');
+      const btnPrev = document.getElementById('btnUploadQrPreview');
+      const btnPrevRem = document.getElementById('btnResetQrPreview');
+      const statusTxt = document.getElementById('adminQrStatusText');
+
+      if (qrImg && qrSvg) {
+        if (hasCustomQr) {
+          if (qrImg.getAttribute('src') !== qrData) qrImg.src = qrData;
+          qrImg.style.display = 'block';
+          qrSvg.style.display = 'none';
+        } else {
+          qrImg.removeAttribute('src');
+          qrImg.style.display = 'none';
+          qrSvg.style.display = 'block';
+        }
+      }
+      if (btnMain) btnMain.innerText = hasCustomQr ? '🔄 Change QR Image' : '📤 Upload QR Image';
+      if (btnMainRem) btnMainRem.style.display = hasCustomQr ? 'inline-flex' : 'none';
+      if (btnPrev) btnPrev.innerText = hasCustomQr ? '🔄 Change QR' : '📤 Upload QR';
+      if (btnPrevRem) btnPrevRem.style.display = hasCustomQr ? 'inline-flex' : 'none';
+      if (statusTxt) {
+        statusTxt.innerText = hasCustomQr
+          ? '✅ Custom QR active & visible on user deposit page'
+          : 'Using default QR placeholder (upload your UPI QR photo)';
+        statusTxt.style.color = hasCustomQr ? 'var(--green)' : 'var(--text-muted)';
+      }
+    }
+
+    function triggerAdminQrPicker() {
+      const inp = document.getElementById('adminQrFileInput');
+      if (!inp) return;
+      inp.value = '';
+      inp.click();
+    }
+
+    function compressQrImageDataUrl(rawDataUrl, callback) {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const maxDim = 640;
+          let w = img.naturalWidth || img.width || 400;
+          let h = img.naturalHeight || img.height || 400;
+          if (w > maxDim || h > maxDim) {
+            const ratio = Math.min(maxDim / w, maxDim / h);
+            w = Math.max(1, Math.round(w * ratio));
+            h = Math.max(1, Math.round(h * ratio));
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+          let out = canvas.toDataURL('image/png');
+          if (out.length > 450000) {
+            out = canvas.toDataURL('image/jpeg', 0.90);
+          }
+          callback(out);
+        } catch (err) {
+          callback(rawDataUrl);
+        }
+      };
+      img.onerror = () => callback(rawDataUrl);
+      img.src = rawDataUrl;
+    }
+
+    function handleAdminQrFileSelected(event) {
+      const file = event && event.target && event.target.files ? event.target.files[0] : null;
+      if (!file) return;
+      if (!file.type || !file.type.startsWith('image/')) {
+        showToast('❌ Please select a valid QR image file (PNG, JPG, WebP).');
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        showToast('❌ QR image must be under 10 MB.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const rawUrl = ev && ev.target ? ev.target.result : '';
+        if (!rawUrl) {
+          showToast('❌ Failed to read QR image.');
+          return;
+        }
+        compressQrImageDataUrl(String(rawUrl), (optimizedUrl) => {
+          bankConfig = Object.assign({}, bankConfig, {
+            bankName: (document.getElementById('bankName')?.value || bankConfig.bankName || '').trim(),
+            holder: (document.getElementById('bankHolder')?.value || bankConfig.holder || '').trim(),
+            accNo: (document.getElementById('bankAccNo')?.value || bankConfig.accNo || '').trim(),
+            ifsc: (document.getElementById('bankIfsc')?.value || bankConfig.ifsc || '').trim(),
+            branch: (document.getElementById('bankBranch')?.value || bankConfig.branch || '').trim(),
+            upiId: (document.getElementById('upiId')?.value || bankConfig.upiId || '').trim(),
+            upiName: (document.getElementById('upiName')?.value || bankConfig.upiName || '').trim(),
+            minDeposit: parseFloat(document.getElementById('minDeposit')?.value) || bankConfig.minDeposit || 100,
+            maxDeposit: parseFloat(document.getElementById('maxDeposit')?.value) || bankConfig.maxDeposit || 100000,
+            instructions: (document.getElementById('depositInstructions')?.value || bankConfig.instructions || '').trim(),
+            qrImage: optimizedUrl
+          });
+          persistBankConfigToServer('CUSTOM_QR_UPLOADED', '📷 Payment QR uploaded & synced live to User Deposit page!');
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function removeAdminQrImage() {
+      if (!bankConfig.qrImage) return;
+      bankConfig = Object.assign({}, bankConfig, { qrImage: '' });
+      persistBankConfigToServer('QR_RESET_DEFAULT', '🗑️ Custom QR removed — reverted to default placeholder QR.');
+    }
+
+    function persistBankConfigToServer(actionLabel, toastMsg) {
+      fetch('/api/bank-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bankConfig)
+      }).then(() => pullAdminStateFromServer()).catch(() => {});
+
+      auditLogs.unshift({
+        time: nowAdminISTDisplay(),
+        actor: "ColourPrince",
+        action: actionLabel || "BANK_CONFIG_UPDATE",
+        entity: "PAYMENT_GATEWAYS",
+        desc: actionLabel === 'CUSTOM_QR_UPLOADED'
+          ? `Uploaded/changed Payment QR image for UPI ${bankConfig.upiId}`
+          : (actionLabel === 'QR_RESET_DEFAULT'
+            ? `Reset Payment QR back to default placeholder`
+            : `Updated bank to ${bankConfig.bankName} (${bankConfig.accNo}) and UPI to ${bankConfig.upiId}`)
+      });
+
+      persistAllState(true);
+      updateBankPreviewCard();
+      renderAuditTable();
+      showToast(toastMsg);
     }
 
     function saveBankDetails(e) {
@@ -2996,28 +3264,11 @@
         upiName: document.getElementById('upiName').value.trim(),
         minDeposit: parseFloat(document.getElementById('minDeposit').value) || 100,
         maxDeposit: parseFloat(document.getElementById('maxDeposit').value) || 100000,
+        qrImage: bankConfig.qrImage || '',
         instructions: document.getElementById('depositInstructions').value.trim()
       };
 
-      // Persist to database backend so user deposit modal updates in real-time
-      fetch('/api/bank-config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bankConfig)
-      }).then(() => pullAdminStateFromServer()).catch(() => {});
-
-      auditLogs.unshift({
-        time: nowAdminISTDisplay(),
-        actor: "ColourPrince",
-        action: "BANK_CONFIG_UPDATE",
-        entity: "PAYMENT_GATEWAYS",
-        desc: `Updated bank to ${bankConfig.bankName} (${bankConfig.accNo}) and UPI to ${bankConfig.upiId}`
-      });
-
-      persistAllState(true);
-      updateBankPreviewCard();
-      renderAuditTable();
-      showToast('💾 Bank and UPI deposit settings saved to SQLite & reflected live on user app!');
+      persistBankConfigToServer('BANK_CONFIG_UPDATE', '💾 Bank, UPI & QR settings saved and reflected live on user app!');
     }
 
     // ----------------------------------------------------
@@ -3402,7 +3653,7 @@
           <td><span class="badge badge-approved">Level ${Number(rc.level || 1)} (${(Number(rc.rate || 0.01) * 100).toFixed(2)}%)</span></td>
           <td style="font-family:monospace;">₹${Number(rc.eligibleAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
           <td><strong style="color:var(--green); font-family:monospace;">+₹${Number(rc.commissionAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></td>
-          <td><span class="badge badge-approved">${escapeAdminHtml(rc.status || 'SETTLED')}</span></td>
+          <td><span class="badge ${String(rc.status || '').toUpperCase() === 'UNCLAIMED' || String(rc.status || '').toUpperCase() === 'PENDING' ? 'badge-pending' : 'badge-approved'}">${escapeAdminHtml(rc.status || 'UNCLAIMED')}</span></td>
           <td style="font-size:11px; color:var(--cyan);">${resolveAdminIST(rc.time, rc.createdAtMs, true)}</td>
         </tr>
       `).join('');

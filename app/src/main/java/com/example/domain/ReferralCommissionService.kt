@@ -65,43 +65,9 @@ class ReferralCommissionService(private val database: AppDatabase) {
                 continue
             }
 
-            // 3. Credit referrer's wallet
+            // 3. Verify beneficiary wallet exists & accrue commission in UNCLAIMED vault (credited when user claims)
             val wallet = walletDao.getWallet(tenantId, beneficiaryUserId)
             if (wallet != null) {
-                val balanceBefore = wallet.availableBalance
-                val balanceAfter = balanceBefore + commissionCents
-                val txId = UUID.randomUUID().toString()
-
-                walletDao.updateWallet(
-                    wallet.copy(
-                        availableBalance = balanceAfter,
-                        version = wallet.version + 1,
-                        updatedAt = System.currentTimeMillis()
-                    )
-                )
-
-                // 4. Create immutable ledger entry
-                val ledger = WalletLedgerEntity(
-                    id = UUID.randomUUID().toString(),
-                    tenantId = tenantId,
-                    walletId = wallet.id,
-                    userId = beneficiaryUserId,
-                    transactionId = txId,
-                    entryType = LedgerEntryType.REFERRAL_COMMISSION.name,
-                    direction = LedgerDirection.CREDIT.name,
-                    amount = commissionCents,
-                    currency = wallet.currency,
-                    balanceBefore = balanceBefore,
-                    balanceAfter = balanceAfter,
-                    referenceType = "REFERRAL_COMMISSION",
-                    referenceId = sourceTransactionId,
-                    metadataJson = """{"level":$level,"sourceUserId":"$userId","rate":$rate}""",
-                    idempotencyKey = "ledger_$idempotencyKey",
-                    createdAt = System.currentTimeMillis()
-                )
-                ledgerDao.insertLedger(ledger)
-
-                // 5. Create referral commission record
                 val commissionRecord = ReferralCommissionEntity(
                     id = UUID.randomUUID().toString(),
                     tenantId = tenantId,
@@ -113,10 +79,10 @@ class ReferralCommissionService(private val database: AppDatabase) {
                     eligibleAmount = eligibleAmountCents,
                     commissionAmount = commissionCents,
                     currency = wallet.currency,
-                    status = CommissionStatus.SETTLED.name,
+                    status = CommissionStatus.UNCLAIMED.name,
                     idempotencyKey = idempotencyKey,
                     createdAt = System.currentTimeMillis(),
-                    settledAt = System.currentTimeMillis()
+                    settledAt = null
                 )
                 referralDao.insertCommission(commissionRecord)
                 createdCommissions.add(commissionRecord)

@@ -144,17 +144,54 @@ data class ServerAffiliateCommission(
     val createdAtMs: Long
 )
 
+data class ServerAffiliateLevelBreakdown(
+    val level: Int,
+    val label: String,
+    val rate: Double,
+    val ratePercent: Double,
+    val membersCount: Int,
+    val turnoverRupees: Double,
+    val earnedCommissionRupees: Double,
+    val unclaimedCommissionRupees: Double,
+    val claimedCommissionRupees: Double
+)
+
+data class ServerAffiliateClaim(
+    val id: String,
+    val title: String,
+    val ref: String,
+    val amountRupees: Double,
+    val balanceBeforeRupees: Double,
+    val balanceAfterRupees: Double,
+    val status: String,
+    val createdAt: String,
+    val createdAtMs: Long
+)
+
 data class ServerAffiliateStats(
     val userId: String,
     val userName: String,
     val referralCode: String,
     val lifetimeCommissionRupees: Double,
+    val claimableBalanceRupees: Double = 0.0,
+    val totalClaimedRupees: Double = 0.0,
+    val claimCount: Int = 0,
     val todayCommissionRupees: Double,
     val networkTurnoverRupees: Double,
     val teamCount: Int,
     val directCount: Int,
+    val levelBreakdown: List<ServerAffiliateLevelBreakdown> = emptyList(),
     val members: List<ServerAffiliateMember> = emptyList(),
-    val recentCommissions: List<ServerAffiliateCommission> = emptyList()
+    val recentCommissions: List<ServerAffiliateCommission> = emptyList(),
+    val claimHistory: List<ServerAffiliateClaim> = emptyList()
+)
+
+data class AffiliateClaimResult(
+    val success: Boolean,
+    val message: String,
+    val claimedAmountRupees: Double = 0.0,
+    val newBalanceRupees: Double? = null,
+    val updatedStats: ServerAffiliateStats? = null
 )
 
 data class ServerSyncSnapshot(
@@ -897,6 +934,104 @@ class BackendSyncService(
         }
     }
 
+    private fun parseAffiliateStats(root: JSONObject, fallbackUserId: String): ServerAffiliateStats {
+        val membersList = mutableListOf<ServerAffiliateMember>()
+        val mArr = root.optJSONArray("members") ?: JSONArray()
+        for (i in 0 until mArr.length()) {
+            val m = mArr.optJSONObject(i) ?: continue
+            membersList.add(
+                ServerAffiliateMember(
+                    id = m.optString("id"),
+                    name = m.optString("name", m.optString("id")),
+                    tier = m.optInt("tier", 1),
+                    tierLabel = m.optString("tierLabel", "Tier 1"),
+                    joined = m.optString("joined", ""),
+                    totalDepositRupees = m.optDouble("totalDeposit", 0.0),
+                    turnoverRupees = m.optDouble("turnover", 0.0),
+                    commissionRupees = m.optDouble("commission", 0.0),
+                    status = m.optString("status", "ACTIVE").uppercase()
+                )
+            )
+        }
+
+        val commsList = mutableListOf<ServerAffiliateCommission>()
+        val cArr = root.optJSONArray("recentCommissions") ?: JSONArray()
+        for (i in 0 until cArr.length()) {
+            val c = cArr.optJSONObject(i) ?: continue
+            commsList.add(
+                ServerAffiliateCommission(
+                    id = c.optString("id"),
+                    sourceUserId = c.optString("sourceUserId", ""),
+                    sourceUserName = c.optString("sourceUserName", ""),
+                    sourceBetId = c.optString("sourceBetId", ""),
+                    level = c.optInt("level", 1),
+                    rate = c.optDouble("rate", 0.01),
+                    eligibleAmountRupees = c.optDouble("eligibleAmount", 0.0),
+                    commissionAmountRupees = c.optDouble("commissionAmount", 0.0),
+                    status = c.optString("status", "UNCLAIMED").uppercase(),
+                    createdAt = c.optString("createdAt", ""),
+                    createdAtMs = c.optLong("createdAtMs", System.currentTimeMillis())
+                )
+            )
+        }
+
+        val levelsList = mutableListOf<ServerAffiliateLevelBreakdown>()
+        val lArr = root.optJSONArray("levelBreakdown") ?: JSONArray()
+        for (i in 0 until lArr.length()) {
+            val l = lArr.optJSONObject(i) ?: continue
+            levelsList.add(
+                ServerAffiliateLevelBreakdown(
+                    level = l.optInt("level", i + 1),
+                    label = l.optString("label", "Level ${i + 1}"),
+                    rate = l.optDouble("rate", 0.0),
+                    ratePercent = l.optDouble("ratePercent", 0.0),
+                    membersCount = l.optInt("membersCount", 0),
+                    turnoverRupees = l.optDouble("turnover", 0.0),
+                    earnedCommissionRupees = l.optDouble("earnedCommission", 0.0),
+                    unclaimedCommissionRupees = l.optDouble("unclaimedCommission", 0.0),
+                    claimedCommissionRupees = l.optDouble("claimedCommission", 0.0)
+                )
+            )
+        }
+
+        val claimsList = mutableListOf<ServerAffiliateClaim>()
+        val chArr = root.optJSONArray("claimHistory") ?: JSONArray()
+        for (i in 0 until chArr.length()) {
+            val ch = chArr.optJSONObject(i) ?: continue
+            claimsList.add(
+                ServerAffiliateClaim(
+                    id = ch.optString("id"),
+                    title = ch.optString("title", "Affiliate Bonus Claimed"),
+                    ref = ch.optString("ref", "Credited to Main Wallet"),
+                    amountRupees = ch.optDouble("amount", 0.0),
+                    balanceBeforeRupees = ch.optDouble("balanceBefore", 0.0),
+                    balanceAfterRupees = ch.optDouble("balanceAfter", 0.0),
+                    status = ch.optString("status", "CREDITED").uppercase(),
+                    createdAt = ch.optString("createdAt", ""),
+                    createdAtMs = ch.optLong("createdAtMs", System.currentTimeMillis())
+                )
+            )
+        }
+
+        return ServerAffiliateStats(
+            userId = root.optString("userId", fallbackUserId),
+            userName = root.optString("userName", fallbackUserId),
+            referralCode = root.optString("referralCode", ""),
+            lifetimeCommissionRupees = root.optDouble("lifetimeCommission", 0.0),
+            claimableBalanceRupees = root.optDouble("claimableBalance", root.optDouble("unclaimedCommission", 0.0)),
+            totalClaimedRupees = root.optDouble("totalClaimed", 0.0),
+            claimCount = root.optInt("claimCount", claimsList.size),
+            todayCommissionRupees = root.optDouble("todayCommission", 0.0),
+            networkTurnoverRupees = root.optDouble("networkTurnover", 0.0),
+            teamCount = root.optInt("teamCount", membersList.size),
+            directCount = root.optInt("directCount", membersList.count { it.tier == 1 }),
+            levelBreakdown = levelsList,
+            members = membersList,
+            recentCommissions = commsList,
+            claimHistory = claimsList
+        )
+    }
+
     suspend fun fetchUserAffiliates(serverUserId: String): ServerAffiliateStats? = withContext(Dispatchers.IO) {
         if (serverUserId.isBlank()) return@withContext null
         val baseUrl = _activeBackendUrl.value
@@ -909,62 +1044,42 @@ class BackendSyncService(
                 if (!resp.isSuccessful) return@use null
                 val root = JSONObject(resp.body?.string() ?: return@use null)
                 if (root.optBoolean("notFound", false)) return@use null
-
-                val membersList = mutableListOf<ServerAffiliateMember>()
-                val mArr = root.optJSONArray("members") ?: JSONArray()
-                for (i in 0 until mArr.length()) {
-                    val m = mArr.optJSONObject(i) ?: continue
-                    membersList.add(
-                        ServerAffiliateMember(
-                            id = m.optString("id"),
-                            name = m.optString("name", m.optString("id")),
-                            tier = m.optInt("tier", 1),
-                            tierLabel = m.optString("tierLabel", "Tier 1"),
-                            joined = m.optString("joined", ""),
-                            totalDepositRupees = m.optDouble("totalDeposit", 0.0),
-                            turnoverRupees = m.optDouble("turnover", 0.0),
-                            commissionRupees = m.optDouble("commission", 0.0),
-                            status = m.optString("status", "ACTIVE").uppercase()
-                        )
-                    )
-                }
-
-                val commsList = mutableListOf<ServerAffiliateCommission>()
-                val cArr = root.optJSONArray("recentCommissions") ?: JSONArray()
-                for (i in 0 until cArr.length()) {
-                    val c = cArr.optJSONObject(i) ?: continue
-                    commsList.add(
-                        ServerAffiliateCommission(
-                            id = c.optString("id"),
-                            sourceUserId = c.optString("sourceUserId", ""),
-                            sourceUserName = c.optString("sourceUserName", ""),
-                            sourceBetId = c.optString("sourceBetId", ""),
-                            level = c.optInt("level", 1),
-                            rate = c.optDouble("rate", 0.01),
-                            eligibleAmountRupees = c.optDouble("eligibleAmount", 0.0),
-                            commissionAmountRupees = c.optDouble("commissionAmount", 0.0),
-                            status = c.optString("status", "SETTLED").uppercase(),
-                            createdAt = c.optString("createdAt", ""),
-                            createdAtMs = c.optLong("createdAtMs", System.currentTimeMillis())
-                        )
-                    )
-                }
-
-                ServerAffiliateStats(
-                    userId = root.optString("userId", serverUserId),
-                    userName = root.optString("userName", serverUserId),
-                    referralCode = root.optString("referralCode", ""),
-                    lifetimeCommissionRupees = root.optDouble("lifetimeCommission", 0.0),
-                    todayCommissionRupees = root.optDouble("todayCommission", 0.0),
-                    networkTurnoverRupees = root.optDouble("networkTurnover", 0.0),
-                    teamCount = root.optInt("teamCount", membersList.size),
-                    directCount = root.optInt("directCount", membersList.count { it.tier == 1 }),
-                    members = membersList,
-                    recentCommissions = commsList
-                )
+                parseAffiliateStats(root, serverUserId)
             }
         } catch (_: Exception) {
             null
+        }
+    }
+
+    suspend fun claimAffiliateEarnings(serverUserId: String): AffiliateClaimResult = withContext(Dispatchers.IO) {
+        if (serverUserId.isBlank()) {
+            return@withContext AffiliateClaimResult(false, "Please sign in first.")
+        }
+        val baseUrl = _activeBackendUrl.value
+        return@withContext try {
+            val bodyJson = JSONObject().put("userId", serverUserId).toString()
+            val req = Request.Builder()
+                .url("$baseUrl/api/affiliates/claim")
+                .post(bodyJson.toRequestBody("application/json".toMediaType()))
+                .build()
+            httpClient.newCall(req).execute().use { resp ->
+                val raw = resp.body?.string().orEmpty()
+                val root = JSONObject(raw.ifBlank { "{}" })
+                val ok = resp.isSuccessful && root.optBoolean("success", false)
+                val msg = root.optString("message").ifBlank { root.optString("error", if (ok) "Claimed!" else "Claim failed") }
+                val affObj = root.optJSONObject("affiliates")
+                val updated = if (affObj != null) parseAffiliateStats(affObj, serverUserId) else null
+                val newBal = if (root.has("newBalance")) root.optDouble("newBalance") else null
+                AffiliateClaimResult(
+                    success = ok,
+                    message = msg,
+                    claimedAmountRupees = root.optDouble("claimedAmount", 0.0),
+                    newBalanceRupees = newBal,
+                    updatedStats = updated
+                )
+            }
+        } catch (e: Exception) {
+            AffiliateClaimResult(false, e.message ?: "Unable to connect to server.")
         }
     }
 

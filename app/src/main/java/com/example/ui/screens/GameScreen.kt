@@ -304,12 +304,7 @@ fun GameScreen(
                     enabled = isBettingOpen,
                     onToggleColor = { color ->
                         if (!isBettingOpen) return@ColorSelectionPads
-                        val existingBet = activeBetsMap[color]
-                        if (existingBet != null) {
-                            viewModel.toggleBet(BetType.COLOR, color, existingBet.amount)
-                        } else {
-                            pendingBetTarget = Pair(BetType.COLOR, color)
-                        }
+                        pendingBetTarget = Pair(BetType.COLOR, color)
                     }
                 )
                 Spacer(modifier = Modifier.height(10.dp))
@@ -324,12 +319,7 @@ fun GameScreen(
                     enabled = isBettingOpen,
                     onToggleSelection = { selection ->
                         if (!isBettingOpen) return@BigSmallSelectionPads
-                        val existingBet = activeBetsMap[selection]
-                        if (existingBet != null) {
-                            viewModel.toggleBet(BetType.BIG_SMALL, selection, existingBet.amount)
-                        } else {
-                            pendingBetTarget = Pair(BetType.BIG_SMALL, selection)
-                        }
+                        pendingBetTarget = Pair(BetType.BIG_SMALL, selection)
                     }
                 )
                 Spacer(modifier = Modifier.height(12.dp))
@@ -343,13 +333,7 @@ fun GameScreen(
                     enabled = isBettingOpen,
                     onToggleNumber = { num ->
                         if (!isBettingOpen) return@NumberGridSelection
-                        val selStr = "$num"
-                        val existingBet = activeBetsMap[selStr]
-                        if (existingBet != null) {
-                            viewModel.toggleBet(BetType.NUMBER, selStr, existingBet.amount)
-                        } else {
-                            pendingBetTarget = Pair(BetType.NUMBER, selStr)
-                        }
+                        pendingBetTarget = Pair(BetType.NUMBER, "$num")
                     }
                 )
                 Spacer(modifier = Modifier.height(14.dp))
@@ -359,16 +343,7 @@ fun GameScreen(
             item {
                 CurrentRoundPlacedBetsSection(
                     activeBets = activeBetsMap,
-                    isBettingOpen = isBettingOpen,
-                    onCancelBet = { bet ->
-                        if (!isBettingOpen) return@CurrentRoundPlacedBetsSection
-                        val bType = when (bet.betType) {
-                            BetType.NUMBER.name -> BetType.NUMBER
-                            BetType.BIG_SMALL.name -> BetType.BIG_SMALL
-                            else -> BetType.COLOR
-                        }
-                        viewModel.toggleBet(bType, bet.selection, bet.amount)
-                    }
+                    isBettingOpen = isBettingOpen
                 )
                 Spacer(modifier = Modifier.height(16.dp))
             }
@@ -2018,8 +1993,7 @@ fun BetPlacementDialog(
 @Composable
 fun CurrentRoundPlacedBetsSection(
     activeBets: Map<String, BetEntity>,
-    isBettingOpen: Boolean = true,
-    onCancelBet: (BetEntity) -> Unit
+    isBettingOpen: Boolean = true
 ) {
     val totalDeductedCents = activeBets.values.sumOf { it.amount }
     val timeFormat = remember {
@@ -2081,7 +2055,7 @@ fun CurrentRoundPlacedBetsSection(
             }
 
             Text(
-                text = if (isBettingOpen) "Live bet slips • Includes 3% platform fee breakdown & instant cancel" else "Round Locked • Waiting for official draw outcome",
+                text = if (isBettingOpen) "Live bet slips • Includes 3% platform fee breakdown (Confirmed — Non-Refundable)" else "Round Locked • Waiting for official draw outcome",
                 color = TextSecondary,
                 fontSize = 11.sp
             )
@@ -2125,8 +2099,7 @@ fun CurrentRoundPlacedBetsSection(
                         PlacedBetItemCard(
                             bet = bet,
                             timeFormat = timeFormat,
-                            isBettingOpen = isBettingOpen,
-                            onCancel = { onCancelBet(bet) }
+                            isBettingOpen = isBettingOpen
                         )
                     }
                 }
@@ -2139,8 +2112,7 @@ fun CurrentRoundPlacedBetsSection(
 fun PlacedBetItemCard(
     bet: BetEntity,
     timeFormat: SimpleDateFormat,
-    isBettingOpen: Boolean = true,
-    onCancel: () -> Unit
+    isBettingOpen: Boolean = true
 ) {
     val themeColor = when (bet.selection.uppercase()) {
         "GREEN" -> NeonGreen
@@ -2322,31 +2294,12 @@ fun PlacedBetItemCard(
                     )
                 }
 
-                if (isBettingOpen) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = NeonRed.copy(alpha = 0.18f),
-                        border = borderStroke(1.dp, NeonRed),
-                        modifier = Modifier
-                            .clickable { onCancel() }
-                            .testTag("cancel_bet_${bet.selection}")
-                    ) {
-                        Text(
-                            text = "✕ Cancel & Refund",
-                            color = NeonRed,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 10.sp,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                        )
-                    }
-                } else {
-                    Text(
-                        text = "Awaiting Official Draw...",
-                        color = TextMuted,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
+                Text(
+                    text = if (isBettingOpen) "✓ Confirmed • Awaiting Draw" else "🔒 Locked • Awaiting Draw",
+                    color = if (isBettingOpen) ElectricCyan else TextMuted,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
         }
     }

@@ -1863,27 +1863,58 @@
       <!-- TAB 5: 6-LEVEL AFFILIATE MULTI-TIER NETWORK-->
       <!-- ========================================== -->
       <div class="tab-pane" id="tab-affiliate">
+        <!-- Hero & Claim-Based Affiliate Vault -->
         <div class="card" style="border:1px solid var(--gold);">
           <div class="section-title">
             <span>👑 6-Level Affiliate Rewards</span>
-            <span class="section-badge" style="background:rgba(255,215,0,0.2); color:var(--gold);">Passive Income</span>
+            <span class="section-badge" style="background:rgba(255,215,0,0.2); color:var(--gold);">Claim-Based Vault</span>
           </div>
-          <p style="font-size:11px; color:var(--text-muted);">Earn automatic continuous commissions across 6 hierarchical tiers powered by closure-table lookups.</p>
-          
-          <!-- Lifetime Commission Banner -->
-          <div style="background:var(--card-highlight); padding:12px; border-radius:10px; margin-top:4px;">
-            <span style="font-size:10px; color:var(--text-muted); font-weight:700;">LIFETIME COMMISSION EARNINGS</span>
-            <div id="affLifetimeCommission" style="font-size:26px; font-weight:900; color:var(--green); margin:2px 0;">₹0.00</div>
-            
-            <div style="display:flex; justify-content:space-between; margin-top:8px; font-size:11px; border-top:1px solid rgba(255,255,255,0.06); padding-top:6px;">
-              <span>Today's Commission: <strong id="affTodayCommission" style="color:var(--gold);">₹0.00</strong></span>
+          <p style="font-size:11px; color:var(--text-muted);">
+            Earn commissions across Levels 1–6 on downline play. Rewards accumulate safely here and move to your Main Wallet only when you click <strong>Claim</strong>.
+          </p>
+
+          <!-- Claimable Affiliate Vault Box -->
+          <div style="background:linear-gradient(135deg, rgba(0,230,118,0.12) 0%, rgba(16,24,39,0.95) 100%); border:1px solid rgba(0,230,118,0.38); padding:14px; border-radius:12px; margin-top:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+              <div>
+                <div style="font-size:10px; color:var(--green); font-weight:800; letter-spacing:0.6px; text-transform:uppercase;">CLAIMABLE AFFILIATE BONUS</div>
+                <div id="affClaimableBalance" style="font-size:28px; font-weight:900; color:#FFF; margin:2px 0; font-family:monospace;">₹0.00</div>
+                <div id="affClaimVaultNote" style="font-size:10px; color:var(--text-muted);">Not yet added to wallet • Claim anytime</div>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:6px; min-width:155px;">
+                <button id="affClaimBtn" class="btn-primary" style="padding:9px 14px; font-size:12px; font-weight:900;" onclick="claimAffiliateEarnings()" disabled>
+                  💰 Claim to Wallet
+                </button>
+                <button class="btn-secondary" style="padding:6px 10px; font-size:11px; border-color:rgba(0,229,255,0.4); color:var(--cyan);" onclick="focusAffiliateSection('claims')">
+                  💸 Affiliate Claim History
+                </button>
+              </div>
+            </div>
+
+            <!-- 3-Column Metrics: Total Earned, Total Claimed, Today's Commission -->
+            <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; margin-top:10px; border-top:1px solid rgba(255,255,255,0.08); padding-top:8px;">
+              <div style="background:rgba(0,0,0,0.22); padding:7px 8px; border-radius:8px;">
+                <div style="font-size:9px; color:var(--text-muted);">LIFETIME EARNED</div>
+                <div id="affLifetimeCommission" style="font-size:13px; font-weight:900; color:var(--gold); font-family:monospace;">₹0.00</div>
+              </div>
+              <div style="background:rgba(0,0,0,0.22); padding:7px 8px; border-radius:8px;">
+                <div style="font-size:9px; color:var(--text-muted);">TOTAL CLAIMED</div>
+                <div id="affTotalClaimedHeader" style="font-size:13px; font-weight:900; color:var(--green); font-family:monospace;">₹0.00</div>
+              </div>
+              <div style="background:rgba(0,0,0,0.22); padding:7px 8px; border-radius:8px;">
+                <div style="font-size:9px; color:var(--text-muted);">TODAY'S EARNED</div>
+                <div id="affTodayCommission" style="font-size:13px; font-weight:900; color:var(--cyan); font-family:monospace;">₹0.00</div>
+              </div>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; margin-top:8px; font-size:11px; color:var(--text-muted);">
               <span>Network Turnover: <strong id="affNetworkTurnover" style="color:var(--cyan);">₹0.00</strong></span>
-              <span>Team: <strong id="affTeamCount" style="color:#FFF;">0 Users</strong></span>
+              <span>Total Team: <strong id="affTeamCount" style="color:#FFF;">0 Users</strong></span>
             </div>
           </div>
 
           <!-- Referral Code & Share Link -->
-          <div style="background:var(--card-highlight); padding:10px; border-radius:10px; display:flex; justify-content:space-between; align-items:center;">
+          <div style="background:var(--card-highlight); padding:10px; border-radius:10px; display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
             <div>
               <div style="font-size:10px; color:var(--text-muted);">YOUR REFERRAL CODE</div>
               <div id="affReferralCodeDisplay" style="font-size:18px; font-weight:900; color:var(--gold);">---</div>
@@ -1893,47 +1924,99 @@
               <button class="btn-primary" style="padding:6px 12px; font-size:11px; width:auto;" onclick="shareReferralLink()">🔗 Share</button>
             </div>
           </div>
+        </div>
 
-          <!-- 6-Level Commission Tier Rates -->
-          <div style="margin-top:6px; display:grid; grid-template-columns:1fr 1fr; gap:6px;">
-            <div style="background:var(--card-highlight); padding:8px; border-radius:8px;">
-              <span style="font-size:9px; color:var(--text-muted);">Tier 1 (Direct)</span>
-              <div style="font-size:13px; font-weight:800; color:var(--green);">1.00% Commission</div>
-            </div>
-            <div style="background:var(--card-highlight); padding:8px; border-radius:8px;">
-              <span style="font-size:9px; color:var(--text-muted);">Tier 2 (Indirect)</span>
-              <div style="font-size:13px; font-weight:800; color:var(--cyan);">0.75% Commission</div>
-            </div>
-            <div style="background:var(--card-highlight); padding:8px; border-radius:8px;">
-              <span style="font-size:9px; color:var(--text-muted);">Tier 3</span>
-              <div style="font-size:13px; font-weight:800; color:var(--amber);">0.60% Commission</div>
-            </div>
-            <div style="background:var(--card-highlight); padding:8px; border-radius:8px;">
-              <span style="font-size:9px; color:var(--text-muted);">Tier 4</span>
-              <div style="font-size:13px; font-weight:800; color:var(--violet);">0.50% Commission</div>
-            </div>
-            <div style="background:var(--card-highlight); padding:8px; border-radius:8px;">
-              <span style="font-size:9px; color:var(--text-muted);">Tier 5</span>
-              <div style="font-size:13px; font-weight:800; color:#80D8FF;">0.30% Commission</div>
-            </div>
-            <div style="background:var(--card-highlight); padding:8px; border-radius:8px;">
-              <span style="font-size:9px; color:var(--text-muted);">Tier 6</span>
-              <div style="font-size:13px; font-weight:800; color:#B388FF;">0.20% Commission</div>
-            </div>
+        <!-- Column-Wise Level 1 - Level 6 Clarification Breakdown -->
+        <div class="card">
+          <div class="section-title">
+            <span>📊 Level 1–6 Member &amp; Earning Breakdown</span>
+            <span class="section-badge" style="background:rgba(0,229,255,0.16); color:var(--cyan);">6 Tiers Live</span>
+          </div>
+          <p style="font-size:11px; color:var(--text-muted); margin-bottom:6px;">
+            Column-wise clarity of active members, team betting volume, and earned commission from Level 1 through Level 6. Tap any row to filter members below.
+          </p>
+          <div class="table-container">
+            <table class="records-table">
+              <thead>
+                <tr>
+                  <th>Level</th>
+                  <th>Rate</th>
+                  <th>Members</th>
+                  <th>Turnover</th>
+                  <th>Earned</th>
+                </tr>
+              </thead>
+              <tbody id="affiliateLevelBreakdownBody">
+                <!-- Populated dynamically via JS for Levels 1-6 -->
+              </tbody>
+            </table>
           </div>
         </div>
 
-        <!-- Team Members Subordinates Table -->
-        <div class="card">
+        <!-- Affiliate Section Switcher -->
+        <div style="display:flex; gap:6px; overflow-x:auto; padding:2px 0;">
+          <button class="chip-filter-btn active" id="affViewPill-all" onclick="switchAffiliateSection('all', this)">All Sections</button>
+          <button class="chip-filter-btn" id="affViewPill-claims" onclick="switchAffiliateSection('claims', this)">💸 Claim Transactions</button>
+          <button class="chip-filter-btn" id="affViewPill-team" onclick="switchAffiliateSection('team', this)">👥 Team Members</button>
+          <button class="chip-filter-btn" id="affViewPill-commissions" onclick="switchAffiliateSection('commissions', this)">📜 6-Level Log</button>
+        </div>
+
+        <!-- Dedicated Affiliate Claim Transactions Ledger -->
+        <div class="card" id="affiliateClaimsSectionCard" style="border:1px solid rgba(0,230,118,0.28);">
+          <div class="section-title">
+            <span>💸 Affiliate Claim Transactions</span>
+            <span class="section-badge" id="affClaimCountBadge" style="background:rgba(0,230,118,0.18); color:var(--green);">0 Claims</span>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
+            <div style="background:var(--card-highlight); padding:10px; border-radius:10px; border:1px solid rgba(0,230,118,0.2);">
+              <div style="font-size:9px; color:var(--text-muted); font-weight:700;">TOTAL AFFILIATE CLAIMED TO WALLET</div>
+              <div id="affClaimLedgerTotalAmount" style="font-size:20px; font-weight:900; color:var(--green); font-family:monospace;">₹0.00</div>
+            </div>
+            <div style="background:var(--card-highlight); padding:10px; border-radius:10px; border:1px solid rgba(255,215,0,0.2);">
+              <div style="font-size:9px; color:var(--text-muted); font-weight:700;">UNCLAIMED PENDING CLAIM</div>
+              <div id="affClaimLedgerUnclaimed" style="font-size:20px; font-weight:900; color:var(--gold); font-family:monospace;">₹0.00</div>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table class="records-table">
+              <thead>
+                <tr>
+                  <th>Date &amp; Time (IST)</th>
+                  <th>Claim TX ID</th>
+                  <th>Claimed Amount</th>
+                  <th>Wallet After</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="affiliateClaimHistoryBody">
+                <!-- Populated dynamically via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Team Members Subordinates Table (Filterable by Level 1-6) -->
+        <div class="card" id="affiliateTeamSectionCard">
           <div class="section-title">
             <span>👥 Subordinates Team Directory</span>
-            <span class="section-badge">6-Level Network</span>
+            <span class="section-badge" id="affTeamFilterBadge">All Levels</span>
+          </div>
+          <div style="display:flex; gap:5px; overflow-x:auto; margin-bottom:8px; padding-bottom:2px;">
+            <button class="chip-filter-btn active" onclick="filterAffiliateTeamLevel('ALL', this)">All</button>
+            <button class="chip-filter-btn" onclick="filterAffiliateTeamLevel(1, this)">L1</button>
+            <button class="chip-filter-btn" onclick="filterAffiliateTeamLevel(2, this)">L2</button>
+            <button class="chip-filter-btn" onclick="filterAffiliateTeamLevel(3, this)">L3</button>
+            <button class="chip-filter-btn" onclick="filterAffiliateTeamLevel(4, this)">L4</button>
+            <button class="chip-filter-btn" onclick="filterAffiliateTeamLevel(5, this)">L5</button>
+            <button class="chip-filter-btn" onclick="filterAffiliateTeamLevel(6, this)">L6</button>
           </div>
           <div class="table-container">
             <table class="records-table">
               <thead>
                 <tr>
-                  <th>Tier</th>
+                  <th>Level</th>
                   <th>User</th>
                   <th>Joined</th>
                   <th>Turnover</th>
@@ -1948,9 +2031,9 @@
         </div>
 
         <!-- Live 6-Level Commission History Ledger -->
-        <div class="card">
+        <div class="card" id="affiliateCommSectionCard">
           <div class="section-title">
-            <span>💰 6-Level Commission History</span>
+            <span>📜 6-Level Commission History</span>
             <span class="section-badge" id="affCommCountBadge" style="background:rgba(0,230,118,0.18); color:var(--green);">0 Entries</span>
           </div>
           <div class="table-container">
@@ -1958,7 +2041,7 @@
               <thead>
                 <tr>
                   <th>Time (IST)</th>
-                  <th>Tier / Rate</th>
+                  <th>Level / Rate</th>
                   <th>From Player</th>
                   <th>Bet Stake</th>
                   <th>Commission</th>
@@ -3231,9 +3314,17 @@
     // 6-Level Subordinates Team Directory & Affiliate Stats (Synced live from SQLite /api/affiliates)
     let affiliateTeam = [];
     let affiliateCommissions = [];
+    let affiliateLevelBreakdown = [];
+    let affiliateClaimHistory = [];
+    let affiliateTeamLevelFilter = 'ALL';
+    let affiliateActiveSection = 'all';
+    let isClaimingAffiliate = false;
     let affiliateSummary = {
       referralCode: '',
       lifetimeCommission: 0,
+      claimableBalance: 0,
+      totalClaimed: 0,
+      claimCount: 0,
       todayCommission: 0,
       networkTurnover: 0,
       teamCount: 0
@@ -4278,9 +4369,9 @@
               <span style="font-size:13px; font-weight:900; color:#FFF;">${b.target} (${b.mult}X)</span>
               <span style="font-size:9px; font-weight:800; padding:2px 7px; border-radius:8px; background:rgba(255,255,255,0.08); color:${badgeColor};">${bStatus}</span>
             </div>
-            ${!isLocked
-              ? `<button class="btn-secondary" style="padding:5px 10px; font-size:10px; color:var(--red); border-color:rgba(255,23,68,0.4); white-space:nowrap;" onclick="cancelActiveBet(${idx})">✕ Refund</button>`
-              : `<span style="font-size:10px; font-weight:800; color:#FF9100; background:rgba(255,145,0,0.14); padding:3px 8px; border-radius:8px; white-space:nowrap;">🔒 Locked</span>`}
+            ${isLocked
+              ? `<span style="font-size:10px; font-weight:800; color:#FF9100; background:rgba(255,145,0,0.14); padding:3px 8px; border-radius:8px; white-space:nowrap;">🔒 Locked</span>`
+              : `<span style="font-size:10px; font-weight:800; color:var(--cyan); background:rgba(0,229,255,0.12); padding:3px 8px; border-radius:8px; white-space:nowrap;">✓ Confirmed</span>`}
           </div>
           <div class="bet-slip-metrics">
             <div class="bet-slip-metric">
@@ -4303,79 +4394,6 @@
         </div>
       `;
       }).join('');
-    }
-
-    async function cancelActiveBet(index) {
-      const st = marketStates[currentMarketId];
-      if (st.isBettingLocked || st.secondsLeft <= 30) {
-        showToast('⚠️ BETTING LOCKED: Cannot cancel bet in the last 30 seconds!');
-        return;
-      }
-      const b = st.activeBets[index];
-      if (!b) return;
-
-      if (!currentUserId || currentUserId === 'Guest') {
-        showToast('⚠️ Please login or register first!');
-        openAuthModal(0);
-        return;
-      }
-
-      try {
-        const res = await fetch(apiUrl('/api/bets/cancel'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            betId: b.id,
-            userId: currentUserId
-          })
-        });
-        const data = await res.json();
-        if (!res.ok || !data.success) {
-          showToast(`❌ ${data.error || 'Cancellation failed'}`);
-          return;
-        }
-
-        userBalance = data.newBalance;
-        b.status = 'CANCELLED';
-        b.result = 'Cancelled & Refunded';
-
-        const slip = userBetSlipsHistory.find(s => s.id === b.id);
-        if (slip) {
-          slip.status = 'CANCELLED';
-          slip.result = 'Cancelled & Refunded';
-        }
-
-        st.activeBets.splice(index, 1);
-        userBetSlipsHistory = pruneAndSaveBetSlips(userBetSlipsHistory);
-
-        const cancelNowMs = getSyncedNowMs();
-        walletLedger.unshift({
-          id: 'TX-' + Math.floor(1000 + Math.random() * 9000),
-          type: 'DEPOSIT',
-          title: `Refund: ${b.target} (${MARKETS[currentMarketId].name})`,
-          ref: `Period #${st.currentPeriod} • Cancelled & Refunded`,
-          amount: b.amount,
-          timestampMs: cancelNowMs,
-          time: formatISTDateTime(cancelNowMs),
-          status: 'COMPLETED'
-        });
-
-        updateBalanceUI();
-        syncUserTransactions();
-        renderActiveBets();
-        renderBetSlips();
-        renderWalletLedger();
-        showToast(`✓ Bet ${b.id} refunded (+₹${Number(b.amount).toFixed(2)})`);
-        playSound('betClick');
-        if (window.AndroidBridge && window.AndroidBridge.triggerSync) {
-          window.AndroidBridge.triggerSync();
-        } else if (window.AndroidBridge && window.AndroidBridge.syncWalletBalance) {
-          window.AndroidBridge.syncWalletBalance(userBalance, `Refund for bet ${b.id}`);
-        }
-      } catch (e) {
-        showToast('⚠️ Error connecting to server to cancel bet.');
-      }
     }
 
     // BET PLACEMENT MODAL (Matches Android UI & Screenshot 1)
@@ -5453,7 +5471,7 @@
         const amt = Number(tx.amount || 0);
         if (tp === 'DEPOSIT' && (st === 'SUCCESS' || st === 'COMPLETED')) dep += Math.max(0, amt);
         if (tp === 'WITHDRAWAL' && (st === 'SUCCESS' || st === 'COMPLETED')) wd += Math.abs(amt);
-        if (tp === 'COMMISSION' || tp === 'REFERRAL_COMMISSION') refEarn += Math.max(0, amt);
+        if (tp === 'COMMISSION' || tp === 'REFERRAL_COMMISSION' || tp === 'AFFILIATE_CLAIM') refEarn += Math.max(0, amt);
       });
       return {
         walletBalance: userBalance,
@@ -5506,7 +5524,7 @@
         const cat = String(tx.category || '').toUpperCase();
         if (ledgerFilterType === 'ALL') return true;
         if (ledgerFilterType === 'PROFIT_LOSS') return ['BET', 'WIN', 'REFUND', 'PROFIT_LOSS'].includes(tp) || cat === 'PROFIT_LOSS';
-        if (ledgerFilterType === 'COMMISSION') return ['COMMISSION', 'REFERRAL_COMMISSION'].includes(tp) || cat === 'REFERRAL';
+        if (ledgerFilterType === 'COMMISSION') return ['COMMISSION', 'REFERRAL_COMMISSION', 'AFFILIATE_CLAIM'].includes(tp) || cat === 'REFERRAL';
         if (ledgerFilterType === 'WITHDRAWAL') return ['WITHDRAWAL', 'WITHDRAWAL_REFUND'].includes(tp);
         return tp === ledgerFilterType;
       });
@@ -5951,31 +5969,182 @@
       });
     }
 
-    // AFFILIATE TEAM TABLE & LIVE 6-TIER SYNC
+    // AFFILIATE TEAM TABLE, L1-L6 CLARIFICATION, CLAIM VAULT & CLAIM TRANSACTIONS
+    const DEFAULT_AFF_LEVEL_RATES = [
+      { level: 1, label: 'Level 1 (Direct)', ratePercent: 1.00 },
+      { level: 2, label: 'Level 2', ratePercent: 0.75 },
+      { level: 3, label: 'Level 3', ratePercent: 0.60 },
+      { level: 4, label: 'Level 4', ratePercent: 0.50 },
+      { level: 5, label: 'Level 5', ratePercent: 0.30 },
+      { level: 6, label: 'Level 6', ratePercent: 0.20 }
+    ];
+
     function updateAffiliateStatsUI() {
       const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
       const lcEl = document.getElementById('affLifetimeCommission');
+      const cbEl = document.getElementById('affClaimableBalance');
+      const chEl = document.getElementById('affTotalClaimedHeader');
+      const clTotalEl = document.getElementById('affClaimLedgerTotalAmount');
+      const clUnclaimedEl = document.getElementById('affClaimLedgerUnclaimed');
       const tcEl = document.getElementById('affTodayCommission');
       const ntEl = document.getElementById('affNetworkTurnover');
       const cntEl = document.getElementById('affTeamCount');
       const rcEl = document.getElementById('affReferralCodeDisplay');
+      const claimBtn = document.getElementById('affClaimBtn');
+      const claimNote = document.getElementById('affClaimVaultNote');
+
+      const claimable = Number(affiliateSummary.claimableBalance || 0);
+      const claimedTotal = Number(affiliateSummary.totalClaimed || 0);
+
       if (lcEl) lcEl.innerText = fmt(affiliateSummary.lifetimeCommission);
+      if (cbEl) cbEl.innerText = fmt(claimable);
+      if (chEl) chEl.innerText = fmt(claimedTotal);
+      if (clTotalEl) clTotalEl.innerText = fmt(claimedTotal);
+      if (clUnclaimedEl) clUnclaimedEl.innerText = fmt(claimable);
       if (tcEl) tcEl.innerText = fmt(affiliateSummary.todayCommission);
       if (ntEl) ntEl.innerText = fmt(affiliateSummary.networkTurnover);
       if (cntEl) cntEl.innerText = `${affiliateSummary.teamCount || 0} Users`;
       if (rcEl) rcEl.innerText = getActiveReferralCode() || '---';
+
+      if (claimBtn) {
+        if (isClaimingAffiliate) {
+          claimBtn.disabled = true;
+          claimBtn.innerText = 'Claiming...';
+        } else if (claimable > 0.009) {
+          claimBtn.disabled = false;
+          claimBtn.style.opacity = '1';
+          claimBtn.innerText = `💰 Claim ${fmt(claimable)}`;
+        } else {
+          claimBtn.disabled = true;
+          claimBtn.style.opacity = '0.55';
+          claimBtn.innerText = '💰 Claim to Wallet';
+        }
+      }
+      if (claimNote) {
+        claimNote.innerText = claimable > 0.009
+          ? `Ready! Tap Claim to add ${fmt(claimable)} into Main Wallet`
+          : 'No pending bonus right now • Earnings accrue on L1–L6 bets';
+      }
+    }
+
+    function switchAffiliateSection(sec, btnEl) {
+      affiliateActiveSection = sec || 'all';
+      ['all', 'claims', 'team', 'commissions'].forEach(k => {
+        const pill = document.getElementById('affViewPill-' + k);
+        if (pill) pill.classList.toggle('active', k === affiliateActiveSection);
+      });
+      if (btnEl) btnEl.classList.add('active');
+      const claimsCard = document.getElementById('affiliateClaimsSectionCard');
+      const teamCard = document.getElementById('affiliateTeamSectionCard');
+      const commCard = document.getElementById('affiliateCommSectionCard');
+      if (claimsCard) claimsCard.style.display = (affiliateActiveSection === 'all' || affiliateActiveSection === 'claims') ? 'block' : 'none';
+      if (teamCard) teamCard.style.display = (affiliateActiveSection === 'all' || affiliateActiveSection === 'team') ? 'block' : 'none';
+      if (commCard) commCard.style.display = (affiliateActiveSection === 'all' || affiliateActiveSection === 'commissions') ? 'block' : 'none';
+    }
+
+    function focusAffiliateSection(sec) {
+      switchAffiliateSection(sec, document.getElementById('affViewPill-' + sec));
+      const target = sec === 'claims'
+        ? document.getElementById('affiliateClaimsSectionCard')
+        : (sec === 'team' ? document.getElementById('affiliateTeamSectionCard') : document.getElementById('affiliateCommSectionCard'));
+      if (target && target.scrollIntoView) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+
+    function filterAffiliateTeamLevel(lvl, btnEl) {
+      affiliateTeamLevelFilter = lvl;
+      if (btnEl && btnEl.parentElement) {
+        btnEl.parentElement.querySelectorAll('.chip-filter-btn').forEach(b => b.classList.remove('active'));
+        btnEl.classList.add('active');
+      }
+      const badge = document.getElementById('affTeamFilterBadge');
+      if (badge) badge.innerText = (lvl === 'ALL') ? 'All Levels (L1–L6)' : `Level ${lvl} Only`;
+      renderAffiliateTeam();
+    }
+
+    function selectLevelFromBreakdown(lvl) {
+      switchAffiliateSection('team', document.getElementById('affViewPill-team'));
+      affiliateTeamLevelFilter = lvl;
+      const badge = document.getElementById('affTeamFilterBadge');
+      if (badge) badge.innerText = `Level ${lvl} Only`;
+      const teamCard = document.getElementById('affiliateTeamSectionCard');
+      if (teamCard) {
+        teamCard.querySelectorAll('.chip-filter-btn').forEach(b => {
+          b.classList.toggle('active', b.innerText.trim() === `L${lvl}`);
+        });
+        if (teamCard.scrollIntoView) teamCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      renderAffiliateTeam();
     }
 
     function renderAffiliateTeam() {
       updateAffiliateStatsUI();
+
+      // 1. Column-Wise Level 1 - Level 6 Breakdown Table
+      const lvlBody = document.getElementById('affiliateLevelBreakdownBody');
+      if (lvlBody) {
+        const rows = (Array.isArray(affiliateLevelBreakdown) && affiliateLevelBreakdown.length === 6)
+          ? affiliateLevelBreakdown
+          : DEFAULT_AFF_LEVEL_RATES.map(d => {
+              const mems = (Array.isArray(affiliateTeam) ? affiliateTeam : []).filter(m => Number(m.tier) === d.level);
+              const comms = (Array.isArray(affiliateCommissions) ? affiliateCommissions : []).filter(c => Number(c.level) === d.level);
+              return {
+                level: d.level,
+                label: d.label,
+                ratePercent: d.ratePercent,
+                membersCount: mems.length,
+                turnover: mems.reduce((s, m) => s + Number(m.turnover || 0), 0),
+                earnedCommission: comms.reduce((s, c) => s + Number(c.commissionAmount || 0), 0)
+              };
+            });
+        lvlBody.innerHTML = rows.map(r => `
+          <tr style="cursor:pointer;" onclick="selectLevelFromBreakdown(${Number(r.level)})">
+            <td style="font-weight:800; color:#FFF;">${escapeSupportHtml(r.label || ('Level ' + r.level))}</td>
+            <td style="color:var(--gold); font-weight:800;">${Number(r.ratePercent || 0).toFixed(2)}%</td>
+            <td><span class="badge-pill" style="background:rgba(0,229,255,0.14); color:var(--cyan);">${Number(r.membersCount || 0)} Users</span></td>
+            <td style="font-family:monospace;">₹${Number(r.turnover || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            <td style="color:var(--green); font-weight:800; font-family:monospace;">+₹${Number(r.earnedCommission || 0).toFixed(2)}</td>
+          </tr>
+        `).join('');
+      }
+
+      // 2. Affiliate Claim Transactions History Table
+      const claimBody = document.getElementById('affiliateClaimHistoryBody');
+      const claimBadge = document.getElementById('affClaimCountBadge');
+      const claims = Array.isArray(affiliateClaimHistory) ? affiliateClaimHistory : [];
+      if (claimBadge) claimBadge.innerText = `${claims.length} Claim${claims.length === 1 ? '' : 's'}`;
+      if (claimBody) {
+        if (claims.length === 0) {
+          claimBody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:14px; font-size:12px;">No affiliate claims yet. Click "💰 Claim to Wallet" when you have claimable affiliate earnings!</td></tr>`;
+        } else {
+          claimBody.innerHTML = claims.map(ch => `
+            <tr>
+              <td style="font-size:10px; color:var(--cyan); font-family:monospace;">${escapeSupportHtml(resolveISTTimestamp(ch.createdAt, ch.createdAtMs, true))}</td>
+              <td style="font-family:monospace; font-size:10px; color:#FFF;">${escapeSupportHtml(ch.id || '-')}</td>
+              <td style="color:var(--green); font-weight:900; font-family:monospace;">+₹${Number(ch.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              <td style="font-family:monospace; color:var(--gold);">₹${Number(ch.balanceAfter || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              <td><span class="badge-pill badge-green">✓ CREDITED</span></td>
+            </tr>
+          `).join('');
+        }
+      }
+
+      // 3. Subordinates Team Directory (with L1-L6 filter)
       const tbody = document.getElementById('affiliateTeamTableBody');
       if (tbody) {
-        if (!Array.isArray(affiliateTeam) || affiliateTeam.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:14px; font-size:12px;">No subordinates yet. Share your referral code to build your 6-tier team!</td></tr>`;
+        const teamList = (Array.isArray(affiliateTeam) ? affiliateTeam : []).filter(m =>
+          affiliateTeamLevelFilter === 'ALL' || Number(m.tier) === Number(affiliateTeamLevelFilter)
+        );
+        if (teamList.length === 0) {
+          const emptyTxt = affiliateTeamLevelFilter === 'ALL'
+            ? 'No subordinates yet. Share your referral code to build your 6-level team!'
+            : `No members in Level ${affiliateTeamLevelFilter} yet.`;
+          tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:14px; font-size:12px;">${emptyTxt}</td></tr>`;
         } else {
-          tbody.innerHTML = affiliateTeam.map(m => `
+          tbody.innerHTML = teamList.map(m => `
             <tr>
-              <td><span class="badge-pill badge-green">Tier ${m.tier}</span></td>
+              <td><span class="badge-pill badge-green">Level ${m.tier}</span></td>
               <td style="font-weight:700;">${escapeSupportHtml(m.name)}</td>
               <td style="color:var(--text-muted);">${escapeSupportHtml(m.joined || '-')}</td>
               <td style="font-family:monospace;">₹${Number(m.turnover || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
@@ -5985,6 +6154,7 @@
         }
       }
 
+      // 4. Live 6-Level Commission Earned History
       const commBody = document.getElementById('affiliateCommissionHistoryBody');
       const commBadge = document.getElementById('affCommCountBadge');
       if (commBadge) commBadge.innerText = `${Array.isArray(affiliateCommissions) ? affiliateCommissions.length : 0} Entries`;
@@ -5992,17 +6162,96 @@
         if (!Array.isArray(affiliateCommissions) || affiliateCommissions.length === 0) {
           commBody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:14px; font-size:12px;">No commission payouts recorded yet. Earn 1.00% to 0.20% across Levels 1–6 whenever your team bets!</td></tr>`;
         } else {
-          commBody.innerHTML = affiliateCommissions.map(rc => `
-            <tr>
-              <td style="font-size:10px; color:var(--cyan); font-family:monospace;">${escapeSupportHtml(rc.createdAt || '-')}</td>
-              <td><span class="badge-pill badge-green">L${Number(rc.level || 1)} (${(Number(rc.rate || 0.01) * 100).toFixed(2)}%)</span></td>
-              <td style="font-weight:700;">${escapeSupportHtml(rc.sourceUserName || rc.sourceUserId || '-')}</td>
-              <td style="font-family:monospace;">₹${Number(rc.eligibleAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-              <td style="color:var(--green); font-weight:800; font-family:monospace;">+₹${Number(rc.commissionAmount || 0).toFixed(2)}</td>
-            </tr>
-          `).join('');
+          commBody.innerHTML = affiliateCommissions.map(rc => {
+            const rcSt = String(rc.status || 'UNCLAIMED').toUpperCase();
+            const statusPill = rcSt === 'UNCLAIMED' || rcSt === 'PENDING'
+              ? `<span style="font-size:9px; color:var(--amber); margin-left:4px;">(UNCLAIMED)</span>`
+              : `<span style="font-size:9px; color:var(--cyan); margin-left:4px;">(${escapeSupportHtml(rcSt)})</span>`;
+            return `
+              <tr>
+                <td style="font-size:10px; color:var(--cyan); font-family:monospace;">${escapeSupportHtml(resolveISTTimestamp(rc.createdAt, rc.createdAtMs, true))}</td>
+                <td><span class="badge-pill badge-green">L${Number(rc.level || 1)} (${(Number(rc.rate || 0.01) * 100).toFixed(2)}%)</span></td>
+                <td style="font-weight:700;">${escapeSupportHtml(rc.sourceUserName || rc.sourceUserId || '-')}</td>
+                <td style="font-family:monospace;">₹${Number(rc.eligibleAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td style="color:var(--green); font-weight:800; font-family:monospace;">+₹${Number(rc.commissionAmount || 0).toFixed(2)}${statusPill}</td>
+              </tr>
+            `;
+          }).join('');
         }
       }
+    }
+
+    async function claimAffiliateEarnings() {
+      if (!currentUserId || currentUserId === 'Guest') {
+        showToast('⚠️ Please login first!');
+        openAuthModal(0);
+        return;
+      }
+      if (isClaimingAffiliate) return;
+      const claimable = Number(affiliateSummary.claimableBalance || 0);
+      if (claimable <= 0.009) {
+        showToast('⚠️ No unclaimed affiliate earnings available yet.');
+        return;
+      }
+      if (!hasBackendConnection()) {
+        showToast('⚠️ Server connection required to claim affiliate earnings.');
+        return;
+      }
+      isClaimingAffiliate = true;
+      updateAffiliateStatsUI();
+      try {
+        const res = await fetch(apiUrl('/api/affiliates/claim'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ userId: currentUserId })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) {
+          showToast('⚠️ ' + (data.error || 'Could not claim affiliate bonus.'));
+          return;
+        }
+        if (typeof data.newBalance === 'number') {
+          userBalance = data.newBalance;
+          updateBalanceUI();
+        }
+        if (data.affiliates) {
+          applyAffiliatePayload(data.affiliates);
+        } else {
+          syncUserAffiliates();
+        }
+        syncUserTransactions();
+        playSound('win');
+        showToast(`✅ Claimed ₹${Number(data.claimedAmount || 0).toFixed(2)} to Main Wallet!`);
+      } catch (e) {
+        showToast('⚠️ Error claiming affiliate bonus. Please try again.');
+      } finally {
+        isClaimingAffiliate = false;
+        updateAffiliateStatsUI();
+      }
+    }
+
+    function applyAffiliatePayload(data) {
+      if (!data) return;
+      if (data.referralCode) {
+        currentUserReferralCode = data.referralCode;
+        persistSessionSnapshot();
+      }
+      affiliateSummary = {
+        referralCode: data.referralCode || currentUserReferralCode || '',
+        lifetimeCommission: Number(data.lifetimeCommission || 0),
+        claimableBalance: Number(data.claimableBalance ?? data.unclaimedCommission ?? 0),
+        totalClaimed: Number(data.totalClaimed || 0),
+        claimCount: Number(data.claimCount || 0),
+        todayCommission: Number(data.todayCommission || 0),
+        networkTurnover: Number(data.networkTurnover || 0),
+        teamCount: Number(data.teamCount || 0)
+      };
+      affiliateLevelBreakdown = Array.isArray(data.levelBreakdown) ? data.levelBreakdown : [];
+      affiliateTeam = Array.isArray(data.members) ? data.members : [];
+      affiliateCommissions = Array.isArray(data.recentCommissions) ? data.recentCommissions : [];
+      affiliateClaimHistory = Array.isArray(data.claimHistory) ? data.claimHistory : [];
+      renderAffiliateTeam();
     }
 
     function syncUserAffiliates() {
@@ -6018,20 +6267,7 @@
         .then(r => r.ok ? r.json() : null)
         .then(data => {
           if (!data || currentUserId !== uid) return;
-          if (data.referralCode) {
-            currentUserReferralCode = data.referralCode;
-            persistSessionSnapshot();
-          }
-          affiliateSummary = {
-            referralCode: data.referralCode || currentUserReferralCode || '',
-            lifetimeCommission: Number(data.lifetimeCommission || 0),
-            todayCommission: Number(data.todayCommission || 0),
-            networkTurnover: Number(data.networkTurnover || 0),
-            teamCount: Number(data.teamCount || 0)
-          };
-          affiliateTeam = Array.isArray(data.members) ? data.members : [];
-          affiliateCommissions = Array.isArray(data.recentCommissions) ? data.recentCommissions : [];
-          renderAffiliateTeam();
+          applyAffiliatePayload(data);
         }).catch(() => {});
     }
 
@@ -6179,7 +6415,9 @@
       walletLedger = [];
       affiliateTeam = [];
       affiliateCommissions = [];
-      affiliateSummary = { referralCode: '', lifetimeCommission: 0, todayCommission: 0, networkTurnover: 0, teamCount: 0 };
+      affiliateLevelBreakdown = [];
+      affiliateClaimHistory = [];
+      affiliateSummary = { referralCode: '', lifetimeCommission: 0, claimableBalance: 0, totalClaimed: 0, claimCount: 0, todayCommission: 0, networkTurnover: 0, teamCount: 0 };
       lastKnownBetStatuses = {};
       resetUserSupportState();
       renderBetSlips();
@@ -6275,6 +6513,8 @@
       walletLedger = [];
       affiliateTeam = [];
       affiliateCommissions = [];
+      affiliateLevelBreakdown = [];
+      affiliateClaimHistory = [];
       lastKnownBetStatuses = {};
       loadSavedBetSlipsForCurrentUser();
       if (recToken) saveRecoveryVault(userObj, recToken);
@@ -6471,7 +6711,9 @@
       walletLedger = [];
       affiliateTeam = [];
       affiliateCommissions = [];
-      affiliateSummary = { referralCode: '', lifetimeCommission: 0, todayCommission: 0, networkTurnover: 0, teamCount: 0 };
+      affiliateLevelBreakdown = [];
+      affiliateClaimHistory = [];
+      affiliateSummary = { referralCode: '', lifetimeCommission: 0, claimableBalance: 0, totalClaimed: 0, claimCount: 0, todayCommission: 0, networkTurnover: 0, teamCount: 0 };
       resetUserSupportState();
       renderBetSlips();
       renderWalletLedger();

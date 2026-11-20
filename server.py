@@ -1738,7 +1738,7 @@ def build_user_statement(conn, uid, days="ALL", category="ALL", market_filter="A
         if tx_type == "WITHDRAWAL" and str(tx["ref"] or "") in seen_wd_refs:
             continue
 
-        if tx_type in ("COMMISSION", "REFERRAL_COMMISSION"):
+        if tx_type in ("COMMISSION", "REFERRAL_COMMISSION", "AFFILIATE_CLAIM"):
             total_refer_earn += amt
             cat = "REFERRAL"
         elif tx_type in ("BET", "WIN"):
@@ -1768,6 +1768,9 @@ def build_user_statement(conn, uid, days="ALL", category="ALL", market_filter="A
         })
 
     for rc in ref_rows:
+        rc_st = str(rc["status"] or "").upper()
+        if rc_st in ("UNCLAIMED", "PENDING", "CLAIMED", "REVERSED"):
+            continue
         comm_amt = float(rc["commission_amount"] or 0.0)
         ts_ms = int(rc["created_at_ms"] or 0)
         # Check if already present via transactions table
@@ -1783,7 +1786,7 @@ def build_user_statement(conn, uid, days="ALL", category="ALL", market_filter="A
                 "amount": round(comm_amt, 2),
                 "balanceBefore": None,
                 "balanceAfter": None,
-                "status": str(rc["status"] or "SETTLED").upper(),
+                "status": rc_st or "SETTLED",
                 "reason": None,
                 "time": format_ist_datetime(ts_ms),
                 "timestampMs": ts_ms
@@ -1799,7 +1802,7 @@ def build_user_statement(conn, uid, days="ALL", category="ALL", market_filter="A
     elif cat_upper == "WIN":
         filtered_entries = [e for e in statement_entries if e["type"] == "WIN"]
     elif cat_upper in ("REFERRAL", "COMMISSION", "REFER"):
-        filtered_entries = [e for e in statement_entries if e["category"] == "REFERRAL" or e["type"] in ("COMMISSION", "REFERRAL_COMMISSION")]
+        filtered_entries = [e for e in statement_entries if e["category"] == "REFERRAL" or e["type"] in ("COMMISSION", "REFERRAL_COMMISSION", "AFFILIATE_CLAIM")]
     elif cat_upper == "DEPOSIT":
         filtered_entries = [e for e in statement_entries if e["type"] == "DEPOSIT"]
     elif cat_upper == "WITHDRAWAL":
@@ -1950,36 +1953,53 @@ def build_user_affiliates(conn, uid):
         frontier = next_frontier
 
     c.execute("""
-        SELECT COALESCE(SUM(commission_amount), 0.0) FROM referral_commissions
+        SELECT * FROM referral_commissions
         WHERE beneficiary_user_id = ? AND status != 'REVERSED'
+        ORDER BY created_at_ms DESC
     """, (uid,))
-    lifetime_comm = float(c.fetchone()[0] or 0.0)
+    all_comm_rows = c.fetchall()
 
-    # Today's commission based on IST calendar day
+    level_breakdown = []
+    for lvl, rate_val in REFERRAL_TIER_RATES:
+        lvl_members = [m for m in members if m["tier"] == lvl]
+        lvl_comms = [r for r in all_comm_rows if int(r["level"] or 1) == lvl]
+        lvl_earned = round(sum(float(r["commission_amount"] or 0.0) for r in lvl_comms), 2)
+        lvl_unclaimed = round(sum(float(r["commission_amount"] or 0.0) for r in lvl_comms if str(r["status"] or "").upper() in ("UNCLAIMED", "PENDING")), 2)
+        lvl_claimed = round(sum(float(r["commission_amount"] or 0.0) for r in lvl_comms if str(r["status"] or "").upper() in ("CLAIMED", "SETTLED", "COMPLETED")), 2)
+        lvl_turnover = round(sum(m["turnover"] for m in lvl_members), 2)
+        if lvl_turnover <= 0 and lvl_comms:
+            lvl_turnover = round(sum(float(r["eligible_amount"] or 0.0) for r in lvl_comms), 2)
+        level_breakdown.append({
+            "level": lvl,
+            "label": f"Level {lvl} (Direct)" if lvl == 1 else f"Level {lvl}",
+            "rate": rate_val,
+            "ratePercent": round(rate_val * 100.0, 2),
+            "membersCount": len(lvl_members),
+            "turnover": lvl_turnover,
+            "earnedCommission": lvl_earned,
+            "unclaimedCommission": lvl_unclaimed,
+            "claimedCommission": lvl_claimed,
+        })
+
+    lifetime_comm = round(sum(float(r["commission_amount"] or 0.0) for r in all_comm_rows), 2)
+    claimable_balance = round(sum(float(r["commission_amount"] or 0.0) for r in all_comm_rows if str(r["status"] or "").upper() in ("UNCLAIMED", "PENDING")), 2)
+
     ist_now = get_ist_now()
     ist_midnight = ist_now.replace(hour=0, minute=0, second=0, microsecond=0)
     today_start_ms = int(ist_midnight.timestamp() * 1000)
-    c.execute("""
-        SELECT COALESCE(SUM(commission_amount), 0.0) FROM referral_commissions
-        WHERE beneficiary_user_id = ? AND created_at_ms >= ? AND status != 'REVERSED'
-    """, (uid, today_start_ms))
-    today_comm = float(c.fetchone()[0] or 0.0)
+    today_comm = round(sum(
+        float(r["commission_amount"] or 0.0)
+        for r in all_comm_rows
+        if _parse_ts_ms(r["created_at"], r["created_at_ms"] if "created_at_ms" in r.keys() else 0) >= today_start_ms
+    ), 2)
 
     network_turnover = round(sum(m["turnover"] for m in members), 2)
     if network_turnover <= 0:
-        c.execute("""
-            SELECT COALESCE(SUM(eligible_amount), 0.0) FROM referral_commissions
-            WHERE beneficiary_user_id = ? AND status != 'REVERSED'
-        """, (uid,))
-        network_turnover = round(float(c.fetchone()[0] or 0.0), 2)
+        network_turnover = round(sum(float(r["eligible_amount"] or 0.0) for r in all_comm_rows), 2)
 
-    c.execute("""
-        SELECT * FROM referral_commissions
-        WHERE beneficiary_user_id = ? AND status != 'REVERSED'
-        ORDER BY created_at_ms DESC LIMIT 1000
-    """, (uid,))
     recent_commissions = [{
         "id": r["id"],
+        "beneficiaryUserId": r["beneficiary_user_id"],
         "sourceUserId": r["source_user_id"],
         "sourceUserName": r["source_user_name"] or r["source_user_id"],
         "sourceBetId": r["source_bet_id"] or "",
@@ -1987,22 +2007,47 @@ def build_user_affiliates(conn, uid):
         "rate": float(r["rate"] or 0.01),
         "eligibleAmount": round(float(r["eligible_amount"] or 0.0), 2),
         "commissionAmount": round(float(r["commission_amount"] or 0.0), 2),
-        "status": r["status"] or "SETTLED",
+        "status": str(r["status"] or "UNCLAIMED").upper(),
         "createdAt": to_ist_display(r["created_at"], r["created_at_ms"], mode="datetime"),
         "createdAtMs": _parse_ts_ms(r["created_at"], r["created_at_ms"])
-    } for r in c.fetchall()]
+    } for r in all_comm_rows[:1000]]
+
+    c.execute("""
+        SELECT * FROM transactions
+        WHERE user_id = ? AND type = 'AFFILIATE_CLAIM'
+        ORDER BY created_at_ms DESC
+    """, (uid,))
+    claim_tx_rows = c.fetchall()
+    claim_history = [{
+        "id": tx["tx_id"],
+        "title": tx["title"] or "Affiliate Bonus Claimed",
+        "ref": tx["ref"] or "Credited to Main Wallet",
+        "amount": round(float(tx["amount"] or 0.0), 2),
+        "balanceBefore": round(float(tx["balance_before"] or 0.0), 2),
+        "balanceAfter": round(float(tx["balance_after"] or 0.0), 2),
+        "status": "CREDITED",
+        "createdAt": to_ist_display(tx["created_at"], tx["created_at_ms"] if "created_at_ms" in tx.keys() else 0, mode="datetime"),
+        "createdAtMs": _parse_ts_ms(tx["created_at"], tx["created_at_ms"] if "created_at_ms" in tx.keys() else 0)
+    } for tx in claim_tx_rows]
+    total_claimed = round(sum(ch["amount"] for ch in claim_history), 2)
 
     return {
         "userId": uid,
         "userName": root_u["name"],
         "referralCode": ref_code,
-        "lifetimeCommission": round(lifetime_comm, 2),
-        "todayCommission": round(today_comm, 2),
+        "lifetimeCommission": lifetime_comm,
+        "claimableBalance": claimable_balance,
+        "unclaimedCommission": claimable_balance,
+        "totalClaimed": total_claimed,
+        "claimCount": len(claim_history),
+        "todayCommission": today_comm,
         "networkTurnover": network_turnover,
         "teamCount": len(members),
         "directCount": sum(1 for m in members if m["tier"] == 1),
+        "levelBreakdown": level_breakdown,
         "members": members,
-        "recentCommissions": recent_commissions
+        "recentCommissions": recent_commissions,
+        "claimHistory": claim_history,
     }
 
 def compute_live_wagers_and_market_stats(conn, now_ms=None):
@@ -3364,6 +3409,9 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                         "directMembersCount": aff_data["directCount"],
                         "teamMembersCount": aff_data["teamCount"],
                         "totalEarnedCommission": aff_data["lifetimeCommission"],
+                        "claimableBalance": aff_data["claimableBalance"],
+                        "totalClaimed": aff_data["totalClaimed"],
+                        "levelBreakdown": aff_data["levelBreakdown"],
                         "yesterdayCommission": aff_data["todayCommission"],
                         "todayCommission": aff_data["todayCommission"],
                         "networkTurnover": aff_data["networkTurnover"],
@@ -3855,7 +3903,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     VALUES (?, ?, 'BET', ?, ?, ?, ?, ?, 'COMPLETED', ?)
                 """, (tx_id, uid, f"Bet on {m_code} #{period}", f"Target {target} ({mult}X) • 3% Fee ₹{platform_fee:.2f} • Net ₹{net_amount:.2f}", -amount, curr_bal, new_bal, now_ms))
 
-                # 5. Credit Multi-Tier (Up to 6 Levels) Refer & Earn Commissions
+                # 5. Accrue Multi-Tier (Up to 6 Levels) Refer & Earn Commissions in UNCLAIMED Vault (credited only when user Claims)
                 cur_sponsor_id = user["referred_by"] if "referred_by" in user.keys() else None
                 visited_sponsors = {uid}
                 for tier_lvl, comm_rate in REFERRAL_TIER_RATES:
@@ -3868,19 +3916,11 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                         break
                     comm_amt = round(amount * comm_rate, 2)
                     if comm_amt > 0:
-                        sp_bal = float(sp["balance"])
-                        sp_new = round(sp_bal + comm_amt, 2)
-                        c.execute("UPDATE users SET balance = ? WHERE id = ?", (sp_new, sp["id"]))
                         rc_id = f"REF-L{tier_lvl}-{int(now_ms)}-{random.randint(100, 999)}"
                         c.execute("""
-                            INSERT INTO referral_commissions (id, beneficiary_user_id, source_user_id, source_user_name, source_bet_id, level, rate, eligible_amount, commission_amount, status, created_at_ms)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'SETTLED', ?)
-                        """, (rc_id, sp["id"], uid, user["name"], bet_id, tier_lvl, comm_rate, amount, comm_amt, now_ms))
-                        rtx_id = f"TX-REF-L{tier_lvl}-{int(now_ms)}-{random.randint(100, 999)}"
-                        c.execute("""
-                            INSERT INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status, created_at_ms)
-                            VALUES (?, ?, 'REFERRAL_COMMISSION', ?, ?, ?, ?, ?, 'COMPLETED', ?)
-                        """, (rtx_id, sp["id"], f"Tier {tier_lvl} Refer & Earn ({comm_rate*100:.2f}%)", f"From {user['name']} ({m_code} Bet ₹{amount:.2f})", comm_amt, sp_bal, sp_new, now_ms))
+                            INSERT INTO referral_commissions (id, beneficiary_user_id, source_user_id, source_user_name, source_bet_id, level, rate, eligible_amount, commission_amount, status, created_at, created_at_ms)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'UNCLAIMED', ?, ?)
+                        """, (rc_id, sp["id"], uid, user["name"], bet_id, tier_lvl, comm_rate, amount, comm_amt, format_ist_datetime(now_ms), now_ms))
                     cur_sponsor_id = sp["referred_by"] if "referred_by" in sp.keys() else None
 
                 _, sse_ev = bump_state_version(conn, "bet_placed", {"userId": uid, "market": m_code, "period": period, "betId": bet_id})
@@ -4015,66 +4055,13 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        # 2. BET CANCELLATION / REFUND (ONLY ALLOWED BEFORE 30s LOCK)
+        # 2. BET CANCELLATION / REFUND (PERMANENTLY DISABLED AFTER SUBMIT)
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         if path == "/api/bets/cancel":
-            bet_id = str(payload.get("betId", "")).strip()
-            uid = str(payload.get("userId", "")).strip()
-
-            with db_lock:
-                conn = get_db()
-                c = conn.cursor()
-
-                c.execute("SELECT * FROM bets WHERE bet_id = ? AND user_id = ?", (bet_id, uid))
-                bet = c.fetchone()
-                if not bet:
-                    conn.close()
-                    self._send_json({ "success": False, "error": "Bet not found" }, status=404)
-                    return
-
-                if bet["status"] != "PENDING":
-                    conn.close()
-                    self._send_json({ "success": False, "error": f"Cannot cancel bet in {bet['status']} status" }, status=400)
-                    return
-
-                # Check if current market round is locked
-                auth = calculate_authoritative_round(bet["market"], now_ms)
-                if auth["is_betting_locked"] or auth["period"] != bet["period"]:
-                    conn.close()
-                    self._send_json({ "success": False, "error": "Cannot cancel bet: Round is already locked or finished!" }, status=400)
-                    return
-
-                # Refund user balance
-                refund_amt = bet["amount"]
-                c.execute("SELECT balance FROM users WHERE id = ?", (uid,))
-                curr_bal = c.fetchone()["balance"]
-                new_bal = round(curr_bal + refund_amt, 2)
-                c.execute("UPDATE users SET balance = ? WHERE id = ?", (new_bal, uid))
-
-                now_str = format_ist_datetime(now_ms)
-                c.execute("""
-                    UPDATE bets
-                    SET status = 'CANCELLED', result_text = 'Cancelled & Refunded', win_amount = 0.0, loss_amount = 0.0, settled_at = ?
-                    WHERE bet_id = ?
-                """, (now_str, bet_id))
-
-                tx_id = f"TX-REF-{int(now_ms)}-{random.randint(100, 999)}"
-                c.execute("""
-                    INSERT INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status, created_at_ms)
-                    VALUES (?, ?, 'REFUND', ?, ?, ?, ?, ?, 'COMPLETED', ?)
-                """, (tx_id, uid, f"Refund {bet['market']} #{bet['period']}", f"Target {bet['prediction_target']} Cancelled", refund_amt, curr_bal, new_bal, now_ms))
-
-                _, sse_ev = bump_state_version(conn, "bet_cancelled", {"userId": uid, "betId": bet_id})
-                commit_and_persist(conn, critical=True)
-                conn.close()
-            notify_sse_clients(sse_ev)
-
             self._send_json({
-                "success": True,
-                "message": f"Bet {bet_id} cancelled and ₹{refund_amt:.2f} refunded to your wallet.",
-                "newBalance": new_bal,
-                "settledAt": now_str
-            })
+                "success": False,
+                "error": "Once a bet is submitted, it cannot be cancelled or refunded."
+            }, status=403)
             return
 
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -4764,6 +4751,93 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 conn.close()
             notify_sse_clients(sse_ev)
             self._send_json({ "success": True, "bank_config": payload })
+            return
+
+        if path == "/api/affiliates/claim":
+            uid = str(payload.get("userId") or self._get_cookie_uid() or "").strip()
+            if not uid or uid == "Guest":
+                self._send_json({ "success": False, "error": "Missing userId" }, status=400)
+                return
+            sse_ev = None
+            curr_ms = int(time.time() * 1000)
+            now_str = format_ist_datetime(curr_ms)
+            with db_lock:
+                conn = get_db()
+                c = conn.cursor()
+                c.execute("SELECT id, balance, status FROM users WHERE id = ?", (uid,))
+                u = c.fetchone()
+                if not u:
+                    conn.close()
+                    self._send_json({ "success": False, "error": "User not found" }, status=404)
+                    return
+                if str(u["status"] or "").upper() == "BLOCKED":
+                    conn.close()
+                    self._send_json({ "success": False, "error": "Account temporarily restricted by Admin" }, status=403)
+                    return
+                c.execute("""
+                    SELECT id, commission_amount FROM referral_commissions
+                    WHERE beneficiary_user_id = ? AND UPPER(status) IN ('UNCLAIMED', 'PENDING')
+                    ORDER BY created_at_ms ASC
+                """, (uid,))
+                unclaimed_rows = c.fetchall()
+                claim_amt = round(sum(float(r["commission_amount"] or 0.0) for r in unclaimed_rows), 2)
+                if not unclaimed_rows or claim_amt <= 0.0:
+                    conn.close()
+                    self._send_json({ "success": False, "error": "No unclaimed affiliate commission available to claim." }, status=400)
+                    return
+
+                curr_bal = float(u["balance"] or 0.0)
+                new_bal = round(curr_bal + claim_amt, 2)
+                c.execute("UPDATE users SET balance = ? WHERE id = ?", (new_bal, uid))
+                c.execute("""
+                    UPDATE referral_commissions SET status = 'CLAIMED'
+                    WHERE beneficiary_user_id = ? AND UPPER(status) IN ('UNCLAIMED', 'PENDING')
+                """, (uid,))
+                claim_tx_id = f"TX-AFFCLAIM-{curr_ms}-{random.randint(100, 999)}"
+                claim_title = f"Affiliate Commission Claimed (+₹{claim_amt:.2f})"
+                claim_ref = f"Claimed {len(unclaimed_rows)} L1–L6 Commission(s) to Main Wallet"
+                c.execute("""
+                    INSERT INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status, created_at, created_at_ms)
+                    VALUES (?, ?, 'AFFILIATE_CLAIM', ?, ?, ?, ?, ?, 'COMPLETED', ?, ?)
+                """, (claim_tx_id, uid, claim_title, claim_ref, claim_amt, curr_bal, new_bal, now_str, curr_ms))
+                _, sse_ev = bump_state_version(conn, "affiliate_claimed", {"userId": uid, "claimedAmount": claim_amt, "claimTxId": claim_tx_id})
+                commit_and_persist(conn, critical=True)
+                updated_aff = build_user_affiliates(conn, uid)
+                conn.close()
+            notify_sse_clients(sse_ev)
+            self._send_json({
+                "success": True,
+                "message": f"Claimed ₹{claim_amt:.2f} affiliate earnings into main wallet!",
+                "claimedAmount": claim_amt,
+                "claimedCount": len(unclaimed_rows),
+                "newBalance": new_bal,
+                "claimTransaction": {
+                    "id": claim_tx_id,
+                    "title": claim_title,
+                    "ref": claim_ref,
+                    "amount": claim_amt,
+                    "balanceBefore": round(curr_bal, 2),
+                    "balanceAfter": new_bal,
+                    "status": "CREDITED",
+                    "createdAt": now_str,
+                    "createdAtMs": curr_ms,
+                },
+                "affiliates": updated_aff,
+            })
+            return
+
+        if path == "/api/admin/verify-login":
+            u_in = str(payload.get("username") or "").strip()
+            p_in = str(payload.get("password") or "").strip()
+            mpin_in = str(payload.get("mpin") or "").strip()
+            step = str(payload.get("step") or "FULL").upper().strip()
+            if u_in != "ColourPrince" or p_in != "Prince@124735":
+                self._send_json({ "success": False, "error": "Invalid administrator username or password." }, status=401)
+                return
+            if step in ("MPIN", "FULL") and mpin_in != "124735":
+                self._send_json({ "success": False, "error": "Invalid 6-digit Security MPIN." }, status=401)
+                return
+            self._send_json({ "success": True, "adminName": "ColourPrince" })
             return
 
         if path == "/api/admin/sync-state":

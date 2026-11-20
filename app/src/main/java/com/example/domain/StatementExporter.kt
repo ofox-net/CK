@@ -91,13 +91,23 @@ object StatementExporter {
             .sumOf { it.amount }
         val netWithdrawalCents = (withdrawalsDebitCents - withdrawalsRefundedCents).coerceAtLeast(0L)
 
-        val ledgerCommCents = windowLedger
-            .filter { it.entryType == "REFERRAL_COMMISSION" && it.direction == "CREDIT" }
-            .sumOf { it.amount }
+        val referLedgerEntries = windowLedger.filter {
+            (it.entryType == "REFERRAL_COMMISSION" || it.entryType == "AFFILIATE_CLAIM") && it.direction == "CREDIT"
+        }
+        val ledgerCommCents = referLedgerEntries.sumOf { it.amount }
         val commTableCents = commissions
-            .filter { it.createdAt >= cutoff && it.status != "REVERSED" }
+            .filter { rc ->
+                rc.createdAt >= cutoff &&
+                    rc.status.uppercase() == "SETTLED" &&
+                    referLedgerEntries.none { le ->
+                        le.referenceId == rc.id ||
+                            (le.entryType == "REFERRAL_COMMISSION" &&
+                                kotlin.math.abs(le.createdAt - rc.createdAt) < 5_000L &&
+                                le.amount == rc.commissionAmount)
+                    }
+            }
             .sumOf { it.commissionAmount }
-        val referEarnCents = maxOf(ledgerCommCents, commTableCents)
+        val referEarnCents = ledgerCommCents + commTableCents
 
         return AccountStatementSummary(
             days = clampedDays,
@@ -133,7 +143,7 @@ object StatementExporter {
                 "WITHDRAWAL" -> entry.entryType == "WITHDRAWAL"
                 "BET" -> entry.entryType == "BET"
                 "WIN" -> entry.entryType == "WIN"
-                "COMMISSION", "REFERRAL", "REFER" -> entry.entryType == "REFERRAL_COMMISSION"
+                "COMMISSION", "REFERRAL", "REFER" -> entry.entryType in listOf("REFERRAL_COMMISSION", "AFFILIATE_CLAIM")
                 else -> true
             }
         }
