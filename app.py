@@ -10,6 +10,7 @@ import os
 import queue
 import random
 import re
+import secrets
 import shutil
 import signal
 import ssl
@@ -398,18 +399,12 @@ def get_period_window_ms_ist(period_str: str) -> tuple[int, int, int]:
         return (0, 0, 0)
 
 
-def generate_provably_fair_outcome(market_code: str, period: str) -> dict:
-    seed_str = f"COLOUR_KING_AVALANCHE_2026_{market_code}_{period}_PROVABLY_FAIR"
-    h = 0x811C9DC5
-    for ch in seed_str:
-        h ^= ord(ch)
-        h = (h * 0x01000193) & 0xFFFFFFFF
-    h ^= h >> 16
-    h = (h * 0x85EBCA6B) & 0xFFFFFFFF
-    h ^= h >> 13
-    h = (h * 0xC2B2AE35) & 0xFFFFFFFF
-    h ^= h >> 16
-    number = h % 10
+def generate_provably_fair_outcome(market_code: str, period: str, use_csprng: bool = False) -> dict:
+    if use_csprng:
+        number = secrets.randbelow(10)
+    else:
+        digest = hashlib.sha256(f"CK_CRYPTO_FAIR_V2|{market_code}|{period}".encode("utf-8")).digest()
+        number = int.from_bytes(digest[:4], "big") % 10
     is_big = number >= 5
     if number in (1, 3, 7, 9):
         color, col_class = "green", "green"
@@ -643,6 +638,37 @@ def init_database():
         except Exception as exc:
             db.session.rollback()
             print(f"[DB] Seed app_state warning: {exc}")
+
+        # One-time safe upgrade: refresh zero-bet SYSTEM_SYNC/AUTO_RANDOM backfill rounds created by legacy FNV-1a hash
+        try:
+            mig_row = AppState.query.get("rng_v2_migrated")
+            if not mig_row or mig_row.value != "1":
+                auto_rounds = Round.query.filter(
+                    Round.status == "SETTLED",
+                    Round.draw_mode.in_(["AUTO_RANDOM", "SYSTEM_SYNC", "AUTO_RECOVERY"]),
+                ).all()
+                bet_rids = {r[0] for r in db.session.query(Bet.round_id).distinct().all() if r[0]}
+                updated_cnt = 0
+                for rnd in auto_rounds:
+                    if rnd.round_id in bet_rids:
+                        continue  # Strictly preserve every round that ever had user bets
+                    out = generate_provably_fair_outcome(rnd.market, rnd.period, use_csprng=False)
+                    rnd.result_number = out["number"]
+                    rnd.result_color = out["color"]
+                    rnd.result_col_class = out["col_class"]
+                    rnd.is_big = out["is_big"]
+                    updated_cnt += 1
+                if not mig_row:
+                    db.session.add(AppState(key="rng_v2_migrated", value="1", updated_at=format_ist_datetime()))
+                else:
+                    mig_row.value = "1"
+                    mig_row.updated_at = format_ist_datetime()
+                db.session.commit()
+                if updated_cnt:
+                    print(f"[RNG] Refreshed {updated_cnt} zero-bet auto rounds from legacy FNV-1a to SHA-256.")
+        except Exception as exc:
+            db.session.rollback()
+            print(f"[RNG] Migration note: {exc}")
 
 
 def get_app_state_json(key: str, default_obj):
@@ -932,7 +958,7 @@ def sync_round_lifecycle_once():
                             win_num = int(mkt.manual_override_num)
                             d_mode = "MANUAL_ADMIN"
                         else:
-                            win_num = generate_provably_fair_outcome(m_code, last_p)["number"]
+                            win_num = generate_provably_fair_outcome(m_code, last_p, use_csprng=True)["number"]
                             d_mode = "AUTO_RANDOM"
                         settle_round_in_db(m_code, f"RND_{m_code}_{last_p}", last_p, win_num, d_mode, "SYSTEM_DAEMON")
                         _, ev = bump_state_version("round_settled", {"market": m_code, "period": last_p, "number": win_num})
@@ -1923,7 +1949,7 @@ def api_markets():
                 if ov_num is not None and (ov_per == prev_p or not ov_per):
                     w_num, d_mode = int(ov_num), "MANUAL_ADMIN"
                 else:
-                    w_num, d_mode = generate_provably_fair_outcome(m_code, prev_p)["number"], "AUTO_RANDOM"
+                    w_num, d_mode = generate_provably_fair_outcome(m_code, prev_p, use_csprng=True)["number"], "AUTO_RANDOM"
                 settle_round_in_db(m_code, f"RND_{m_code}_{prev_p}", prev_p, w_num, d_mode, "SYSTEM_ROLLOVER")
 
             last_res = (
@@ -2025,7 +2051,7 @@ def api_bets():
                     if mkt and mkt.manual_override_num is not None and (mkt.manual_override_period == pb.period or not mkt.manual_override_period):
                         win_n, d_m = int(mkt.manual_override_num), "MANUAL_ADMIN"
                     else:
-                        win_n, d_m = generate_provably_fair_outcome(pb.market, pb.period)["number"], "AUTO_RANDOM"
+                        win_n, d_m = generate_provably_fair_outcome(pb.market, pb.period, use_csprng=True)["number"], "AUTO_RANDOM"
                 settle_round_in_db(pb.market, pb.round_id, pb.period, win_n, d_m, "SYSTEM_ROLLOVER")
 
         aq = Bet.query.filter(Bet.user_id == uid, Bet.status.in_(["PENDING", "LOCKED"]))

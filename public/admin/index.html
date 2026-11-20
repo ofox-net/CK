@@ -587,6 +587,66 @@
       animation: fadeIn 0.3s ease;
     }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Table Pagination Bar */
+    .pagination-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 12px;
+      padding: 10px 14px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 12px;
+    }
+    .pagination-left {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      color: var(--text-muted);
+    }
+    .pagination-left strong { color: #FFF; }
+    .page-size-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .page-size-select {
+      background: var(--surface);
+      color: var(--gold);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 4px 8px;
+      font-size: 12px;
+      font-weight: 700;
+      outline: none;
+      cursor: pointer;
+    }
+    .page-size-select:focus { border-color: var(--gold); }
+    .pagination-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .page-indicator {
+      background: rgba(255, 215, 0, 0.08);
+      border: 1px solid rgba(255, 215, 0, 0.25);
+      color: var(--gold);
+      padding: 5px 11px;
+      border-radius: 7px;
+      font-weight: 800;
+      font-size: 12px;
+      font-family: monospace;
+    }
+    .pagination-controls .btn:disabled {
+      opacity: 0.38;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
   </style>
 </head>
 <body>
@@ -985,7 +1045,7 @@
               <button class="filter-pill" onclick="filterDeposits('SUCCESS', this)">Success</button>
               <button class="filter-pill" onclick="filterDeposits('FAIL', this)">Fail</button>
             </div>
-            <input type="text" class="search-input" placeholder="Search by UTR or Username..." id="searchDepositInput" oninput="renderDepositsTable()" />
+            <input type="text" class="search-input" placeholder="Search by UTR or Username..." id="searchDepositInput" oninput="resetAdminTablePage('deposits'); renderDepositsTable()" />
           </div>
 
           <div class="table-responsive">
@@ -1007,6 +1067,7 @@
               </tbody>
             </table>
           </div>
+          <div class="pagination-bar" id="depositsPaginationBar"></div>
         </div>
       </section>
 
@@ -1032,7 +1093,7 @@
               <button class="filter-pill" onclick="filterWithdrawals('SUCCESS', this)">Success</button>
               <button class="filter-pill" onclick="filterWithdrawals('FAIL', this)">Fail</button>
             </div>
-            <input type="text" class="search-input" placeholder="Search User or Bank Account..." id="searchWithdrawalInput" oninput="renderWithdrawalsTable()" />
+            <input type="text" class="search-input" placeholder="Search User or Bank Account..." id="searchWithdrawalInput" oninput="resetAdminTablePage('withdrawals'); renderWithdrawalsTable()" />
           </div>
 
           <div class="table-responsive">
@@ -1053,6 +1114,7 @@
               </tbody>
             </table>
           </div>
+          <div class="pagination-bar" id="withdrawalsPaginationBar"></div>
         </div>
       </section>
 
@@ -1227,6 +1289,7 @@
                 </tbody>
               </table>
             </div>
+            <div class="pagination-bar" id="declaredResultsPaginationBar"></div>
           </div>
         </div>
       </section>
@@ -1250,7 +1313,7 @@
               <button class="filter-pill" onclick="filterUsers('ACTIVE', this)" id="userFilterActiveBtn">Active (0)</button>
               <button class="filter-pill" onclick="filterUsers('BLOCKED', this)" id="userFilterBlockedBtn">Blocked (0)</button>
             </div>
-            <input type="text" class="search-input" placeholder="Search by Username, Phone, Email or ID..." id="searchUsersInput" oninput="renderUsersTable()" />
+            <input type="text" class="search-input" placeholder="Search by Username, Phone, Email or ID..." id="searchUsersInput" oninput="resetAdminTablePage('users'); renderUsersTable()" />
           </div>
 
           <div class="table-responsive">
@@ -1273,6 +1336,7 @@
               </tbody>
             </table>
           </div>
+          <div class="pagination-bar" id="usersPaginationBar"></div>
         </div>
       </section>
 
@@ -1318,7 +1382,7 @@
               <button class="filter-pill" onclick="filterAffiliates('ACTIVE_EARNERS', this)">Active Earners (>₹10,000)</button>
               <button class="filter-pill" onclick="filterAffiliates('TOP_TEAMS', this)">Top Teams (>50 Members)</button>
             </div>
-            <input type="text" class="search-input" placeholder="Search by User, Referral Code, or Sponsor..." id="searchAffiliateInput" oninput="renderAffiliateTable()" />
+            <input type="text" class="search-input" placeholder="Search by User, Referral Code, or Sponsor..." id="searchAffiliateInput" oninput="resetAdminTablePage('affiliates'); renderAffiliateTable()" />
           </div>
 
           <div class="table-responsive">
@@ -1340,6 +1404,7 @@
               </tbody>
             </table>
           </div>
+          <div class="pagination-bar" id="affiliatePaginationBar"></div>
         </div>
 
         <div class="panel" style="margin-top:16px;">
@@ -1351,7 +1416,7 @@
             <span class="badge badge-approved" id="adminCommissionCountBadge">0 Records</span>
           </div>
           <div class="filter-bar">
-            <select class="form-control" style="max-width:180px; padding:6px 10px; font-size:12px;" id="filterAdminCommLevel" onchange="renderCommissionHistoryTable()">
+            <select class="form-control" style="max-width:180px; padding:6px 10px; font-size:12px;" id="filterAdminCommLevel" onchange="resetAdminTablePage('commissions'); renderCommissionHistoryTable()">
               <option value="ALL">All Levels (L1–L6)</option>
               <option value="1">Level 1 (1.00%)</option>
               <option value="2">Level 2 (0.75%)</option>
@@ -1360,7 +1425,7 @@
               <option value="5">Level 5 (0.30%)</option>
               <option value="6">Level 6 (0.20%)</option>
             </select>
-            <input type="text" class="search-input" placeholder="Search beneficiary, source player, or Bet ID..." id="searchAdminCommInput" oninput="renderCommissionHistoryTable()" />
+            <input type="text" class="search-input" placeholder="Search beneficiary, source player, or Bet ID..." id="searchAdminCommInput" oninput="resetAdminTablePage('commissions'); renderCommissionHistoryTable()" />
           </div>
           <div class="table-responsive">
             <table>
@@ -1381,6 +1446,7 @@
               </tbody>
             </table>
           </div>
+          <div class="pagination-bar" id="commissionsPaginationBar"></div>
         </div>
       </section>
 
@@ -1564,13 +1630,13 @@
               <button class="filter-pill" onclick="filterBetsMarket('DUBAI', this)">🏙️ Dubai</button>
             </div>
             <div style="display:flex; gap:8px;">
-              <select class="form-control" style="padding:6px 12px; font-size:12px;" id="filterBetStatus" onchange="renderBetsTable()">
+              <select class="form-control" style="padding:6px 12px; font-size:12px;" id="filterBetStatus" onchange="resetAdminTablePage('bets'); renderBetsTable()">
                 <option value="ALL">All Status</option>
                 <option value="WON">Won</option>
                 <option value="LOST">Lost</option>
                 <option value="PENDING">Pending</option>
               </select>
-              <input type="text" class="search-input" placeholder="Search by Bet ID, User or Period..." id="searchBetInput" oninput="renderBetsTable()" />
+              <input type="text" class="search-input" placeholder="Search by Bet ID, User or Period..." id="searchBetInput" oninput="resetAdminTablePage('bets'); renderBetsTable()" />
             </div>
           </div>
 
@@ -1595,6 +1661,7 @@
               </tbody>
             </table>
           </div>
+          <div class="pagination-bar" id="betsPaginationBar"></div>
         </div>
       </section>
 
@@ -1696,6 +1763,7 @@
               </tbody>
             </table>
           </div>
+          <div class="pagination-bar" id="auditPaginationBar"></div>
         </div>
       </section>
 
@@ -2289,6 +2357,94 @@
     }
 
     // ----------------------------------------------------
+    // SHARED INDEPENDENT PAGINATION STATE & CONTROLS
+    // ----------------------------------------------------
+    const ADMIN_PAGE_SIZE_OPTIONS = [10, 20, 30, 50, 100];
+    const adminTablePagination = {
+      deposits:        { currentPage: 1, pageSize: 10, containerId: 'depositsPaginationBar',        render: () => renderDepositsTable() },
+      withdrawals:     { currentPage: 1, pageSize: 10, containerId: 'withdrawalsPaginationBar',     render: () => renderWithdrawalsTable() },
+      declaredResults: { currentPage: 1, pageSize: 10, containerId: 'declaredResultsPaginationBar', render: () => renderDeclaredResultsTable() },
+      users:           { currentPage: 1, pageSize: 10, containerId: 'usersPaginationBar',           render: () => renderUsersTable() },
+      affiliates:      { currentPage: 1, pageSize: 10, containerId: 'affiliatePaginationBar',       render: () => renderAffiliateTable() },
+      commissions:     { currentPage: 1, pageSize: 10, containerId: 'commissionsPaginationBar',     render: () => renderCommissionHistoryTable() },
+      bets:            { currentPage: 1, pageSize: 10, containerId: 'betsPaginationBar',            render: () => renderBetsTable() },
+      audit:           { currentPage: 1, pageSize: 10, containerId: 'auditPaginationBar',           render: () => renderAuditTable() }
+    };
+
+    function resetAdminTablePage(tableKey) {
+      if (adminTablePagination[tableKey]) {
+        adminTablePagination[tableKey].currentPage = 1;
+      }
+    }
+
+    function changeAdminPageSize(tableKey, rawVal) {
+      const cfg = adminTablePagination[tableKey];
+      if (!cfg) return;
+      const parsed = parseInt(rawVal, 10);
+      cfg.pageSize = ADMIN_PAGE_SIZE_OPTIONS.includes(parsed) ? parsed : 10;
+      cfg.currentPage = 1;
+      cfg.render();
+    }
+
+    function goToAdminPage(tableKey, delta) {
+      const cfg = adminTablePagination[tableKey];
+      if (!cfg) return;
+      const next = Math.max(1, (cfg.currentPage || 1) + Number(delta || 0));
+      cfg.currentPage = next;
+      cfg.render();
+    }
+
+    function paginateAdminRows(tableKey, allRows) {
+      const cfg = adminTablePagination[tableKey] || { currentPage: 1, pageSize: 10 };
+      const rows = Array.isArray(allRows) ? allRows : [];
+      const pageSize = ADMIN_PAGE_SIZE_OPTIONS.includes(Number(cfg.pageSize)) ? Number(cfg.pageSize) : 10;
+      const totalRecords = rows.length;
+      const totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));
+      const currentPage = Math.max(1, Math.min(Number(cfg.currentPage || 1), totalPages));
+      cfg.pageSize = pageSize;
+      cfg.currentPage = currentPage;
+      const startIdx = (currentPage - 1) * pageSize;
+      const endIdx = Math.min(startIdx + pageSize, totalRecords);
+      return {
+        slice: rows.slice(startIdx, endIdx),
+        startNum: totalRecords === 0 ? 0 : startIdx + 1,
+        endNum: endIdx,
+        totalRecords,
+        totalPages,
+        currentPage,
+        pageSize
+      };
+    }
+
+    function renderAdminPaginationBar(tableKey, meta) {
+      const cfg = adminTablePagination[tableKey];
+      if (!cfg) return;
+      const el = document.getElementById(cfg.containerId);
+      if (!el) return;
+      const isFirst = meta.currentPage <= 1;
+      const isLast = meta.currentPage >= meta.totalPages;
+      const optsHtml = ADMIN_PAGE_SIZE_OPTIONS.map(sz =>
+        `<option value="${sz}" ${meta.pageSize === sz ? 'selected' : ''}>${sz}</option>`
+      ).join('');
+      el.innerHTML = `
+        <div class="pagination-left">
+          <span>Showing <strong>${meta.startNum}–${meta.endNum}</strong> of <strong>${meta.totalRecords}</strong> records</span>
+          <label class="page-size-wrap">
+            <span>Rows:</span>
+            <select class="page-size-select" onchange="changeAdminPageSize('${tableKey}', this.value)" aria-label="Rows per page">
+              ${optsHtml}
+            </select>
+          </label>
+        </div>
+        <div class="pagination-controls">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="goToAdminPage('${tableKey}', -1)" ${isFirst ? 'disabled' : ''}>◀ Previous</button>
+          <span class="page-indicator">Page ${meta.currentPage} / ${meta.totalPages}</span>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="goToAdminPage('${tableKey}', 1)" ${isLast ? 'disabled' : ''}>Next ▶</button>
+        </div>
+      `;
+    }
+
+    // ----------------------------------------------------
     // DEPOSIT REQUESTS LOGIC
     // ----------------------------------------------------
     let currentDepositFilter = 'ALL';
@@ -2296,6 +2452,7 @@
       currentDepositFilter = status;
       btn.parentElement.querySelectorAll('.filter-pill').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
+      resetAdminTablePage('deposits');
       renderDepositsTable();
     }
 
@@ -2316,7 +2473,16 @@
         return matchesStatus && matchesQuery;
       });
 
-      tbody.innerHTML = filtered.map(d => {
+      const pageMeta = paginateAdminRows('deposits', filtered);
+      renderAdminPaginationBar('deposits', pageMeta);
+
+      if (pageMeta.slice.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:24px; color:var(--text-muted);">No matching deposit requests found.</td></tr>`;
+        renderQuickDepositList();
+        return;
+      }
+
+      tbody.innerHTML = pageMeta.slice.map(d => {
         const isProcess = d.status === 'IN PROCESS' || d.status === 'PENDING';
         const isSuccess = d.status === 'SUCCESS' || d.status === 'APPROVED';
         const isFail = d.status === 'FAIL' || d.status === 'REJECTED';
@@ -2470,6 +2636,7 @@
       currentWithdrawalFilter = status;
       btn.parentElement.querySelectorAll('.filter-pill').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
+      resetAdminTablePage('withdrawals');
       renderWithdrawalsTable();
     }
 
@@ -2490,7 +2657,16 @@
         return matchesStatus && matchesQuery;
       });
 
-      tbody.innerHTML = filtered.map(w => {
+      const pageMeta = paginateAdminRows('withdrawals', filtered);
+      renderAdminPaginationBar('withdrawals', pageMeta);
+
+      if (pageMeta.slice.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:24px; color:var(--text-muted);">No matching withdrawal requests found.</td></tr>`;
+        renderQuickWithdrawalList();
+        return;
+      }
+
+      tbody.innerHTML = pageMeta.slice.map(w => {
         const isProcess = w.status === 'IN PROCESS' || w.status === 'PENDING';
         const isSuccess = w.status === 'SUCCESS' || w.status === 'APPROVED';
         const isFail = w.status === 'FAIL' || w.status === 'REJECTED';
@@ -2839,7 +3015,13 @@
 
     function renderDeclaredResultsTable() {
       const tbody = document.getElementById('declaredResultsTableBody');
-      tbody.innerHTML = declaredResults.map(r => `
+      const pageMeta = paginateAdminRows('declaredResults', declaredResults);
+      renderAdminPaginationBar('declaredResults', pageMeta);
+      if (pageMeta.slice.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:24px; color:var(--text-muted);">No declared results recorded yet.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = pageMeta.slice.map(r => `
         <tr>
           <td><strong style="color:var(--gold);">${r.market}</strong></td>
           <td style="font-family:monospace;">#${r.period}</td>
@@ -2861,6 +3043,7 @@
       currentUserFilter = status;
       btn.parentElement.querySelectorAll('.filter-pill').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
+      resetAdminTablePage('users');
       renderUsersTable();
     }
 
@@ -2908,12 +3091,15 @@
         return matchesStatus && matchesQuery;
       });
 
-      if (filtered.length === 0) {
+      const pageMeta = paginateAdminRows('users', filtered);
+      renderAdminPaginationBar('users', pageMeta);
+
+      if (pageMeta.slice.length === 0) {
         tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:24px; color:var(--text-muted);">No matching user accounts found in database.</td></tr>`;
         return;
       }
 
-      tbody.innerHTML = filtered.map(u => {
+      tbody.innerHTML = pageMeta.slice.map(u => {
         const netPL = Number(u.totalDeposit || 0) - Number(u.totalWithdraw || 0) - Number(u.balance || 0);
         const safeName = escapeAdminHtml(u.name);
         const safeId = escapeAdminHtml(u.id);
@@ -3249,6 +3435,7 @@
       currentBetMarketFilter = mKey;
       btn.parentElement.querySelectorAll('.filter-pill').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
+      resetAdminTablePage('bets');
       renderBetsTable();
     }
 
@@ -3264,7 +3451,15 @@
         return matchesMarket && matchesStatus && matchesQ;
       });
 
-      tbody.innerHTML = filtered.map(b => {
+      const pageMeta = paginateAdminRows('bets', filtered);
+      renderAdminPaginationBar('bets', pageMeta);
+
+      if (pageMeta.slice.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; padding:24px; color:var(--text-muted);">No matching bet slips found.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = pageMeta.slice.map(b => {
         const feeVal = typeof b.platformFee === 'number' ? b.platformFee : +(Number(b.amount || 0) * 0.03).toFixed(2);
         const netVal = typeof b.netAmount === 'number' ? b.netAmount : +(Number(b.amount || 0) - feeVal).toFixed(2);
         return `
@@ -3323,7 +3518,13 @@
     // ----------------------------------------------------
     function renderAuditTable() {
       const tbody = document.getElementById('auditTableBody');
-      tbody.innerHTML = auditLogs.map(l => `
+      const pageMeta = paginateAdminRows('audit', auditLogs);
+      renderAdminPaginationBar('audit', pageMeta);
+      if (pageMeta.slice.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:24px; color:var(--text-muted);">No audit log entries recorded yet.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = pageMeta.slice.map(l => `
         <tr>
           <td style="font-family:monospace; color:var(--cyan);">${resolveAdminIST(l.time, l.timestampMs, true)}</td>
           <td><strong style="color:var(--gold);">${l.actor}</strong></td>
@@ -3509,6 +3710,7 @@
       currentAffiliateFilter = filterKey;
       btn.parentElement.querySelectorAll('.filter-pill').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
+      resetAdminTablePage('affiliates');
       renderAffiliateTable();
     }
 
@@ -3526,7 +3728,13 @@
         return matchesFilter && matchesQ;
       });
 
-      tbody.innerHTML = filtered.map(a => `
+      const pageMeta = paginateAdminRows('affiliates', filtered);
+      renderAdminPaginationBar('affiliates', pageMeta);
+
+      if (pageMeta.slice.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:24px; color:var(--text-muted);">No matching affiliate accounts found.</td></tr>`;
+      } else {
+        tbody.innerHTML = pageMeta.slice.map(a => `
         <tr>
           <td>
             <strong style="color:#FFF; font-size:14px;">${escapeAdminHtml(a.userName)}</strong><br/>
@@ -3562,6 +3770,7 @@
           </td>
         </tr>
       `).join('');
+      }
 
       let totMembers = 0, totComm = 0;
       let topPromoter = null;
@@ -3602,11 +3811,14 @@
         return lvlOk && qOk;
       });
       if (badge) badge.innerText = `${rows.length} Records`;
-      if (rows.length === 0) {
+      const pageMeta = paginateAdminRows('commissions', rows);
+      renderAdminPaginationBar('commissions', pageMeta);
+
+      if (pageMeta.slice.length === 0) {
         tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:18px; color:var(--text-muted);">No 6-level commission records found.</td></tr>`;
         return;
       }
-      tbody.innerHTML = rows.map(rc => `
+      tbody.innerHTML = pageMeta.slice.map(rc => `
         <tr>
           <td>
             <strong style="color:var(--gold); font-family:monospace;">${escapeAdminHtml(rc.id)}</strong><br/>

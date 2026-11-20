@@ -18,6 +18,7 @@ import sys
 import tempfile
 import random
 import math
+import secrets
 import csv
 import io
 import queue
@@ -1059,6 +1060,23 @@ def init_database():
         if not c.fetchone():
             c.execute("INSERT OR REPLACE INTO app_state (key, value) VALUES ('state_version', '1')")
 
+        c.execute("SELECT value FROM app_state WHERE key = 'rng_v2_migrated'")
+        if not c.fetchone():
+            c.execute("""
+                SELECT round_id, market, period FROM rounds
+                WHERE status = 'SETTLED'
+                  AND draw_mode IN ('AUTO_RANDOM', 'SYSTEM_SYNC', 'AUTO_RECOVERY')
+                  AND round_id NOT IN (SELECT DISTINCT round_id FROM bets WHERE round_id IS NOT NULL)
+            """)
+            for r_mig in c.fetchall():
+                out = generate_provably_fair_outcome(r_mig["market"], r_mig["period"], use_csprng=False)
+                c.execute("""
+                    UPDATE rounds
+                    SET result_number = ?, result_color = ?, result_col_class = ?, is_big = ?
+                    WHERE round_id = ?
+                """, (out["number"], out["color"], out["col_class"], out["is_big"], r_mig["round_id"]))
+            c.execute("INSERT OR REPLACE INTO app_state (key, value) VALUES ('rng_v2_migrated', '1')")
+
         conn.commit()
         restore_from_cloud_if_needed(conn)
         try:
@@ -1157,19 +1175,14 @@ def get_period_window_ms_ist(period_str):
     except Exception:
         return (0, 0, 0)
 
-def generate_provably_fair_outcome(market_code, period):
-    seed_str = f"COLOUR_KING_AVALANCHE_2026_{market_code}_{period}_PROVABLY_FAIR"
-    h = 0x811c9dc5
-    for ch in seed_str:
-        h ^= ord(ch)
-        h = (h * 0x01000193) & 0xFFFFFFFF
-    # Murmur3 finalizer avalanche
-    h ^= (h >> 16)
-    h = (h * 0x85ebca6b) & 0xFFFFFFFF
-    h ^= (h >> 13)
-    h = (h * 0xc2b2ae35) & 0xFFFFFFFF
-    h ^= (h >> 16)
-    number = h % 10
+def generate_provably_fair_outcome(market_code, period, use_csprng=False):
+    if use_csprng:
+        number = secrets.randbelow(10)
+        seed_str = f"CSPRNG|{market_code}|{period}"
+    else:
+        seed_str = f"CK_CRYPTO_FAIR_V2|{market_code}|{period}"
+        digest = hashlib.sha256(seed_str.encode("utf-8")).digest()
+        number = int.from_bytes(digest[:4], "big") % 10
 
     is_big = (number >= 5)
     if number in [1, 3, 7, 9]:
@@ -1417,7 +1430,7 @@ def sync_round_lifecycle_once():
                     winning_num = int(override_num)
                     draw_mode = "MANUAL_ADMIN"
                 else:
-                    outcome = generate_provably_fair_outcome(m_code, last_recorded_period)
+                    outcome = generate_provably_fair_outcome(m_code, last_recorded_period, use_csprng=True)
                     winning_num = outcome["number"]
                     draw_mode = "AUTO_RANDOM"
 
@@ -2836,7 +2849,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                             win_num = int(ov_num)
                             d_mode = "MANUAL_ADMIN"
                         else:
-                            win_num = generate_provably_fair_outcome(m_code, prev_period_id)["number"]
+                            win_num = generate_provably_fair_outcome(m_code, prev_period_id, use_csprng=True)["number"]
                             d_mode = "AUTO_RANDOM"
                         settle_round_in_db(conn, m_code, f"RND_{m_code}_{prev_period_id}", prev_period_id, win_num, d_mode, "SYSTEM_ROLLOVER")
 
@@ -2979,7 +2992,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                                 win_n = int(ov_num)
                                 d_m = "MANUAL_ADMIN"
                             else:
-                                win_n = generate_provably_fair_outcome(pm, pp)["number"]
+                                win_n = generate_provably_fair_outcome(pm, pp, use_csprng=True)["number"]
                                 d_m = "AUTO_RANDOM"
                         settle_round_in_db(conn, pm, pb["round_id"], pp, win_n, d_m, "SYSTEM_ROLLOVER")
 
