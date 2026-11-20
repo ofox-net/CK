@@ -2788,6 +2788,27 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             })
             return
 
+        # 1b. Health Check Endpoint (Render / Monitoring)
+        if path == "/api/health":
+            curr_ms = int(time.time() * 1000)
+            try:
+                with db_lock:
+                    conn = get_db()
+                    conn.execute("SELECT 1").fetchone()
+                    ver = get_state_version(conn)
+                    conn.close()
+                self._send_json({
+                    "ok": True,
+                    "status": "healthy",
+                    "database": "POSTGRESQL" if DATABASE_URL else "SQLITE",
+                    "stateVersion": ver,
+                    "serverTimeMs": curr_ms,
+                    "istTime": to_ist_display(None, curr_ms, mode="datetime"),
+                })
+            except Exception as e:
+                self._send_json({"ok": False, "status": "degraded", "error": str(e)}, 500)
+            return
+
         # 2. Authoritative Real-Time 4-Markets State
         if path == "/api/markets":
             now_ms = int(time.time() * 1000)
@@ -2918,8 +2939,8 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             if not uid or uid == "Guest":
                 self._send_json({
                     "userId": None,
-                    "retentionDays": RETENTION_DAYS,
-                    "days": RETENTION_DAYS,
+                    "retentionDays": "PERMANENT",
+                    "days": "ALL",
                     "activeBets": [],
                     "betHistory": []
                 })

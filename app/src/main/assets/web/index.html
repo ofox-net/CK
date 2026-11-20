@@ -3713,7 +3713,7 @@
             renderHistoryTable();
             renderTrendChart();
             render10x10BeadPlate();
-            renderRoadmapMatrix();
+            renderRoadmapChart();
             renderRoadmapBeads();
             updateMarketUI();
           }
@@ -3782,9 +3782,7 @@
         if (currentUserId && currentUserId !== 'Guest') {
           syncUserTransactions();
           syncUserAffiliates();
-          if (force || (reasonEvent && ['result_declared', 'round_settled', 'bets_locked', 'bet_placed', 'bet_cancelled', 'balance_adjusted', 'admin_sync'].includes(reasonEvent.eventType))) {
-            loadUserBetsFromBackend();
-          }
+          loadUserBetsFromBackend();
         }
       }
     }
@@ -5870,10 +5868,16 @@
       fetch(apiUrl('/api/deposits'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ userId: currentUserId, userName: currentUserName, amount, utr, method: 'UPI Instant' })
-      }).then(r => r.json()).then(res => {
-        const dep = res && res.deposit ? res.deposit : {};
-        const depId = dep.id || ('DEP-' + Math.floor(10000 + Math.random() * 90000));
+      }).then(async r => {
+        const res = await r.json().catch(() => ({}));
+        if (!r.ok || !res.success) {
+          showToast('⚠️ ' + (res.error || 'Deposit request failed. Please try again.'));
+          return;
+        }
+        const dep = res.deposit ? res.deposit : {};
+        const depId = res.depositId || dep.id || ('DEP-' + Math.floor(10000 + Math.random() * 90000));
         const depMs = Number(dep.timestampMs || getSyncedNowMs());
         walletLedger.unshift({
           id: depId,
@@ -5890,21 +5894,7 @@
         showToast('✓ Deposit request submitted! Admin approval IN PROCESS.');
         closeModal('depositModal');
       }).catch(() => {
-        const depId = 'DEP-' + Math.floor(10000 + Math.random() * 90000);
-        const depMs = getSyncedNowMs();
-        walletLedger.unshift({
-          id: depId,
-          type: 'DEPOSIT',
-          title: 'Deposit via UPI Instant',
-          ref: `UTR: ${utr}`,
-          amount: amount,
-          timestampMs: depMs,
-          time: formatISTDateTime(depMs),
-          status: 'IN PROCESS'
-        });
-        renderWalletLedger();
-        showToast('✓ Deposit request recorded! Status: IN PROCESS.');
-        closeModal('depositModal');
+        showToast('⚠️ Server unavailable. Deposit request could not be saved.');
       });
     }
 

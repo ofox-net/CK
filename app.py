@@ -577,60 +577,72 @@ def init_database():
 
         # Seed default users ONLY if users table is completely empty
         if User.query.count() == 0:
-            default_pw_hash = hash_password_secure("password123")
-            seed_ms = now_ms()
-            for idx, du in enumerate(DEFAULT_USERS):
-                u = User(
-                    id=du["id"],
-                    name=du["name"],
-                    phone=du.get("phone") or "",
-                    email=du.get("email") or "",
-                    balance=du["balance"],
-                    total_deposit=du["totalDeposit"],
-                    total_withdraw=du["totalWithdraw"],
-                    bets_count=du["betsCount"],
-                    status=du["status"],
-                    referral_code=du["referralCode"],
-                    password_hash=default_pw_hash,
-                    password_plain="password123",
-                    created_at=format_ist_datetime(seed_ms),
-                    created_at_ms=seed_ms + idx,
-                )
-                db.session.add(u)
-            db.session.commit()
+            try:
+                default_pw_hash = hash_password_secure("password123")
+                seed_ms = now_ms()
+                for idx, du in enumerate(DEFAULT_USERS):
+                    u = User(
+                        id=du["id"],
+                        name=du["name"],
+                        phone=du.get("phone") or "",
+                        email=du.get("email") or "",
+                        balance=du["balance"],
+                        total_deposit=du["totalDeposit"],
+                        total_withdraw=du["totalWithdraw"],
+                        bets_count=du["betsCount"],
+                        status=du["status"],
+                        referral_code=du["referralCode"],
+                        password_hash=default_pw_hash,
+                        password_plain="password123",
+                        created_at=format_ist_datetime(seed_ms),
+                        created_at_ms=seed_ms + idx,
+                    )
+                    db.session.add(u)
+                db.session.commit()
+            except Exception as exc:
+                db.session.rollback()
+                print(f"[DB] Seed users warning: {exc}")
 
         # Seed default pending deposits ONLY if deposits table is empty
         if Deposit.query.count() == 0 and User.query.filter_by(id="USR-1001").first():
-            seed_ms = now_ms()
-            db.session.add(Deposit(
-                id="DEP-88401", user_id="USR-1001", user_name="Rahul_Player",
-                amount=5000.00, method="UPI (GooglePay)", utr="429188402911",
-                time_str=format_ist_display(seed_ms - 6 * 60 * 1000),
-                status="IN PROCESS", created_at=format_ist_datetime(seed_ms - 6 * 60 * 1000),
-                created_at_ms=seed_ms - 6 * 60 * 1000,
-            ))
-            db.session.add(Deposit(
-                id="DEP-88402", user_id="USR-1002", user_name="Aman_Trader",
-                amount=10000.00, method="IMPS SBI NetBanking", utr="902184716294",
-                time_str=format_ist_display(seed_ms - 12 * 60 * 1000),
-                status="IN PROCESS", created_at=format_ist_datetime(seed_ms - 12 * 60 * 1000),
-                created_at_ms=seed_ms - 12 * 60 * 1000,
-            ))
-            db.session.commit()
+            try:
+                seed_ms = now_ms()
+                db.session.add(Deposit(
+                    id="DEP-88401", user_id="USR-1001", user_name="Rahul_Player",
+                    amount=5000.00, method="UPI (GooglePay)", utr="429188402911",
+                    time_str=format_ist_display(seed_ms - 6 * 60 * 1000),
+                    status="IN PROCESS", created_at=format_ist_datetime(seed_ms - 6 * 60 * 1000),
+                    created_at_ms=seed_ms - 6 * 60 * 1000,
+                ))
+                db.session.add(Deposit(
+                    id="DEP-88402", user_id="USR-1002", user_name="Aman_Trader",
+                    amount=10000.00, method="IMPS SBI NetBanking", utr="902184716294",
+                    time_str=format_ist_display(seed_ms - 12 * 60 * 1000),
+                    status="IN PROCESS", created_at=format_ist_datetime(seed_ms - 12 * 60 * 1000),
+                    created_at_ms=seed_ms - 12 * 60 * 1000,
+                ))
+                db.session.commit()
+            except Exception as exc:
+                db.session.rollback()
+                print(f"[DB] Seed deposits warning: {exc}")
 
         # Ensure app_state defaults exist safely
-        defaults = {
-            "bank_config": json.dumps(DEFAULT_BANK_CONFIG),
-            "platform_settings": json.dumps(DEFAULT_PLATFORM_SETTINGS),
-            "state_version": "1",
-        }
-        changed_state = False
-        for k, v in defaults.items():
-            if not AppState.query.get(k):
-                db.session.add(AppState(key=k, value=v, updated_at=format_ist_datetime()))
-                changed_state = True
-        if changed_state:
-            db.session.commit()
+        try:
+            defaults = {
+                "bank_config": json.dumps(DEFAULT_BANK_CONFIG),
+                "platform_settings": json.dumps(DEFAULT_PLATFORM_SETTINGS),
+                "state_version": "1",
+            }
+            changed_state = False
+            for k, v in defaults.items():
+                if not AppState.query.get(k):
+                    db.session.add(AppState(key=k, value=v, updated_at=format_ist_datetime()))
+                    changed_state = True
+            if changed_state:
+                db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            print(f"[DB] Seed app_state warning: {exc}")
 
 
 def get_app_state_json(key: str, default_obj):
@@ -802,8 +814,9 @@ def settle_round_in_db(market_code: str, round_id: str, period: str, winning_num
                 u.balance = new_bal
 
             win_ms = now_ms()
+            bet_suffix = str(b.bet_id or "")[-8:].replace("-", "") or str(random.randint(100, 999))
             db.session.add(Transaction(
-                tx_id=f"TX-WIN-{win_ms}-{random.randint(100, 999)}",
+                tx_id=f"TX-WIN-{win_ms}-{bet_suffix}-{random.randint(100, 999)}",
                 user_id=b.user_id,
                 type="WIN",
                 title=f"Win {market_code} #{period}",
@@ -827,7 +840,11 @@ def settle_round_in_db(market_code: str, round_id: str, period: str, winning_num
         mkt.manual_override_num = None
         mkt.manual_override_period = None
 
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
 
 
 def sync_round_lifecycle_once():
@@ -1096,7 +1113,7 @@ def build_user_affiliates(uid: str):
         "status": str(r.status or "UNCLAIMED").upper(),
         "createdAt": to_ist_display(r.created_at, r.created_at_ms, mode="datetime"),
         "createdAtMs": _parse_ts_ms(r.created_at, r.created_at_ms),
-    } for r in all_comm_rows[:1000]]
+    } for r in all_comm_rows]
 
     # Permanent Affiliate Claim Transactions Ledger (every Claim action with exact IST date & time)
     claim_tx_rows = (
@@ -1386,8 +1403,9 @@ def export_statement_csv(stmt: dict) -> str:
     buf.write("\ufeff")
     w = csv.writer(buf)
     s = stmt["summary"]
-    w.writerow(["COLOUR KING - 90-DAY ACCOUNT & BETTING STATEMENT"])
-    w.writerow(["User ID", stmt["userId"], "User Name", stmt["userName"], "Statement Period", f"Last {stmt['days']} Days", "Generated At", stmt["generatedAt"]])
+    period_lbl = "All Permanent Records" if str(stmt.get("days")) == "ALL" else f"Last {stmt['days']} Days (Permanent Vault)"
+    w.writerow(["COLOUR KING - PERMANENT ACCOUNT & BETTING STATEMENT"])
+    w.writerow(["User ID", stmt["userId"], "User Name", stmt["userName"], "Statement Period", period_lbl, "Generated At", stmt["generatedAt"]])
     w.writerow([])
     w.writerow(["Current Wallet Balance", f"{s['walletBalance']:.2f}", "Total Bet Wagered", f"{s['totalWagered']:.2f}", "Total Bet Won", f"{s['totalWon']:.2f}", "Refer & Earn", f"{s['totalReferEarn']:.2f}"])
     w.writerow([])
@@ -1671,16 +1689,20 @@ def fetch_support_thread_payload(uid: str, mark_read_for=None, auto_welcome=Fals
     if not u:
         return None
     trow = SupportTicket.query.filter_by(user_id=uid).order_by(SupportTicket.updated_at_ms.desc()).first()
-    if not trow and auto_welcome:
-        tag, greeting = generate_support_auto_reply(uid, "", category="WELCOME")
-        ensure_support_ticket_and_add_message(uid, u.name, "AUTO_BOT", "Colour King 24/7 Support Bot", greeting, "WELCOME", 1, tag)
-        trow = SupportTicket.query.filter_by(user_id=uid).order_by(SupportTicket.updated_at_ms.desc()).first()
-        if trow and mark_read_for == "USER":
+    try:
+        if not trow and auto_welcome:
+            tag, greeting = generate_support_auto_reply(uid, "", category="WELCOME")
+            ensure_support_ticket_and_add_message(uid, u.name, "AUTO_BOT", "Colour King 24/7 Support Bot", greeting, "WELCOME", 1, tag)
+            trow = SupportTicket.query.filter_by(user_id=uid).order_by(SupportTicket.updated_at_ms.desc()).first()
+            if trow and mark_read_for == "USER":
+                trow.unread_user = 0
+            db.session.commit()
+        elif trow and mark_read_for == "USER" and int(trow.unread_user or 0) > 0:
             trow.unread_user = 0
-        db.session.commit()
-    elif trow and mark_read_for == "USER" and int(trow.unread_user or 0) > 0:
-        trow.unread_user = 0
-        db.session.commit()
+            db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
 
     ticket_dict, messages = None, []
     if trow:
@@ -1789,9 +1811,35 @@ def user_to_dict(u: User) -> dict:
     }
 
 
+@app.teardown_appcontext
+def shutdown_db_session(exception=None):
+    if exception is not None:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+    db.session.remove()
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# STATIC ROUTES
+# STATIC ROUTES & HEALTH CHECK
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@app.route("/api/health", methods=["GET"])
+def api_health():
+    try:
+        db.session.execute(text("SELECT 1"))
+        return jsonify({
+            "status": "ok",
+            "database": "POSTGRESQL" if IS_POSTGRES else "SQLITE",
+            "stateVersion": get_state_version(),
+            "serverTimeMs": now_ms(),
+            "istTime": format_ist_datetime(),
+        })
+    except Exception as exc:
+        db.session.rollback()
+        return jsonify({"status": "error", "error": str(exc)}), 500
+
+
 @app.route("/")
 def serve_index():
     return send_from_directory(DIRECTORY, "index.html")
@@ -2235,7 +2283,7 @@ def api_users_register():
     bal = float(payload.get("balance") if payload.get("balance") is not None else 100.00)
     clean_prefix = "".join(ch for ch in name.upper() if ch.isalnum())[:4] or "CK"
     ref_code = str(payload.get("referralCode") or f"{clean_prefix}{random.randint(100, 999)}").strip().upper()
-    ref_by_code = str(payload.get("referredBy") or "").strip().upper()
+    ref_by_code = str(payload.get("referredBy") or payload.get("inviteCode") or payload.get("sponsorCode") or "").strip().upper()
 
     if len(name) < 3:
         return jsonify({"success": False, "error": "Username must be at least 3 characters"}), 400
@@ -2317,44 +2365,48 @@ def api_users_login():
         return jsonify({"success": False, "error": "Please enter your password"}), 400
 
     with db_lock:
-        u = find_user_by_identifier(identifier)
-        restored = False
-        if not u and rec_token_in:
-            td = verify_user_recovery_token(rec_token_in)
-            if td and verify_password_secure(raw_pw, td.get("pwh", ""), ""):
-                u = User(
-                    id=td["id"], name=td["name"], phone=td.get("phone", ""),
-                    email=td.get("email", ""), balance=float(td.get("bal", 100.0)),
-                    total_deposit=float(td.get("td", 100.0)), total_withdraw=float(td.get("tw", 0.0)),
-                    bets_count=int(td.get("bc", 0)), status=td.get("st", "ACTIVE"),
-                    referral_code=td.get("rc") or td["id"][-6:].upper(),
-                    referred_by=td.get("rb"),
-                    password_hash=td.get("pwh") or hash_password_secure(raw_pw),
-                    password_plain=raw_pw,
-                    created_at=format_ist_datetime(curr_ms), created_at_ms=curr_ms,
-                )
-                db.session.add(u)
-                log_admin_action("System", "USER_AUTO_RESTORED", u.id, f"Auto-restored persistent user {u.name}")
+        try:
+            u = find_user_by_identifier(identifier)
+            restored = False
+            if not u and rec_token_in:
+                td = verify_user_recovery_token(rec_token_in)
+                if td and verify_password_secure(raw_pw, td.get("pwh", ""), ""):
+                    u = User(
+                        id=td["id"], name=td["name"], phone=td.get("phone", ""),
+                        email=td.get("email", ""), balance=float(td.get("bal", 100.0)),
+                        total_deposit=float(td.get("td", 100.0)), total_withdraw=float(td.get("tw", 0.0)),
+                        bets_count=int(td.get("bc", 0)), status=td.get("st", "ACTIVE"),
+                        referral_code=td.get("rc") or td["id"][-6:].upper(),
+                        referred_by=td.get("rb"),
+                        password_hash=td.get("pwh") or hash_password_secure(raw_pw),
+                        password_plain=raw_pw,
+                        created_at=format_ist_datetime(curr_ms), created_at_ms=curr_ms,
+                    )
+                    db.session.add(u)
+                    log_admin_action("System", "USER_AUTO_RESTORED", u.id, f"Auto-restored persistent user {u.name}")
+                    db.session.commit()
+                    restored = True
+
+            if not u:
+                return jsonify({"success": False, "error": "User not found. Please register a new account."}), 404
+
+            if not verify_password_secure(raw_pw, u.password_hash or "", u.password_plain or ""):
+                return jsonify({"success": False, "error": "Incorrect password. Please try again."}), 401
+
+            if not (u.password_hash or "").startswith("pbkdf2_sha256$"):
+                u.password_hash = hash_password_secure(raw_pw)
+                if not u.password_plain:
+                    u.password_plain = raw_pw
                 db.session.commit()
-                restored = True
-
-        if not u:
-            return jsonify({"success": False, "error": "User not found. Please register a new account."}), 404
-
-        if not verify_password_secure(raw_pw, u.password_hash or "", u.password_plain or ""):
-            return jsonify({"success": False, "error": "Incorrect password. Please try again."}), 401
-
-        if not (u.password_hash or "").startswith("pbkdf2_sha256$"):
-            u.password_hash = hash_password_secure(raw_pw)
-            if not u.password_plain:
+            elif not u.password_plain and raw_pw:
                 u.password_plain = raw_pw
-            db.session.commit()
-        elif not u.password_plain and raw_pw:
-            u.password_plain = raw_pw
-            db.session.commit()
+                db.session.commit()
 
-        rec_token = build_user_recovery_token(u)
-        user_dict = user_to_dict(u)
+            rec_token = build_user_recovery_token(u)
+            user_dict = user_to_dict(u)
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({"success": False, "error": f"Database error during login: {exc}"}), 500
 
     resp = make_response(jsonify({"success": True, "restored": restored, "recoveryToken": rec_token, "user": user_dict}))
     return attach_session_cookie(resp, user_dict["id"])
@@ -2366,26 +2418,35 @@ def api_users_restore_session():
     td = verify_user_recovery_token(str(payload.get("recoveryToken") or "").strip())
     if not td:
         return jsonify({"success": False, "authenticated": False, "error": "Invalid or expired recovery token"}), 401
-    u = User.query.get(td["id"])
-    was_restored = False
-    if not u:
-        u = User(
-            id=td["id"], name=td["name"], phone=td.get("phone", ""),
-            email=td.get("email", ""), balance=float(td.get("bal", 100.0)),
-            total_deposit=float(td.get("td", 100.0)), total_withdraw=float(td.get("tw", 0.0)),
-            bets_count=int(td.get("bc", 0)), status=td.get("st", "ACTIVE"),
-            referral_code=td.get("rc") or td["id"][-6:].upper(),
-            referred_by=td.get("rb"), password_hash=td.get("pwh", ""),
-            created_at=format_ist_datetime(), created_at_ms=now_ms(),
-        )
-        db.session.add(u)
-        db.session.commit()
-        was_restored = True
+    with db_lock:
+        try:
+            u = User.query.get(td["id"])
+            was_restored = False
+            if not u:
+                u = User(
+                    id=td["id"], name=td["name"], phone=td.get("phone", ""),
+                    email=td.get("email", ""), balance=float(td.get("bal", 100.0)),
+                    total_deposit=float(td.get("td", 100.0)), total_withdraw=float(td.get("tw", 0.0)),
+                    bets_count=int(td.get("bc", 0)), status=td.get("st", "ACTIVE"),
+                    referral_code=td.get("rc") or td["id"][-6:].upper(),
+                    referred_by=td.get("rb"), password_hash=td.get("pwh", ""),
+                    created_at=format_ist_datetime(), created_at_ms=now_ms(),
+                )
+                db.session.add(u)
+                log_admin_action("System", "USER_SESSION_RESTORED", u.id, f"Restored persistent user {u.name}")
+                db.session.commit()
+                was_restored = True
+            rec_tok = build_user_recovery_token(u)
+            u_dict = user_to_dict(u)
+            u_id = u.id
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({"success": False, "authenticated": False, "error": str(exc)}), 500
     resp = make_response(jsonify({
         "success": True, "authenticated": True, "restored": was_restored,
-        "recoveryToken": build_user_recovery_token(u), "user": user_to_dict(u),
+        "recoveryToken": rec_tok, "user": u_dict,
     }))
-    return attach_session_cookie(resp, u.id)
+    return attach_session_cookie(resp, u_id)
 
 
 @app.route("/api/users/logout", methods=["POST"])
@@ -2405,18 +2466,22 @@ def api_users_change_password():
     if len(new_pw) < 4:
         return jsonify({"success": False, "error": "Password must be at least 4 characters"}), 400
     with db_lock:
-        u = User.query.get(uid)
-        if not u:
-            return jsonify({"success": False, "error": "User not found"}), 404
-        if current_pw is not None and str(current_pw).strip() != "":
-            if not verify_password_secure(str(current_pw).strip(), u.password_hash or "", u.password_plain or ""):
-                return jsonify({"success": False, "error": "Current password is incorrect"}), 401
-        u.password_hash = hash_password_secure(new_pw)
-        u.password_plain = new_pw
-        log_admin_action(uid, "PASSWORD_UPDATED", uid, f"Password changed for {u.name}")
-        _, sse_ev = bump_state_version("password_updated", {"userId": uid})
-        db.session.commit()
-        rec_token = build_user_recovery_token(u)
+        try:
+            u = User.query.get(uid)
+            if not u:
+                return jsonify({"success": False, "error": "User not found"}), 404
+            if current_pw is not None and str(current_pw).strip() != "":
+                if not verify_password_secure(str(current_pw).strip(), u.password_hash or "", u.password_plain or ""):
+                    return jsonify({"success": False, "error": "Current password is incorrect"}), 401
+            u.password_hash = hash_password_secure(new_pw)
+            u.password_plain = new_pw
+            log_admin_action(uid, "PASSWORD_UPDATED", uid, f"Password changed for {u.name}")
+            _, sse_ev = bump_state_version("password_updated", {"userId": uid})
+            db.session.commit()
+            rec_token = build_user_recovery_token(u)
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({"success": False, "error": str(exc)}), 500
     notify_sse_clients(sse_ev)
     return jsonify({"success": True, "message": "Password updated successfully", "recoveryToken": rec_token})
 
@@ -2425,7 +2490,9 @@ def api_users_change_password():
 def api_user_adjust():
     payload = request.get_json(silent=True) or {}
     curr_ms = now_ms()
-    uid = payload.get("userId")
+    uid = str(payload.get("userId") or "").strip()
+    if not uid or uid == "Guest":
+        return jsonify({"success": False, "error": "Missing valid userId"}), 400
     if payload.get("delta") is not None and payload.get("amount") is None:
         delta_val = float(payload.get("delta", 0.0))
         adj_type = "CREDIT" if delta_val >= 0 else "DEBIT"
@@ -2433,6 +2500,10 @@ def api_user_adjust():
     else:
         adj_type = str(payload.get("type", "CREDIT")).upper().strip()
         amount = float(payload.get("amount", 0.0))
+    if adj_type not in ("CREDIT", "DEBIT"):
+        return jsonify({"success": False, "error": "Invalid adjustment type"}), 400
+    if amount <= 0:
+        return jsonify({"success": False, "error": "Adjustment amount must be greater than zero"}), 400
     reason = str(payload.get("reason", f"Admin {adj_type}")).strip()
 
     with db_lock:
@@ -2469,8 +2540,12 @@ def api_user_adjust():
 def api_user_status():
     payload = request.get_json(silent=True) or {}
     curr_ms = now_ms()
-    uid = payload.get("userId")
+    uid = str(payload.get("userId") or "").strip()
     new_status = str(payload.get("status", "ACTIVE")).upper().strip()
+    if not uid:
+        return jsonify({"success": False, "error": "Missing userId"}), 400
+    if new_status not in ("ACTIVE", "BLOCKED"):
+        return jsonify({"success": False, "error": "Invalid user status"}), 400
     with db_lock:
         try:
             u = User.query.get(uid)
@@ -2510,24 +2585,34 @@ def api_deposits():
 
     payload = request.get_json(silent=True) or {}
     curr_ms = now_ms()
-    amount = float(payload.get("amount", 0.0))
+    amount = round(float(payload.get("amount", 0.0)), 2)
     utr = str(payload.get("utr", "")).strip()
     method = str(payload.get("method", "UPI"))
-    uid = payload.get("userId", "USR-1001")
-    uname = payload.get("userName", "Rahul_Player")
+    uid = str(payload.get("userId") or get_cookie_uid() or "").strip()
+    uname = str(payload.get("userName") or "").strip()
+    if not uid or uid == "Guest":
+        return jsonify({"success": False, "error": "Please login before submitting a deposit"}), 401
+    if amount <= 0:
+        return jsonify({"success": False, "error": "Deposit amount must be greater than zero"}), 400
+    if len(utr) < 4:
+        return jsonify({"success": False, "error": "Please enter a valid UTR reference number"}), 400
+
     dep_time_str = format_ist_display(curr_ms)
     dep_id = f"DEP-{get_ist_now(curr_ms).strftime('%H%M%S')}-{random.randint(10, 99)}"
 
     with db_lock:
         try:
             u = User.query.get(uid)
-            if u and u.status == "BLOCKED":
+            if not u:
+                return jsonify({"success": False, "error": "User account not found"}), 404
+            if u.status == "BLOCKED":
                 return jsonify({"success": False, "error": "Account is blocked by Admin"}), 403
             db.session.add(Deposit(
-                id=dep_id, user_id=uid, user_name=u.name if u else uname,
+                id=dep_id, user_id=uid, user_name=u.name or uname or uid,
                 amount=amount, method=method, utr=utr, time_str=dep_time_str,
                 status="IN PROCESS", created_at=format_ist_datetime(curr_ms), created_at_ms=curr_ms,
             ))
+            log_admin_action(u.name or uid, "DEPOSIT_REQUEST", dep_id, f"Deposit request ₹{amount:.2f} (UTR: {utr})")
             _, sse_ev = bump_state_version("deposit_requested", {"userId": uid, "depositId": dep_id, "amount": amount})
             db.session.commit()
         except Exception as exc:
@@ -2541,12 +2626,19 @@ def api_deposits():
 def api_deposits_approve():
     payload = request.get_json(silent=True) or {}
     curr_ms = now_ms()
-    dep_id = payload.get("depositId")
+    dep_id = str(payload.get("depositId") or "").strip()
+    if not dep_id:
+        return jsonify({"success": False, "error": "Missing depositId"}), 400
     affected_uid = None
     with db_lock:
         try:
             d = Deposit.query.get(dep_id)
-            if d and d.status != "SUCCESS":
+            if not d:
+                return jsonify({"success": False, "error": "Deposit request not found"}), 404
+            st_cur = str(d.status or "").upper()
+            if st_cur in ("FAIL", "REJECTED"):
+                return jsonify({"success": False, "error": "Deposit was already rejected"}), 400
+            if st_cur != "SUCCESS":
                 d.status = "SUCCESS"
                 affected_uid = d.user_id
                 amt = float(d.amount)
@@ -2583,13 +2675,20 @@ def api_deposits_approve():
 def api_deposits_reject():
     payload = request.get_json(silent=True) or {}
     curr_ms = now_ms()
-    dep_id = payload.get("depositId")
-    reason = payload.get("reason", "Verification failed")
+    dep_id = str(payload.get("depositId") or "").strip()
+    reason = str(payload.get("reason", "Verification failed")).strip() or "Verification failed"
+    if not dep_id:
+        return jsonify({"success": False, "error": "Missing depositId"}), 400
     with db_lock:
         try:
             d = Deposit.query.get(dep_id)
-            affected_uid = d.user_id if d else None
-            if d:
+            if not d:
+                return jsonify({"success": False, "error": "Deposit request not found"}), 404
+            st_cur = str(d.status or "").upper()
+            if st_cur == "SUCCESS":
+                return jsonify({"success": False, "error": "Cannot reject an already approved deposit"}), 400
+            affected_uid = d.user_id
+            if st_cur != "FAIL":
                 d.status = "FAIL"
                 d.reason = reason
                 log_admin_action("ColourPrince", "DEPOSIT_REJECT", dep_id, f"Rejected: {reason}")
@@ -2623,21 +2722,27 @@ def api_withdrawals():
 
     payload = request.get_json(silent=True) or {}
     curr_ms = now_ms()
-    amount = float(payload.get("amount", 0.0))
+    amount = round(float(payload.get("amount", 0.0)), 2)
     upi_id = str(payload.get("upiId", "")).strip()
     bank_name = str(payload.get("bankName", "")).strip()
     acc_no = str(payload.get("accNo", "")).strip()
     ifsc = str(payload.get("ifsc", "")).strip().upper()
     banking_name = str(payload.get("bankingName", "")).strip()
-    uid = payload.get("userId", "USR-1001")
-    uname = payload.get("userName", "Rahul_Player")
+    uid = str(payload.get("userId") or get_cookie_uid() or "").strip()
+    uname = str(payload.get("userName") or "").strip()
+    if not uid or uid == "Guest":
+        return jsonify({"success": False, "error": "Please login before requesting a withdrawal"}), 401
+    if amount < 1.0:
+        return jsonify({"success": False, "error": "Withdrawal amount must be at least ₹1.00"}), 400
 
     with db_lock:
         try:
             u = User.query.get(uid)
-            if u and u.status == "BLOCKED":
+            if not u:
+                return jsonify({"success": False, "error": "User account not found"}), 404
+            if u.status == "BLOCKED":
                 return jsonify({"success": False, "error": "Account is blocked by Admin"}), 403
-            if not u or float(u.balance) < amount:
+            if float(u.balance) < amount:
                 return jsonify({"success": False, "error": "Insufficient balance for withdrawal"}), 400
 
             before = float(u.balance)
@@ -2648,7 +2753,7 @@ def api_withdrawals():
             wd_id = f"WD-{get_ist_now(curr_ms).strftime('%H%M%S')}-{random.randint(10, 99)}"
             destination = f"{banking_name} • {bank_name} (A/C: {acc_no}, IFSC: {ifsc}) • UPI: {upi_id}"
             db.session.add(Withdrawal(
-                id=wd_id, user_id=uid, user_name=u.name or uname, amount=amount,
+                id=wd_id, user_id=uid, user_name=u.name or uname or uid, amount=amount,
                 upi_id=upi_id, bank_name=bank_name, acc_no=acc_no, ifsc=ifsc,
                 banking_name=banking_name, destination=destination, time_str=wd_time_str,
                 status="IN PROCESS", created_at=format_ist_datetime(curr_ms), created_at_ms=curr_ms,
@@ -2659,6 +2764,7 @@ def api_withdrawals():
                 ref=destination, amount=-amount, balance_before=before, balance_after=new_bal,
                 status="PENDING", created_at=format_ist_datetime(curr_ms), created_at_ms=curr_ms,
             ))
+            log_admin_action(u.name or uid, "WITHDRAWAL_REQUEST", wd_id, f"Withdrawal request ₹{amount:.2f} -> {destination}")
             _, sse_ev = bump_state_version("withdrawal_requested", {"userId": uid, "withdrawalId": wd_id, "amount": amount})
             db.session.commit()
         except Exception as exc:
@@ -2676,17 +2782,29 @@ def api_withdrawals():
 def api_withdrawals_approve():
     payload = request.get_json(silent=True) or {}
     curr_ms = now_ms()
-    wd_id = payload.get("withdrawalId")
+    wd_id = str(payload.get("withdrawalId") or "").strip()
+    if not wd_id:
+        return jsonify({"success": False, "error": "Missing withdrawalId"}), 400
     affected_uid = None
     with db_lock:
         try:
             w = Withdrawal.query.get(wd_id)
-            if w and w.status != "SUCCESS":
+            if not w:
+                return jsonify({"success": False, "error": "Withdrawal request not found"}), 404
+            st_cur = str(w.status or "").upper()
+            if st_cur in ("FAIL", "REJECTED"):
+                return jsonify({"success": False, "error": "Withdrawal was already rejected and refunded"}), 400
+            if st_cur != "SUCCESS":
                 affected_uid = w.user_id
                 w.status = "SUCCESS"
                 u = User.query.get(affected_uid)
                 if u:
                     u.total_withdraw = round(float(u.total_withdraw or 0.0) + float(w.amount), 2)
+                pending_wd_tx = Transaction.query.filter_by(
+                    user_id=affected_uid, type="WITHDRAWAL", ref=w.destination, status="PENDING"
+                ).order_by(Transaction.created_at_ms.desc()).first()
+                if pending_wd_tx:
+                    pending_wd_tx.status = "COMPLETED"
                 log_admin_action("ColourPrince", "WITHDRAWAL_APPROVE", wd_id, f"Approved ₹{w.amount:.2f} for {affected_uid}")
                 record_admin_situation_support_message(
                     affected_uid, "WITHDRAWAL_APPROVED",
@@ -2706,13 +2824,20 @@ def api_withdrawals_approve():
 def api_withdrawals_reject():
     payload = request.get_json(silent=True) or {}
     curr_ms = now_ms()
-    wd_id = payload.get("withdrawalId")
-    reason = payload.get("reason", "Bank details mismatch")
+    wd_id = str(payload.get("withdrawalId") or "").strip()
+    reason = str(payload.get("reason", "Bank details mismatch")).strip() or "Bank details mismatch"
+    if not wd_id:
+        return jsonify({"success": False, "error": "Missing withdrawalId"}), 400
     affected_uid = None
     with db_lock:
         try:
             w = Withdrawal.query.get(wd_id)
-            if w and w.status != "FAIL":
+            if not w:
+                return jsonify({"success": False, "error": "Withdrawal request not found"}), 404
+            st_cur = str(w.status or "").upper()
+            if st_cur == "SUCCESS":
+                return jsonify({"success": False, "error": "Cannot reject an already approved withdrawal"}), 400
+            if st_cur != "FAIL":
                 affected_uid = w.user_id
                 w.status = "FAIL"
                 w.reason = reason
@@ -2721,6 +2846,11 @@ def api_withdrawals_reject():
                 new_bal = round(curr_bal + float(w.amount), 2)
                 if u:
                     u.balance = new_bal
+                pending_wd_tx = Transaction.query.filter_by(
+                    user_id=affected_uid, type="WITHDRAWAL", ref=w.destination, status="PENDING"
+                ).order_by(Transaction.created_at_ms.desc()).first()
+                if pending_wd_tx:
+                    pending_wd_tx.status = "REJECTED"
                 db.session.add(Transaction(
                     tx_id=f"TX-WDREF-{curr_ms}-{random.randint(100, 999)}",
                     user_id=affected_uid, type="WITHDRAWAL_REFUND", title="Withdrawal Rejected Refund",
@@ -2830,6 +2960,7 @@ def api_affiliates_claim():
                 created_at_ms=curr_ms,
             )
             db.session.add(claim_tx)
+            log_admin_action(u.name or uid, "AFFILIATE_CLAIM", claim_tx_id, f"Claimed ₹{claim_amt:.2f} affiliate bonus to wallet")
             _, sse_ev = bump_state_version("affiliate_claimed", {"userId": uid, "claimedAmount": claim_amt, "claimTxId": claim_tx_id})
             db.session.commit()
         except Exception as exc:
@@ -2958,7 +3089,7 @@ def api_state():
                 "period": str(rr.period), "number": num_i, "color": col_raw, "colClass": col_cls,
                 "isBig": bool(rr.is_big), "mode": rr.draw_mode or "AUTO_RANDOM", "time": dec_time_ist,
             }
-        if len(declared_results_list) < 50:
+        if len(declared_results_list) < 200:
             payout_sum = float(db.session.query(func.coalesce(func.sum(Bet.win_amount), 0.0)).filter(Bet.market == rr.market, Bet.period == rr.period, Bet.status == "WON").scalar() or 0.0)
             declared_results_list.append({
                 "market": rr.market, "period": str(rr.period), "number": num_i, "color": col_badge,
@@ -2997,7 +3128,7 @@ def api_state():
         "id": r.id, "actor": r.actor, "action": r.action, "entity": r.entity, "desc": r.desc,
         "time": to_ist_display(r.created_at, r.created_at_ms or 0, mode="display"),
         "createdAtMs": _parse_ts_ms(r.created_at, r.created_at_ms or 0),
-    } for r in AdminAuditLog.query.order_by(AdminAuditLog.id.desc()).limit(500).all()]
+    } for r in AdminAuditLog.query.order_by(AdminAuditLog.id.desc()).all()]
 
     affiliates_list = []
     for u in all_users:
@@ -3084,11 +3215,23 @@ def api_admin_draw_override():
 
     payload = request.get_json(silent=True) or {}
     m_code = str(payload.get("market", "MIAMI")).upper().strip()
+    if m_code not in MARKET_KEYS:
+        return jsonify({"success": False, "error": f"Invalid market {m_code}"}), 400
     mode = str(payload.get("mode", "MANUAL")).upper().strip()
     period = str(payload.get("period", "")).strip()
     with db_lock:
-        mkt = Market.query.get(m_code)
-        if mkt:
+        try:
+            mkt = Market.query.get(m_code)
+            if not mkt:
+                auth = calculate_authoritative_round(m_code)
+                mkt = Market(
+                    code=m_code, name=f"{m_code} MARKET",
+                    current_round_id=auth["round_id"], current_period=auth["period"],
+                    round_duration_sec=ROUND_DURATION_SEC, lock_cutoff_sec=LOCK_CUTOFF_SEC,
+                    start_time_ms=auth["start_time_ms"], lock_time_ms=auth["lock_time_ms"],
+                    end_time_ms=auth["end_time_ms"], status=auth["status"],
+                )
+                db.session.add(mkt)
             if mode == "AUTO" or payload.get("number") is None:
                 mkt.manual_override_num = None
                 mkt.manual_override_period = None
@@ -3098,8 +3241,11 @@ def api_admin_draw_override():
                 mkt.manual_override_num = num
                 mkt.manual_override_period = period or None
                 log_admin_action("ColourPrince", "SET_MANUAL_DRAW", f"{m_code} #{period}", f"Scheduled winning number {num}")
-        _, sse_ev = bump_state_version("draw_override", {"market": m_code, "mode": mode})
-        db.session.commit()
+            _, sse_ev = bump_state_version("draw_override", {"market": m_code, "mode": mode})
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({"success": False, "error": str(exc)}), 500
     notify_sse_clients(sse_ev)
     return jsonify({"success": True, "message": f"Override updated for {m_code}"})
 
@@ -3109,13 +3255,19 @@ def api_admin_draw_override():
 def api_admin_declare_result():
     payload = request.get_json(silent=True) or {}
     m_code = str(payload.get("market", "MIAMI")).upper().strip()
+    if m_code not in MARKET_KEYS:
+        return jsonify({"success": False, "error": f"Invalid market {m_code}"}), 400
     period = str(payload.get("period", "")).strip() or calculate_authoritative_round(m_code)["period"]
     num = max(0, min(9, int(payload.get("number", 0))))
     with db_lock:
-        settle_round_in_db(m_code, f"RND_{m_code}_{period}", period, num, "MANUAL_ADMIN", "ADMIN_PANEL")
-        log_admin_action("ColourPrince", "FORCE_DECLARE_RESULT", f"{m_code} #{period}", f"Officially finalized outcome: Number {num}")
-        _, sse_ev = bump_state_version("result_declared", {"market": m_code, "period": period, "number": num})
-        db.session.commit()
+        try:
+            settle_round_in_db(m_code, f"RND_{m_code}_{period}", period, num, "MANUAL_ADMIN", "ADMIN_PANEL")
+            log_admin_action("ColourPrince", "FORCE_DECLARE_RESULT", f"{m_code} #{period}", f"Officially finalized outcome: Number {num}")
+            _, sse_ev = bump_state_version("result_declared", {"market": m_code, "period": period, "number": num})
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({"success": False, "error": str(exc)}), 500
     notify_sse_clients(sse_ev)
     return jsonify({"success": True, "message": f"Result {num} declared and settled for {m_code} #{period}"})
 
@@ -3129,14 +3281,18 @@ def api_bank_config():
         return jsonify(cfg)
     payload = request.get_json(silent=True) or {}
     with db_lock:
-        existing = get_app_state_json("bank_config", DEFAULT_BANK_CONFIG)
-        if isinstance(existing, dict) and "qrImage" not in payload and existing.get("qrImage"):
-            payload["qrImage"] = existing.get("qrImage")
-        set_app_state_value("bank_config", json.dumps(payload))
-        qr_note = " (Custom QR Active)" if payload.get("qrImage") else ""
-        log_admin_action("ColourPrince", "BANK_CONFIG_UPDATE", "PAYMENT_GATEWAYS", f"Updated Bank {payload.get('bankName', '')} / UPI {payload.get('upiId', '')}{qr_note}")
-        _, sse_ev = bump_state_version("bank_config_updated", {"upiId": payload.get("upiId"), "hasQr": bool(payload.get("qrImage"))})
-        db.session.commit()
+        try:
+            existing = get_app_state_json("bank_config", DEFAULT_BANK_CONFIG)
+            if isinstance(existing, dict) and "qrImage" not in payload and existing.get("qrImage"):
+                payload["qrImage"] = existing.get("qrImage")
+            set_app_state_value("bank_config", json.dumps(payload))
+            qr_note = " (Custom QR Active)" if payload.get("qrImage") else ""
+            log_admin_action("ColourPrince", "BANK_CONFIG_UPDATE", "PAYMENT_GATEWAYS", f"Updated Bank {payload.get('bankName', '')} / UPI {payload.get('upiId', '')}{qr_note}")
+            _, sse_ev = bump_state_version("bank_config_updated", {"upiId": payload.get("upiId"), "hasQr": bool(payload.get("qrImage"))})
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({"success": False, "error": str(exc)}), 500
     notify_sse_clients(sse_ev)
     return jsonify({"success": True, "bank_config": payload})
 
@@ -3145,16 +3301,20 @@ def api_bank_config():
 def api_admin_sync_state():
     payload = request.get_json(silent=True) or {}
     with db_lock:
-        if isinstance(payload.get("bank_config"), dict):
-            incoming_bc = dict(payload["bank_config"])
-            existing_bc = get_app_state_json("bank_config", DEFAULT_BANK_CONFIG)
-            if isinstance(existing_bc, dict) and "qrImage" not in incoming_bc and existing_bc.get("qrImage"):
-                incoming_bc["qrImage"] = existing_bc.get("qrImage")
-            set_app_state_value("bank_config", json.dumps(incoming_bc))
-        if isinstance(payload.get("platform_settings"), dict):
-            set_app_state_value("platform_settings", json.dumps(payload["platform_settings"]))
-        new_ver, sse_ev = bump_state_version("admin_sync")
-        db.session.commit()
+        try:
+            if isinstance(payload.get("bank_config"), dict):
+                incoming_bc = dict(payload["bank_config"])
+                existing_bc = get_app_state_json("bank_config", DEFAULT_BANK_CONFIG)
+                if isinstance(existing_bc, dict) and "qrImage" not in incoming_bc and existing_bc.get("qrImage"):
+                    incoming_bc["qrImage"] = existing_bc.get("qrImage")
+                set_app_state_value("bank_config", json.dumps(incoming_bc))
+            if isinstance(payload.get("platform_settings"), dict):
+                set_app_state_value("platform_settings", json.dumps(payload["platform_settings"]))
+            new_ver, sse_ev = bump_state_version("admin_sync")
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({"success": False, "error": str(exc)}), 500
     notify_sse_clients(sse_ev)
     return jsonify({"success": True, "state_version": new_ver})
 
@@ -3320,22 +3480,26 @@ def api_support_message():
         return jsonify({"success": False, "error": "Please enter a message or attach a file"}), 400
 
     with db_lock:
-        u = User.query.get(uid)
-        if not u:
-            return jsonify({"success": False, "error": "User not found"}), 404
-        tid, _ = ensure_support_ticket_and_add_message(
-            uid, u.name, "USER", u.name, message, category, 0,
-            "USER_MEDIA" if att_url else "USER_MESSAGE", curr_ms,
-            att_name, att_mime, att_size, att_url,
-        )
-        auto_tag, auto_reply = generate_support_auto_reply(uid, message, category)
-        ensure_support_ticket_and_add_message(uid, u.name, "AUTO_BOT", "Colour King 24/7 Support Bot", auto_reply, category, 1, auto_tag, curr_ms + 1)
-        trow = SupportTicket.query.get(tid)
-        if trow:
-            trow.unread_user = 0
-        _, sse_ev = bump_state_version("support_message", {"userId": uid, "ticketId": tid})
-        db.session.commit()
-        thread_data = fetch_support_thread_payload(uid, mark_read_for="USER", auto_welcome=False)
+        try:
+            u = User.query.get(uid)
+            if not u:
+                return jsonify({"success": False, "error": "User not found"}), 404
+            tid, _ = ensure_support_ticket_and_add_message(
+                uid, u.name, "USER", u.name, message, category, 0,
+                "USER_MEDIA" if att_url else "USER_MESSAGE", curr_ms,
+                att_name, att_mime, att_size, att_url,
+            )
+            auto_tag, auto_reply = generate_support_auto_reply(uid, message, category)
+            ensure_support_ticket_and_add_message(uid, u.name, "AUTO_BOT", "Colour King 24/7 Support Bot", auto_reply, category, 1, auto_tag, curr_ms + 1)
+            trow = SupportTicket.query.get(tid)
+            if trow:
+                trow.unread_user = 0
+            _, sse_ev = bump_state_version("support_message", {"userId": uid, "ticketId": tid})
+            db.session.commit()
+            thread_data = fetch_support_thread_payload(uid, mark_read_for="USER", auto_welcome=False)
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({"success": False, "error": str(exc)}), 500
     notify_sse_clients(sse_ev)
     return jsonify({**(thread_data or {"success": True}), "autoReply": auto_reply, "situationTag": auto_tag})
 
@@ -3347,15 +3511,19 @@ def api_support_mark_read():
     role = str(payload.get("role") or "USER").upper().strip()
     tid = str(payload.get("ticketId") or "").strip()
     with db_lock:
-        if role == "ADMIN" and tid:
-            t = SupportTicket.query.get(tid)
-            if t:
-                t.unread_admin = 0
-        elif uid:
-            for t in SupportTicket.query.filter_by(user_id=uid).all():
-                t.unread_user = 0
-        _, sse_ev = bump_state_version("support_read", {"userId": uid, "ticketId": tid, "role": role})
-        db.session.commit()
+        try:
+            if role == "ADMIN" and tid:
+                t = SupportTicket.query.get(tid)
+                if t:
+                    t.unread_admin = 0
+            elif uid:
+                for t in SupportTicket.query.filter_by(user_id=uid).all():
+                    t.unread_user = 0
+            _, sse_ev = bump_state_version("support_read", {"userId": uid, "ticketId": tid, "role": role})
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({"success": False, "error": str(exc)}), 500
     notify_sse_clients(sse_ev)
     return jsonify({"success": True})
 
@@ -3382,20 +3550,24 @@ def api_admin_support_reply():
         return jsonify({"success": False, "error": "Reply cannot be empty"}), 400
 
     with db_lock:
-        if not uid and tid:
-            tr = SupportTicket.query.get(tid)
-            uid = tr.user_id if tr else ""
-        u = User.query.get(uid)
-        if not u:
-            return jsonify({"success": False, "error": "Target user not found"}), 404
-        tid, msg_id = ensure_support_ticket_and_add_message(
-            uid, u.name, "ADMIN", f"Admin ({admin_name})", message, "ADMIN_CUSTOM", 0, "ADMIN_CUSTOM_REPLY", curr_ms,
-            att_name, att_mime, att_size, att_url,
-        )
-        log_admin_action(admin_name, "ADMIN_SUPPORT_REPLY", f"{uid} ({tid})", (message or f"📎 {att_name}")[:180])
-        _, sse_ev = bump_state_version("support_reply", {"userId": uid, "ticketId": tid})
-        db.session.commit()
-        thread_data = fetch_support_thread_payload(uid)
+        try:
+            if not uid and tid:
+                tr = SupportTicket.query.get(tid)
+                uid = tr.user_id if tr else ""
+            u = User.query.get(uid)
+            if not u:
+                return jsonify({"success": False, "error": "Target user not found"}), 404
+            tid, msg_id = ensure_support_ticket_and_add_message(
+                uid, u.name, "ADMIN", f"Admin ({admin_name})", message, "ADMIN_CUSTOM", 0, "ADMIN_CUSTOM_REPLY", curr_ms,
+                att_name, att_mime, att_size, att_url,
+            )
+            log_admin_action(admin_name, "ADMIN_SUPPORT_REPLY", f"{uid} ({tid})", (message or f"📎 {att_name}")[:180])
+            _, sse_ev = bump_state_version("support_reply", {"userId": uid, "ticketId": tid})
+            db.session.commit()
+            thread_data = fetch_support_thread_payload(uid)
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({"success": False, "error": str(exc)}), 500
     notify_sse_clients(sse_ev)
     return jsonify({"success": True, "ticketId": tid, "messageId": msg_id, "thread": thread_data})
 
@@ -3409,30 +3581,49 @@ def api_admin_support_status():
     if new_status not in ("OPEN", "RESOLVED"):
         new_status = "RESOLVED"
     with db_lock:
-        t = SupportTicket.query.get(tid)
-        uid = t.user_id if t else ""
-        if t:
-            t.status = new_status
-            t.unread_admin = 0
-            t.updated_at = format_ist_datetime(curr_ms)
-            t.updated_at_ms = curr_ms
-        if uid:
-            record_admin_situation_support_message(
-                uid, f"TICKET_{new_status}",
-                f"📌 Support Ticket {tid} marked {new_status} by Admin.",
-                category="SYSTEM", create_if_missing=False, curr_ms=curr_ms + 1,
-            )
-        _, sse_ev = bump_state_version("support_updated", {"ticketId": tid, "userId": uid, "status": new_status})
-        db.session.commit()
+        try:
+            t = SupportTicket.query.get(tid)
+            uid = t.user_id if t else ""
+            if t:
+                t.status = new_status
+                t.unread_admin = 0
+                t.updated_at = format_ist_datetime(curr_ms)
+                t.updated_at_ms = curr_ms
+            if uid:
+                record_admin_situation_support_message(
+                    uid, f"TICKET_{new_status}",
+                    f"📌 Support Ticket {tid} marked {new_status} by Admin.",
+                    category="SYSTEM", create_if_missing=False, curr_ms=curr_ms + 1,
+                )
+            _, sse_ev = bump_state_version("support_updated", {"ticketId": tid, "userId": uid, "status": new_status})
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            return jsonify({"success": False, "error": str(exc)}), 500
     notify_sse_clients(sse_ev)
     return jsonify({"success": True, "ticketId": tid, "status": new_status})
 
 
+_daemon_init_lock = threading.Lock()
+_daemon_started = False
+
+
 def start_background_daemon():
-    init_database()
-    sync_round_lifecycle_once()
-    t = threading.Thread(target=background_round_lifecycle_daemon, daemon=True)
-    t.start()
+    global _daemon_started
+    with _daemon_init_lock:
+        if _daemon_started:
+            return
+        init_database()
+        sync_round_lifecycle_once()
+        t = threading.Thread(target=background_round_lifecycle_daemon, daemon=True)
+        t.start()
+        _daemon_started = True
+
+
+# Automatically initialize PostgreSQL schema (non-destructive db.create_all) and round daemon
+# when imported by Gunicorn / WSGI servers on Render or run directly.
+if os.environ.get("CK_SKIP_AUTO_INIT") != "1":
+    start_background_daemon()
 
 
 def run_flask_server():

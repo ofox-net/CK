@@ -1102,7 +1102,7 @@
                   <h4 style="font-size:13px; font-weight:800; color:#FFD700; display:flex; align-items:center; gap:6px;">
                     <span>📊</span> Live Wager Breakdown (<span id="liveMarketNameLabel">MIAMI</span>)
                   </h4>
-                  <p style="font-size:11px; color:#8E9DB2;">Real-time SQLite wagers placed for current round (<span id="liveTotalBetsCount">0 bets</span>)</p>
+                  <p style="font-size:11px; color:#8E9DB2;">Real-time database wagers placed for current round (<span id="liveTotalBetsCount">0 bets</span>)</p>
                 </div>
                 <div style="text-align:right;">
                   <span style="font-size:10px; color:#8E9DB2; text-transform:uppercase;">Active Round Pool</span>
@@ -2363,35 +2363,26 @@
     function approveDeposit(depositId) {
       const dep = depositRequests.find(d => d.id === depositId);
       if (!dep) return;
-      dep.status = 'SUCCESS';
 
-      // Call backend API to approve deposit & credit balance on server
       fetch('/api/deposits/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ depositId })
-      }).then(() => pullAdminStateFromServer()).catch(() => {});
-
-      // Optimistic local UI update until server pull returns
-      const user = usersList.find(u => u.id === dep.userId);
-      if (user) {
-        user.balance += dep.amount;
-        user.totalDeposit += dep.amount;
-      }
-
-      auditLogs.unshift({
-        time: nowAdminISTDisplay(),
-        actor: "ColourPrince",
-        action: "DEPOSIT_APPROVE",
-        entity: depositId,
-        desc: `Approved deposit of ₹${dep.amount.toFixed(2)} for ${dep.userName} (${dep.userId}) - Status: SUCCESS`
+      })
+      .then(async r => {
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok || !data.success) {
+          showToast('❌ ' + (data.error || 'Failed to approve deposit'));
+          pullAdminStateFromServer();
+          return;
+        }
+        dep.status = 'SUCCESS';
+        await pullAdminStateFromServer();
+        showToast(`✅ Approved ₹${dep.amount} deposit (SUCCESS) for ${dep.userName}!`);
+      })
+      .catch(() => {
+        showToast('❌ Network error approving deposit. Please retry.');
       });
-
-      persistAllState(true);
-      renderDepositsTable();
-      renderUsersTable();
-      renderAuditTable();
-      showToast(`✅ Approved ₹${dep.amount} deposit (SUCCESS) for ${dep.userName}!`);
     }
 
     function promptRejectDeposit(depositId) {
@@ -2555,33 +2546,26 @@
     function approveWithdrawal(withdrawalId) {
       const wd = withdrawalRequests.find(w => w.id === withdrawalId);
       if (!wd) return;
-      wd.status = 'SUCCESS';
 
-      // Call backend API
       fetch('/api/withdrawals/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ withdrawalId })
-      }).then(() => pullAdminStateFromServer()).catch(() => {});
-
-      const user = usersList.find(u => u.id === wd.userId);
-      if (user) {
-        user.totalWithdraw += wd.amount;
-      }
-
-      auditLogs.unshift({
-        time: nowAdminISTDisplay(),
-        actor: "ColourPrince",
-        action: "WITHDRAWAL_PAYOUT",
-        entity: withdrawalId,
-        desc: `Executed payout of ₹${wd.amount.toFixed(2)} to ${wd.destination} for ${wd.userName} - Status: SUCCESS`
+      })
+      .then(async r => {
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok || !data.success) {
+          showToast('❌ ' + (data.error || 'Failed to approve withdrawal'));
+          pullAdminStateFromServer();
+          return;
+        }
+        wd.status = 'SUCCESS';
+        await pullAdminStateFromServer();
+        showToast(`💸 Processed ₹${wd.amount} payout (SUCCESS) to ${wd.userName}!`);
+      })
+      .catch(() => {
+        showToast('❌ Network error approving withdrawal. Please retry.');
       });
-
-      persistAllState(true);
-      renderWithdrawalsTable();
-      renderUsersTable();
-      renderAuditTable();
-      showToast(`💸 Processed ₹${wd.amount} payout (SUCCESS) to ${wd.userName}!`);
     }
 
     function promptRejectWithdrawal(withdrawalId) {
@@ -2654,57 +2638,43 @@
 
       if (pendingRejectAction.type === 'DEPOSIT') {
         const dep = depositRequests.find(d => d.id === pendingRejectAction.id);
-        if (dep) {
-          dep.status = 'FAIL';
-          dep.reason = reason;
-
-          fetch('/api/deposits/reject', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ depositId: dep.id, reason })
-          }).then(() => pullAdminStateFromServer()).catch(() => {});
-
-          auditLogs.unshift({
-            time: nowAdminISTDisplay(),
-            actor: "ColourPrince",
-            action: "DEPOSIT_REJECT",
-            entity: dep.id,
-            desc: `Rejected deposit of ₹${dep.amount}: FAIL (${reason})`
-          });
-        }
+        if (!dep) return;
+        fetch('/api/deposits/reject', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ depositId: dep.id, reason })
+        })
+        .then(async r => {
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok || !data.success) {
+            showToast('❌ ' + (data.error || 'Failed to reject deposit'));
+            return;
+          }
+          closeModal('rejectReasonModal');
+          await pullAdminStateFromServer();
+          showToast('❌ Deposit rejected and saved to database!');
+        })
+        .catch(() => showToast('❌ Network error rejecting deposit'));
       } else if (pendingRejectAction.type === 'WITHDRAWAL') {
         const wd = withdrawalRequests.find(w => w.id === pendingRejectAction.id);
-        if (wd) {
-          wd.status = 'FAIL';
-          wd.reason = reason;
-
-          fetch('/api/withdrawals/reject', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ withdrawalId: wd.id, reason })
-          }).then(() => pullAdminStateFromServer()).catch(() => {});
-
-          const user = usersList.find(u => u.id === wd.userId);
-          if (user) {
-            user.balance += wd.amount;
+        if (!wd) return;
+        fetch('/api/withdrawals/reject', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ withdrawalId: wd.id, reason })
+        })
+        .then(async r => {
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok || !data.success) {
+            showToast('❌ ' + (data.error || 'Failed to reject withdrawal'));
+            return;
           }
-          auditLogs.unshift({
-            time: nowAdminISTDisplay(),
-            actor: "ColourPrince",
-            action: "WITHDRAWAL_REJECT",
-            entity: wd.id,
-            desc: `Rejected withdrawal of ₹${wd.amount} and refunded balance: FAIL (${reason})`
-          });
-        }
+          closeModal('rejectReasonModal');
+          await pullAdminStateFromServer();
+          showToast('❌ Withdrawal rejected, refunded, and saved to database!');
+        })
+        .catch(() => showToast('❌ Network error rejecting withdrawal'));
       }
-
-      persistAllState(true);
-      closeModal('rejectReasonModal');
-      renderDepositsTable();
-      renderWithdrawalsTable();
-      renderUsersTable();
-      renderAuditTable();
-      showToast(`❌ Request rejected and saved to database!`);
     }
 
     // ----------------------------------------------------
@@ -2939,7 +2909,7 @@
       });
 
       if (filtered.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:24px; color:var(--text-muted);">No matching user accounts found in SQLite database.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:24px; color:var(--text-muted);">No matching user accounts found in database.</td></tr>`;
         return;
       }
 
@@ -3079,7 +3049,7 @@
           return;
         }
         await pullAdminStateFromServer();
-        showToast(`✅ User ${data.user?.name || newU.name} saved to SQLite database!`);
+        showToast(`✅ User ${data.user?.name || newU.name} saved to database!`);
       }).catch(() => {
         showToast('❌ Server unavailable — user not created.');
       });
@@ -4192,7 +4162,7 @@
 
     function exportAdminJsonBackup() {
       if (window.location.protocol === 'file:') {
-        showToast('⚠️ Connect to server URL to export SQLite backup');
+        showToast('⚠️ Connect to server URL to export database backup');
         return;
       }
       fetch('/api/admin/backup/export?t=' + Date.now(), { cache: 'no-store' })
@@ -4211,7 +4181,7 @@
           a.click();
           a.remove();
           URL.revokeObjectURL(url);
-          showToast('✅ Downloaded complete SQLite JSON backup!');
+          showToast('✅ Downloaded complete database JSON backup!');
         })
         .catch(() => showToast('❌ Network error exporting backup'));
     }
@@ -4300,6 +4270,7 @@
       }
 
       saveAdminLocalCacheOnly();
+      recalculateMasterKPIs();
       renderDepositsTable();
       renderWithdrawalsTable();
       renderUsersTable();
