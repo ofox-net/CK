@@ -46,6 +46,9 @@ class User(db.Model):
     total_withdraw = db.Column(db.Float, nullable=False, default=0.0)
     bets_count = db.Column(db.Integer, nullable=False, default=0)
     status = db.Column(db.String(32), nullable=False, default="ACTIVE", index=True)
+    current_level = db.Column(db.String(32), nullable=False, default="Bronze")
+    total_approved_recharge = db.Column(db.Float, nullable=False, default=0.0)
+    claimed_vip_levels = db.Column(db.Text, nullable=False, default="[]")
     referral_code = db.Column(db.String(32), nullable=True, unique=True, index=True)
     referred_by = db.Column(db.String(64), nullable=True, index=True)
     password_hash = db.Column(db.String(256), nullable=True, default="")
@@ -251,5 +254,27 @@ class SupportMessage(db.Model):
     attachment_mime = db.Column(db.String(128), nullable=False, default="")
     attachment_size = db.Column(db.Integer, nullable=False, default=0)
     attachment_url = db.Column(db.String(320), nullable=False, default="")
+    created_at = db.Column(db.String(64), nullable=False, default=lambda: format_ist_datetime())
+    created_at_ms = db.Column(db.BigInteger, nullable=False, default=now_ms, index=True)
+
+
+class VipRewardLog(db.Model):
+    """Idempotent 2.4% VIP / Game Level-Up Bonus Ledger (strictly one bonus per user per level)."""
+    __tablename__ = "vip_reward_logs"
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "level", name="uq_vip_reward_user_level"),
+        db.Index("idx_vip_reward_user_ms", "user_id", "created_at_ms"),
+    )
+
+    id = db.Column(db.String(96), primary_key=True)
+    user_id = db.Column(db.String(64), nullable=False, index=True)
+    level = db.Column(db.String(32), nullable=False, index=True)
+    tier_index = db.Column(db.Integer, nullable=False, default=1)
+    threshold_amount = db.Column(db.Float, nullable=False, default=0.0)
+    target_amount = db.Column(db.Float, nullable=False, default=0.0)
+    bonus_rate = db.Column(db.Float, nullable=False, default=0.024)
+    bonus_amount = db.Column(db.Float, nullable=False, default=0.0)
+    source_deposit_id = db.Column(db.String(64), nullable=True)
+    tx_id = db.Column(db.String(96), nullable=True)
     created_at = db.Column(db.String(64), nullable=False, default=lambda: format_ist_datetime())
     created_at_ms = db.Column(db.BigInteger, nullable=False, default=now_ms, index=True)

@@ -200,6 +200,239 @@ REFERRAL_TIER_RATES = [
     (6, 0.0020),
 ]
 
+VIP_BONUS_RATE = 0.024
+VIP_LEVELS = [
+    {
+        "tier": 1, "name": "Bronze", "icon": "🥉",
+        "minRecharge": 0.0, "maxRecharge": 10000.0, "unlockAfter": 0.0,
+        "targetAmount": 10000.0, "bonusRate": VIP_BONUS_RATE, "bonusAmount": 0.0,
+        "rangeLabel": "₹0 – ₹10,000", "color": "#CD7F32",
+    },
+    {
+        "tier": 2, "name": "Silver", "icon": "🥈",
+        "minRecharge": 10001.0, "maxRecharge": 50000.0, "unlockAfter": 10000.0,
+        "targetAmount": 50000.0, "bonusRate": VIP_BONUS_RATE, "bonusAmount": 1200.0,
+        "rangeLabel": "₹10,001 – ₹50,000", "color": "#E2E8F0",
+    },
+    {
+        "tier": 3, "name": "Gold", "icon": "🥇",
+        "minRecharge": 50001.0, "maxRecharge": 200000.0, "unlockAfter": 50000.0,
+        "targetAmount": 200000.0, "bonusRate": VIP_BONUS_RATE, "bonusAmount": 4800.0,
+        "rangeLabel": "₹50,001 – ₹2,00,000", "color": "#FFD700",
+    },
+    {
+        "tier": 4, "name": "Platinum", "icon": "💠",
+        "minRecharge": 200001.0, "maxRecharge": 500000.0, "unlockAfter": 200000.0,
+        "targetAmount": 500000.0, "bonusRate": VIP_BONUS_RATE, "bonusAmount": 12000.0,
+        "rangeLabel": "₹2,00,001 – ₹5,00,000", "color": "#38BDF8",
+    },
+    {
+        "tier": 5, "name": "Diamond", "icon": "💎",
+        "minRecharge": 500001.0, "maxRecharge": 1000000.0, "unlockAfter": 500000.0,
+        "targetAmount": 1000000.0, "bonusRate": VIP_BONUS_RATE, "bonusAmount": 24000.0,
+        "rangeLabel": "₹5,00,001 – ₹10,00,000", "color": "#A78BFA",
+    },
+    {
+        "tier": 6, "name": "Crown", "icon": "👑",
+        "minRecharge": 1000001.0, "maxRecharge": 5000000.0, "unlockAfter": 1000000.0,
+        "targetAmount": 5000000.0, "bonusRate": VIP_BONUS_RATE, "bonusAmount": 120000.0,
+        "rangeLabel": "₹10,00,001 – ₹50,00,000", "color": "#FB7185",
+    },
+    {
+        "tier": 7, "name": "King", "icon": "🦁",
+        "minRecharge": 5000001.0, "maxRecharge": 10000000.0, "unlockAfter": 5000000.0,
+        "targetAmount": 10000000.0, "bonusRate": VIP_BONUS_RATE, "bonusAmount": 240000.0,
+        "rangeLabel": "₹50,00,001 – ₹1,00,00,000+", "color": "#F59E0B",
+    },
+]
+
+def _parse_claimed_vip_levels(raw_val):
+    if isinstance(raw_val, list):
+        return [str(x).strip() for x in raw_val if str(x).strip()]
+    text_val = str(raw_val or "").strip()
+    if not text_val:
+        return []
+    try:
+        parsed = json.loads(text_val)
+        if isinstance(parsed, list):
+            return [str(x).strip() for x in parsed if str(x).strip()]
+    except Exception:
+        pass
+    return [p.strip() for p in text_val.split(",") if p.strip()]
+
+def resolve_vip_tier_index(total_approved_recharge):
+    amt = max(0.0, float(total_approved_recharge or 0.0))
+    idx = 0
+    for i, tier in enumerate(VIP_LEVELS):
+        if i == 0:
+            continue
+        if amt > float(tier["unlockAfter"]):
+            idx = i
+    return idx
+
+def build_user_vip_payload(conn, u_row):
+    uid = u_row["id"]
+    keys = u_row.keys() if hasattr(u_row, "keys") else []
+    raw_approved = float(u_row["total_approved_recharge"] or 0.0) if "total_approved_recharge" in keys else 0.0
+    total_approved = round(max(0.0, raw_approved), 2)
+    cur_idx = resolve_vip_tier_index(total_approved)
+    cur_tier = VIP_LEVELS[cur_idx]
+    next_tier = VIP_LEVELS[cur_idx + 1] if cur_idx + 1 < len(VIP_LEVELS) else None
+
+    claimed_list = _parse_claimed_vip_levels(u_row["claimed_vip_levels"] if "claimed_vip_levels" in keys else "[]")
+    c = conn.cursor()
+    c.execute("SELECT * FROM vip_reward_logs WHERE user_id = ? ORDER BY created_at_ms DESC", (uid,))
+    reward_rows = c.fetchall()
+    for rr in reward_rows:
+        if rr["level"] and rr["level"] not in claimed_list:
+            claimed_list.append(rr["level"])
+    claimed_set = set(claimed_list)
+
+    if next_tier:
+        next_unlock = float(next_tier["minRecharge"])
+        span_start = float(cur_tier["minRecharge"])
+        denom = max(1.0, next_unlock - span_start)
+        progress_pct = round(min(100.0, max(0.0, ((total_approved - span_start) / denom) * 100.0)), 2)
+        remaining_to_next = round(max(0.0, next_unlock - total_approved), 2)
+        next_payload = {
+            "tier": next_tier["tier"],
+            "name": next_tier["name"],
+            "icon": next_tier["icon"],
+            "minRecharge": next_tier["minRecharge"],
+            "maxRecharge": next_tier["maxRecharge"],
+            "targetAmount": next_tier["targetAmount"],
+            "bonusAmount": next_tier["bonusAmount"],
+            "bonusRatePercent": round(VIP_BONUS_RATE * 100.0, 2),
+            "rangeLabel": next_tier["rangeLabel"],
+            "color": next_tier["color"],
+            "remainingRecharge": remaining_to_next,
+        }
+    else:
+        progress_pct = 100.0
+        remaining_to_next = 0.0
+        next_payload = None
+
+    total_vip_bonus_earned = round(sum(float(r["bonus_amount"] or 0.0) for r in reward_rows), 2)
+    levels_chart = []
+    for i, lv in enumerate(VIP_LEVELS):
+        is_reached = (i == 0) or (total_approved > float(lv["unlockAfter"]))
+        levels_chart.append({
+            **lv,
+            "isCurrent": i == cur_idx,
+            "isUnlocked": is_reached,
+            "isClaimed": lv["name"] in claimed_set,
+        })
+
+    reward_history = [{
+        "id": r["id"],
+        "level": r["level"],
+        "tierIndex": int(r["tier_index"] or 1),
+        "thresholdAmount": round(float(r["threshold_amount"] or 0.0), 2),
+        "targetAmount": round(float(r["target_amount"] or 0.0), 2),
+        "bonusRate": float(r["bonus_rate"] or VIP_BONUS_RATE),
+        "bonusAmount": round(float(r["bonus_amount"] or 0.0), 2),
+        "sourceDepositId": r["source_deposit_id"] or "",
+        "txId": r["tx_id"] or "",
+        "createdAt": to_ist_display(r["created_at"], r["created_at_ms"] or 0, mode="datetime"),
+        "createdAtMs": int(r["created_at_ms"] or 0),
+    } for r in reward_rows]
+
+    return {
+        "userId": uid,
+        "currentLevel": cur_tier["name"],
+        "currentTier": cur_tier["tier"],
+        "currentIcon": cur_tier["icon"],
+        "currentColor": cur_tier["color"],
+        "currentRangeLabel": cur_tier["rangeLabel"],
+        "totalApprovedRecharge": total_approved,
+        "progressPercent": progress_pct,
+        "remainingToNext": remaining_to_next,
+        "isMaxLevel": next_payload is None,
+        "nextLevel": next_payload,
+        "claimedLevels": claimed_list,
+        "totalVipBonusEarned": total_vip_bonus_earned,
+        "rewardHistory": reward_history,
+        "levelsChart": levels_chart,
+    }
+
+def apply_vip_progression_for_user(conn, uid, add_approved_amount=0.0, source_deposit_id="", curr_ms=None):
+    if curr_ms is None:
+        curr_ms = int(time.time() * 1000)
+    c = conn.cursor()
+    c.execute("SELECT * FROM users WHERE id = ?", (uid,))
+    u = c.fetchone()
+    if not u:
+        return {"newlyUnlocked": []}
+    keys = u.keys()
+    prev_total = max(0.0, float(u["total_approved_recharge"] or 0.0) if "total_approved_recharge" in keys else 0.0)
+    new_total = round(prev_total + max(0.0, float(add_approved_amount or 0.0)), 2)
+    new_idx = resolve_vip_tier_index(new_total)
+    new_level_name = VIP_LEVELS[new_idx]["name"]
+
+    claimed_list = _parse_claimed_vip_levels(u["claimed_vip_levels"] if "claimed_vip_levels" in keys else "[]")
+    c.execute("SELECT level FROM vip_reward_logs WHERE user_id = ?", (uid,))
+    for row in c.fetchall():
+        if row["level"] and row["level"] not in claimed_list:
+            claimed_list.append(row["level"])
+    claimed_set = set(claimed_list)
+
+    curr_bal = round(float(u["balance"] or 0.0), 2)
+    newly_unlocked = []
+    now_str = format_ist_datetime(curr_ms)
+
+    for idx in range(1, new_idx + 1):
+        lv = VIP_LEVELS[idx]
+        lv_name = lv["name"]
+        if new_total <= float(lv["unlockAfter"]) or lv_name in claimed_set:
+            continue
+        c.execute("SELECT 1 FROM vip_reward_logs WHERE user_id = ? AND level = ?", (uid, lv_name))
+        if c.fetchone():
+            claimed_set.add(lv_name)
+            claimed_list.append(lv_name)
+            continue
+        bonus_amt = round(float(lv["bonusAmount"]), 2)
+        if bonus_amt <= 0.0:
+            continue
+
+        bal_before = curr_bal
+        curr_bal = round(bal_before + bonus_amt, 2)
+        tx_id = f"TX-VIP-{lv_name.upper()}-{curr_ms}-{secrets.token_hex(2)}"
+        log_id = f"VIP-{uid}-{lv_name.upper()}"
+        c.execute("""
+            INSERT INTO vip_reward_logs (id, user_id, level, tier_index, threshold_amount, target_amount, bonus_rate, bonus_amount, source_deposit_id, tx_id, created_at, created_at_ms)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (log_id, uid, lv_name, int(lv["tier"]), float(lv["minRecharge"]), float(lv["targetAmount"]), VIP_BONUS_RATE, bonus_amt, source_deposit_id or "", tx_id, now_str, curr_ms))
+        c.execute("""
+            INSERT INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status, created_at_ms)
+            VALUES (?, ?, 'VIP_BONUS', ?, ?, ?, ?, ?, 'COMPLETED', ?)
+        """, (tx_id, uid, f"VIP Level-Up Bonus: {lv['icon']} {lv_name} (2.4%)", f"Reached ₹{lv['minRecharge']:,.0f}+ Approved Recharge (2.4% of ₹{lv['targetAmount']:,.0f})" + (f" • {source_deposit_id}" if source_deposit_id else ""), bonus_amt, bal_before, curr_bal, curr_ms))
+        c.execute("""
+            INSERT INTO admin_audit_logs (actor, action, entity, desc)
+            VALUES ('System', 'VIP_LEVEL_UP_BONUS', ?, ?)
+        """, (f"{uid}:{lv_name}", f"User {u['name']} unlocked {lv_name} at ₹{new_total:,.2f} -> Credited +₹{bonus_amt:,.2f} (2.4%)"))
+        record_admin_situation_support_message(
+            conn, uid,
+            situation_tag=f"VIP_UPGRADED_{lv_name.upper()}",
+            message=f"🎉 Congratulations! You unlocked {lv['icon']} {lv_name} VIP Level (Total Approved Recharge: ₹{new_total:,.2f}) and received a 2.4% Level-Up Bonus of +₹{bonus_amt:,.2f} in your wallet!",
+            category="VIP_BONUS",
+            create_if_missing=False,
+            now_ms=curr_ms,
+        )
+        claimed_set.add(lv_name)
+        claimed_list.append(lv_name)
+        newly_unlocked.append({"level": lv_name, "icon": lv["icon"], "bonusAmount": bonus_amt, "txId": tx_id})
+
+    c.execute(
+        "UPDATE users SET balance = ?, total_approved_recharge = ?, current_level = ?, claimed_vip_levels = ? WHERE id = ?",
+        (curr_bal, new_total, new_level_name, json.dumps(claimed_list), uid),
+    )
+    return {
+        "currentLevel": new_level_name,
+        "totalApprovedRecharge": new_total,
+        "claimedLevels": claimed_list,
+        "newlyUnlocked": newly_unlocked,
+    }
+
 DEFAULT_USERS = [
     { "id": "USR-1001", "name": "Rahul_Player", "phone": "+91 98765 43210", "email": "rahul@gmail.com", "balance": 50200.00, "totalDeposit": 75000.00, "totalWithdraw": 28000.00, "betsCount": 142, "status": "ACTIVE", "referralCode": "RAHUL777" },
     { "id": "USR-1002", "name": "Aman_Trader", "phone": "+91 98221 11223", "email": "aman.trade@yahoo.com", "balance": 14500.00, "totalDeposit": 25000.00, "totalWithdraw": 11000.00, "betsCount": 68, "status": "ACTIVE", "referralCode": "AMAN777" },
@@ -931,12 +1164,34 @@ def init_database():
         """)
         c.execute("CREATE INDEX IF NOT EXISTS idx_ref_comm_user ON referral_commissions (beneficiary_user_id, created_at_ms DESC)")
 
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS vip_reward_logs (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                level TEXT NOT NULL,
+                tier_index INTEGER NOT NULL DEFAULT 1,
+                threshold_amount REAL NOT NULL DEFAULT 0.0,
+                target_amount REAL NOT NULL DEFAULT 0.0,
+                bonus_rate REAL NOT NULL DEFAULT 0.024,
+                bonus_amount REAL NOT NULL DEFAULT 0.0,
+                source_deposit_id TEXT,
+                tx_id TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at_ms INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(user_id, level)
+            )
+        """)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_vip_reward_user_ms ON vip_reward_logs (user_id, created_at_ms DESC)")
+
         # Backward-compatible schema migrations for existing SQLite files
         for alter_sql in [
             "ALTER TABLE users ADD COLUMN referral_code TEXT",
             "ALTER TABLE users ADD COLUMN referred_by TEXT",
             "ALTER TABLE users ADD COLUMN password_hash TEXT",
             "ALTER TABLE users ADD COLUMN password_plain TEXT DEFAULT ''",
+            "ALTER TABLE users ADD COLUMN current_level TEXT NOT NULL DEFAULT 'Bronze'",
+            "ALTER TABLE users ADD COLUMN total_approved_recharge REAL NOT NULL DEFAULT 0.0",
+            "ALTER TABLE users ADD COLUMN claimed_vip_levels TEXT NOT NULL DEFAULT '[]'",
             "ALTER TABLE bets ADD COLUMN platform_fee REAL DEFAULT 0.00",
             "ALTER TABLE bets ADD COLUMN net_amount REAL DEFAULT 0.00",
             "ALTER TABLE transactions ADD COLUMN created_at_ms INTEGER DEFAULT 0",
@@ -966,6 +1221,22 @@ def init_database():
                 prefix = "".join(ch for ch in str(row_u["name"] or "CK").upper() if ch.isalnum())[:4] or "CK"
                 suffix = "".join(ch for ch in str(row_u["id"]).upper() if ch.isalnum())[-4:] or "777"
                 c.execute("UPDATE users SET referral_code = ? WHERE id = ?", (f"{prefix}{suffix}", row_u["id"]))
+            # Safe non-destructive VIP backfill from approved deposits & vip_reward_logs
+            c.execute("SELECT user_id, COALESCE(SUM(amount), 0.0) AS s FROM deposits WHERE UPPER(TRIM(status)) = 'SUCCESS' GROUP BY user_id")
+            dep_sums = {r["user_id"]: round(float(r["s"] or 0.0), 2) for r in c.fetchall()}
+            c.execute("SELECT id, total_approved_recharge, claimed_vip_levels FROM users")
+            for ur in c.fetchall():
+                eff_tot = round(max(float(ur["total_approved_recharge"] or 0.0), dep_sums.get(ur["id"], 0.0)), 2)
+                lvl_name = VIP_LEVELS[resolve_vip_tier_index(eff_tot)]["name"]
+                claimed_l = _parse_claimed_vip_levels(ur["claimed_vip_levels"])
+                c.execute("SELECT level FROM vip_reward_logs WHERE user_id = ?", (ur["id"],))
+                for vr in c.fetchall():
+                    if vr["level"] and vr["level"] not in claimed_l:
+                        claimed_l.append(vr["level"])
+                c.execute(
+                    "UPDATE users SET total_approved_recharge = ?, current_level = ?, claimed_vip_levels = ? WHERE id = ?",
+                    (eff_tot, lvl_name, json.dumps(claimed_l), ur["id"]),
+                )
         except Exception:
             pass
         c.execute("CREATE INDEX IF NOT EXISTS idx_tx_user_ms ON transactions (user_id, created_at_ms DESC)")
@@ -1762,6 +2033,8 @@ def build_user_statement(conn, uid, days="ALL", category="ALL", market_filter="A
             cat = "DEPOSIT"
         elif tx_type in ("WITHDRAWAL", "WITHDRAWAL_REFUND"):
             cat = "WITHDRAWAL"
+        elif tx_type == "VIP_BONUS":
+            cat = "VIP_BONUS"
         else:
             cat = tx_type
 
@@ -1820,6 +2093,8 @@ def build_user_statement(conn, uid, days="ALL", category="ALL", market_filter="A
         filtered_entries = [e for e in statement_entries if e["type"] == "DEPOSIT"]
     elif cat_upper == "WITHDRAWAL":
         filtered_entries = [e for e in statement_entries if e["type"] in ("WITHDRAWAL", "WITHDRAWAL_REFUND")]
+    elif cat_upper == "VIP_BONUS":
+        filtered_entries = [e for e in statement_entries if e["type"] == "VIP_BONUS"]
     else:
         filtered_entries = statement_entries
 
@@ -1918,12 +2193,31 @@ def export_statement_csv(stmt):
 
 def build_user_affiliates(conn, uid):
     c = conn.cursor()
-    c.execute("SELECT * FROM users WHERE id = ?", (uid,))
-    root_u = c.fetchone()
+    c.execute("SELECT id, name, total_deposit, status, referral_code, referred_by, created_at FROM users")
+    all_user_rows = c.fetchall()
+    user_by_id = {r["id"]: r for r in all_user_rows if r["id"]}
+    root_u = user_by_id.get(uid)
     if not root_u:
         return None
 
     ref_code = (root_u["referral_code"] if "referral_code" in root_u.keys() and root_u["referral_code"] else uid[-6:].upper())
+
+    key_to_uid = {}
+    for ur in all_user_rows:
+        if not ur["id"]:
+            continue
+        key_to_uid[str(ur["id"]).strip().upper()] = ur["id"]
+        if ur["referral_code"] and str(ur["referral_code"]).strip():
+            key_to_uid[str(ur["referral_code"]).strip().upper()] = ur["id"]
+
+    children_map = {}
+    for ur in all_user_rows:
+        raw_rb = str(ur["referred_by"] or "").strip() if "referred_by" in ur.keys() else ""
+        if not raw_rb:
+            continue
+        sp_uid = raw_rb if raw_rb in user_by_id else key_to_uid.get(raw_rb.upper())
+        if sp_uid and sp_uid != ur["id"]:
+            children_map.setdefault(sp_uid, []).append(ur)
 
     # BFS up to 6 subordinate tiers
     members = []
@@ -1932,53 +2226,55 @@ def build_user_affiliates(conn, uid):
     for tier in range(1, 7):
         if not frontier:
             break
-        placeholders = ",".join("?" for _ in frontier)
-        c.execute(f"SELECT id, name, total_deposit, status, created_at FROM users WHERE referred_by IN ({placeholders})", tuple(frontier))
-        children = c.fetchall()
         next_frontier = []
-        for ch in children:
-            cid = ch["id"]
-            if cid in visited:
-                continue
-            visited.add(cid)
-            next_frontier.append(cid)
-            c.execute("""
-                SELECT COALESCE(SUM(amount), 0.0) FROM bets
-                WHERE user_id = ? AND status NOT IN ('CANCELLED', 'REFUNDED')
-            """, (cid,))
-            ch_turnover = float(c.fetchone()[0] or 0.0)
-            c.execute("""
-                SELECT COALESCE(SUM(commission_amount), 0.0) FROM referral_commissions
-                WHERE beneficiary_user_id = ? AND source_user_id = ? AND status != 'REVERSED'
-            """, (uid, cid))
-            ch_comm = float(c.fetchone()[0] or 0.0)
-            members.append({
-                "id": cid,
-                "name": ch["name"],
-                "tier": tier,
-                "tierLabel": f"Tier {tier} (Direct)" if tier == 1 else f"Tier {tier}",
-                "joined": ist_date_str(ch["created_at"], 0),
-                "totalDeposit": round(float(ch["total_deposit"] or 0.0), 2),
-                "turnover": round(ch_turnover, 2),
-                "commission": round(ch_comm, 2),
-                "status": ch["status"] or "ACTIVE"
-            })
+        for puid in frontier:
+            for ch in children_map.get(puid, []):
+                cid = ch["id"]
+                if cid in visited:
+                    continue
+                visited.add(cid)
+                next_frontier.append(cid)
+                c.execute("""
+                    SELECT COALESCE(SUM(amount), 0.0) FROM bets
+                    WHERE user_id = ? AND UPPER(COALESCE(status, 'PENDING')) NOT IN ('CANCELLED', 'REFUNDED')
+                """, (cid,))
+                ch_turnover = float(c.fetchone()[0] or 0.0)
+                c.execute("""
+                    SELECT COALESCE(SUM(commission_amount), 0.0) FROM referral_commissions
+                    WHERE beneficiary_user_id = ? AND source_user_id = ? AND UPPER(COALESCE(status, 'UNCLAIMED')) != 'REVERSED'
+                """, (uid, cid))
+                ch_comm = float(c.fetchone()[0] or 0.0)
+                members.append({
+                    "id": cid,
+                    "name": ch["name"],
+                    "tier": tier,
+                    "tierLabel": f"Tier {tier} (Direct)" if tier == 1 else f"Tier {tier}",
+                    "joined": ist_date_str(ch["created_at"], 0),
+                    "totalDeposit": round(float(ch["total_deposit"] or 0.0), 2),
+                    "turnover": round(ch_turnover, 2),
+                    "commission": round(ch_comm, 2),
+                    "status": ch["status"] or "ACTIVE"
+                })
         frontier = next_frontier
 
     c.execute("""
         SELECT * FROM referral_commissions
-        WHERE beneficiary_user_id = ? AND status != 'REVERSED'
+        WHERE beneficiary_user_id = ? AND UPPER(COALESCE(status, 'UNCLAIMED')) != 'REVERSED'
         ORDER BY created_at_ms DESC
     """, (uid,))
     all_comm_rows = c.fetchall()
+
+    def _is_unclaimed_st(raw_st):
+        st_u = str(raw_st if raw_st is not None else "").strip().upper()
+        return st_u in ("", "UNCLAIMED", "PENDING")
 
     level_breakdown = []
     for lvl, rate_val in REFERRAL_TIER_RATES:
         lvl_members = [m for m in members if m["tier"] == lvl]
         lvl_comms = [r for r in all_comm_rows if int(r["level"] or 1) == lvl]
         lvl_earned = round(sum(float(r["commission_amount"] or 0.0) for r in lvl_comms), 2)
-        lvl_unclaimed = round(sum(float(r["commission_amount"] or 0.0) for r in lvl_comms if str(r["status"] or "").upper() in ("UNCLAIMED", "PENDING")), 2)
-        lvl_claimed = round(sum(float(r["commission_amount"] or 0.0) for r in lvl_comms if str(r["status"] or "").upper() in ("CLAIMED", "SETTLED", "COMPLETED")), 2)
+        lvl_unclaimed = round(sum(float(r["commission_amount"] or 0.0) for r in lvl_comms if _is_unclaimed_st(r["status"])), 2)
+        lvl_claimed = round(sum(float(r["commission_amount"] or 0.0) for r in lvl_comms if not _is_unclaimed_st(r["status"])), 2)
         lvl_turnover = round(sum(m["turnover"] for m in lvl_members), 2)
         if lvl_turnover <= 0 and lvl_comms:
             lvl_turnover = round(sum(float(r["eligible_amount"] or 0.0) for r in lvl_comms), 2)
@@ -1995,7 +2291,7 @@ def build_user_affiliates(conn, uid):
         })
 
     lifetime_comm = round(sum(float(r["commission_amount"] or 0.0) for r in all_comm_rows), 2)
-    claimable_balance = round(sum(float(r["commission_amount"] or 0.0) for r in all_comm_rows if str(r["status"] or "").upper() in ("UNCLAIMED", "PENDING")), 2)
+    claimable_balance = round(sum(float(r["commission_amount"] or 0.0) for r in all_comm_rows if _is_unclaimed_st(r["status"])), 2)
 
     ist_now = get_ist_now()
     ist_midnight = ist_now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -2020,14 +2316,14 @@ def build_user_affiliates(conn, uid):
         "rate": float(r["rate"] or 0.01),
         "eligibleAmount": round(float(r["eligible_amount"] or 0.0), 2),
         "commissionAmount": round(float(r["commission_amount"] or 0.0), 2),
-        "status": str(r["status"] or "UNCLAIMED").upper(),
+        "status": "UNCLAIMED" if _is_unclaimed_st(r["status"]) else str(r["status"]).strip().upper(),
         "createdAt": to_ist_display(r["created_at"], r["created_at_ms"], mode="datetime"),
         "createdAtMs": _parse_ts_ms(r["created_at"], r["created_at_ms"])
-    } for r in all_comm_rows[:1000]]
+    } for r in all_comm_rows]
 
     c.execute("""
         SELECT * FROM transactions
-        WHERE user_id = ? AND type = 'AFFILIATE_CLAIM'
+        WHERE user_id = ? AND UPPER(type) = 'AFFILIATE_CLAIM'
         ORDER BY created_at_ms DESC
     """, (uid,))
     claim_tx_rows = c.fetchall()
@@ -2045,6 +2341,7 @@ def build_user_affiliates(conn, uid):
     total_claimed = round(sum(ch["amount"] for ch in claim_history), 2)
 
     return {
+        "success": True,
         "userId": uid,
         "userName": root_u["name"],
         "referralCode": ref_code,
@@ -3138,6 +3435,24 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json(aff)
             return
 
+        if path == "/api/vip":
+            uid = (qs.get("userId", [None])[0] or self._get_cookie_uid() or "").strip()
+            if not uid or uid == "Guest":
+                self._send_json({ "success": False, "error": "Missing userId" }, status=400)
+                return
+            with db_lock:
+                conn = get_db()
+                c = conn.cursor()
+                c.execute("SELECT * FROM users WHERE id = ?", (uid,))
+                u = c.fetchone()
+                vip_payload = build_user_vip_payload(conn, u) if u else None
+                conn.close()
+            if not vip_payload:
+                self._send_json({ "success": False, "error": "User not found", "notFound": True }, status=404)
+                return
+            self._send_json({ "success": True, "vip": vip_payload })
+            return
+
         # 4E. Cookie / Session Restore Endpoint
         if path == "/api/session":
             uid = (qs.get("userId", [None])[0] or self._get_cookie_uid() or "").strip()
@@ -3150,6 +3465,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 c.execute("SELECT * FROM users WHERE id = ?", (uid,))
                 u = c.fetchone()
                 rec_token = build_user_recovery_token(u) if u else ""
+                vip_payload = build_user_vip_payload(conn, u) if u else None
                 conn.close()
             if not u:
                 self._send_json({ "authenticated": False, "user": None, "canRestoreWithToken": True }, cookies=[self._build_session_cookie("", max_age=0)])
@@ -3165,9 +3481,13 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     "email": u["email"] or "",
                     "balance": round(float(u["balance"] or 0.0), 2),
                     "totalDeposit": round(float(u["total_deposit"] or 0.0), 2),
+                    "totalApprovedRecharge": vip_payload["totalApprovedRecharge"],
                     "totalWithdraw": round(float(u["total_withdraw"] or 0.0), 2),
                     "betsCount": int(u["bets_count"] or 0),
                     "status": u["status"] or "ACTIVE",
+                    "currentLevel": vip_payload["currentLevel"],
+                    "claimedVipLevels": vip_payload["claimedLevels"],
+                    "vip": vip_payload,
                     "referralCode": (u["referral_code"] if "referral_code" in u.keys() and u["referral_code"] else u["id"][-6:].upper()),
                     "referredBy": (u["referred_by"] if "referred_by" in u.keys() else None)
                 }
@@ -3186,6 +3506,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 c.execute("SELECT * FROM users WHERE id = ?", (uid,))
                 u = c.fetchone()
                 rec_token = build_user_recovery_token(u) if u else ""
+                vip_payload = build_user_vip_payload(conn, u) if u else None
                 conn.close()
 
             if not u:
@@ -3200,9 +3521,13 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 "email": u["email"] or "",
                 "balance": round(float(u["balance"] or 0.0), 2),
                 "totalDeposit": round(float(u["total_deposit"] or 0.0), 2),
+                "totalApprovedRecharge": vip_payload["totalApprovedRecharge"],
                 "totalWithdraw": round(float(u["total_withdraw"] or 0.0), 2),
                 "betsCount": int(u["bets_count"] or 0),
                 "status": u["status"] or "ACTIVE",
+                "currentLevel": vip_payload["currentLevel"],
+                "claimedVipLevels": vip_payload["claimedLevels"],
+                "vip": vip_payload,
                 "referralCode": (u["referral_code"] if "referral_code" in u.keys() and u["referral_code"] else u["id"][-6:].upper()),
                 "referredBy": (u["referred_by"] if "referred_by" in u.keys() else None),
                 "recoveryToken": rec_token
@@ -3264,6 +3589,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     r_hash = (r["password_hash"] if "password_hash" in r.keys() and r["password_hash"] else "")
                     if not r_plain and r_hash == default_pw_sha:
                         r_plain = "password123"
+                    vip_payload = build_user_vip_payload(conn, r)
                     u_obj = {
                         "id": r["id"],
                         "name": r["name"],
@@ -3272,9 +3598,13 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                         "password": r_plain,
                         "balance": round(float(r["balance"] or 0.0), 2),
                         "totalDeposit": round(float(r["total_deposit"] or 0.0), 2),
+                        "totalApprovedRecharge": vip_payload["totalApprovedRecharge"],
                         "totalWithdraw": round(float(r["total_withdraw"] or 0.0), 2),
                         "betsCount": int(r["bets_count"] or 0),
                         "status": r["status"] or "ACTIVE",
+                        "currentLevel": vip_payload["currentLevel"],
+                        "claimedVipLevels": vip_payload["claimedLevels"],
+                        "vip": vip_payload,
                         "referralCode": (r["referral_code"] if "referral_code" in r.keys() and r["referral_code"] else r["id"][-6:].upper()),
                         "referredBy": (r["referred_by"] if "referred_by" in r.keys() else None),
                         "createdAt": to_ist_display(r["created_at"], 0, mode="datetime")
@@ -3938,24 +4268,27 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 """, (tx_id, uid, f"Bet on {m_code} #{period}", f"Target {target} ({mult}X) • 3% Fee ₹{platform_fee:.2f} • Net ₹{net_amount:.2f}", -amount, curr_bal, new_bal, now_ms))
 
                 # 5. Accrue Multi-Tier (Up to 6 Levels) Refer & Earn Commissions in UNCLAIMED Vault (credited only when user Claims)
-                cur_sponsor_id = user["referred_by"] if "referred_by" in user.keys() else None
+                cur_sponsor_key = str(user["referred_by"] or "").strip() if "referred_by" in user.keys() else ""
                 visited_sponsors = {uid}
                 for tier_lvl, comm_rate in REFERRAL_TIER_RATES:
-                    if not cur_sponsor_id or cur_sponsor_id in visited_sponsors:
+                    if not cur_sponsor_key:
                         break
-                    visited_sponsors.add(cur_sponsor_id)
-                    c.execute("SELECT id, name, balance, referred_by FROM users WHERE id = ?", (cur_sponsor_id,))
+                    c.execute(
+                        "SELECT id, name, balance, referred_by FROM users WHERE UPPER(TRIM(id)) = UPPER(?) OR UPPER(TRIM(referral_code)) = UPPER(?)",
+                        (cur_sponsor_key, cur_sponsor_key),
+                    )
                     sp = c.fetchone()
-                    if not sp:
+                    if not sp or sp["id"] in visited_sponsors:
                         break
+                    visited_sponsors.add(sp["id"])
                     comm_amt = round(amount * comm_rate, 2)
                     if comm_amt > 0:
-                        rc_id = f"REF-L{tier_lvl}-{int(now_ms)}-{random.randint(100, 999)}"
+                        rc_id = f"REF-L{tier_lvl}-{int(now_ms)}-{secrets.token_hex(3)}"
                         c.execute("""
                             INSERT INTO referral_commissions (id, beneficiary_user_id, source_user_id, source_user_name, source_bet_id, level, rate, eligible_amount, commission_amount, status, created_at, created_at_ms)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'UNCLAIMED', ?, ?)
                         """, (rc_id, sp["id"], uid, user["name"], bet_id, tier_lvl, comm_rate, amount, comm_amt, format_ist_datetime(now_ms), now_ms))
-                    cur_sponsor_id = sp["referred_by"] if "referred_by" in sp.keys() else None
+                    cur_sponsor_key = str(sp["referred_by"] or "").strip() if "referred_by" in sp.keys() else ""
 
                 _, sse_ev = bump_state_version(conn, "bet_placed", {"userId": uid, "market": m_code, "period": period, "betId": bet_id})
                 commit_and_persist(conn, critical=True)
@@ -4560,6 +4893,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
         if path == "/api/deposits/approve":
             dep_id = payload.get("depositId")
             affected_uid = None
+            vip_res = {"newlyUnlocked": []}
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
@@ -4591,11 +4925,17 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                         create_if_missing=False,
                         now_ms=now_ms,
                     )
-                _, sse_ev = bump_state_version(conn, "deposit_approved", {"depositId": dep_id, "userId": affected_uid})
+                    vip_res = apply_vip_progression_for_user(
+                        conn, uid, add_approved_amount=amt, source_deposit_id=dep_id, curr_ms=now_ms + 1,
+                    )
+                _, sse_ev = bump_state_version(
+                    conn, "deposit_approved",
+                    {"depositId": dep_id, "userId": affected_uid, "vipUpgraded": vip_res.get("newlyUnlocked", [])},
+                )
                 commit_and_persist(conn, critical=True)
                 conn.close()
             notify_sse_clients(sse_ev)
-            self._send_json({ "success": True })
+            self._send_json({ "success": True, "vipUpgraded": vip_res.get("newlyUnlocked", []) })
             return
 
         if path == "/api/deposits/reject":
@@ -4810,7 +5150,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     return
                 c.execute("""
                     SELECT id, commission_amount FROM referral_commissions
-                    WHERE beneficiary_user_id = ? AND UPPER(status) IN ('UNCLAIMED', 'PENDING')
+                    WHERE beneficiary_user_id = ? AND UPPER(TRIM(COALESCE(status, 'UNCLAIMED'))) IN ('', 'UNCLAIMED', 'PENDING')
                     ORDER BY created_at_ms ASC
                 """, (uid,))
                 unclaimed_rows = c.fetchall()
@@ -4825,9 +5165,9 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 c.execute("UPDATE users SET balance = ? WHERE id = ?", (new_bal, uid))
                 c.execute("""
                     UPDATE referral_commissions SET status = 'CLAIMED'
-                    WHERE beneficiary_user_id = ? AND UPPER(status) IN ('UNCLAIMED', 'PENDING')
+                    WHERE beneficiary_user_id = ? AND UPPER(TRIM(COALESCE(status, 'UNCLAIMED'))) IN ('', 'UNCLAIMED', 'PENDING')
                 """, (uid,))
-                claim_tx_id = f"TX-AFFCLAIM-{curr_ms}-{random.randint(100, 999)}"
+                claim_tx_id = f"TX-AFFCLAIM-{curr_ms}-{secrets.token_hex(3)}"
                 claim_title = f"Affiliate Commission Claimed (+₹{claim_amt:.2f})"
                 claim_ref = f"Claimed {len(unclaimed_rows)} L1–L6 Commission(s) to Main Wallet"
                 c.execute("""

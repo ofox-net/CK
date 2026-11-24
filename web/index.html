@@ -2066,10 +2066,10 @@
               CK
             </div>
             <div style="flex:1;">
-              <div style="display:flex; align-items:center; gap:8px;">
+              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                 <h3 id="profileUsernameDisplay" style="font-size:16px; font-weight:900; color:#FFF;">Guest</h3>
                 <span class="badge-pill badge-green">KYC VERIFIED</span>
-                <span class="badge-pill" style="background:rgba(255,215,0,0.2); color:var(--gold);">VIP 1</span>
+                <span id="profileVipHeaderBadge" class="badge-pill" style="background:rgba(205,127,50,0.22); color:#CD7F32; border:1px solid rgba(205,127,50,0.45);">🥉 Bronze</span>
               </div>
               <p id="profileMetaDisplay" style="font-size:11px; color:var(--text-muted); margin-top:2px;">User ID: <span style="font-family:monospace; color:var(--cyan);">Guest</span></p>
             </div>
@@ -2082,6 +2082,68 @@
             </div>
             <button class="btn-primary" style="padding:6px 14px; font-size:11px; width:auto;" onclick="openDepositModal()">+ Deposit</button>
           </div>
+        </div>
+
+        <!-- VIP / Game Level & 2.4% Level-Up Bonus Card (PostgreSQL Live) -->
+        <div class="card" id="profileVipLevelCard" style="border:1px solid rgba(255,215,0,0.35); background:linear-gradient(135deg, rgba(255,215,0,0.08) 0%, var(--card) 55%, var(--surface) 100%);">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <div id="vipLevelIconCircle" style="width:44px; height:44px; border-radius:12px; background:rgba(205,127,50,0.2); border:1px solid rgba(205,127,50,0.5); display:flex; align-items:center; justify-content:center; font-size:22px; flex-shrink:0;">
+                🥉
+              </div>
+              <div>
+                <div style="font-size:10px; text-transform:uppercase; letter-spacing:0.6px; color:var(--text-muted); font-weight:700;">Game / VIP Level</div>
+                <div style="display:flex; align-items:center; gap:6px; margin-top:1px;">
+                  <strong id="vipCurrentLevelName" style="font-size:17px; color:#CD7F32; font-weight:900;">Bronze</strong>
+                  <span id="vipCurrentTierPill" class="badge-pill" style="background:rgba(255,215,0,0.16); color:var(--gold); font-size:10px;">Level 1 / 7</span>
+                </div>
+              </div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:10px; color:var(--text-muted);">Approved Recharge</div>
+              <div id="vipTotalApprovedRecharge" style="font-size:15px; font-weight:900; color:#FFF; font-family:monospace;">₹0.00</div>
+            </div>
+          </div>
+
+          <!-- Next Milestone & 2.4% Bonus Progress -->
+          <div style="background:var(--card-highlight); border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin-top:4px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:11px;">
+              <span id="vipNextLevelLabel" style="color:#FFF; font-weight:800;">Next: 🥈 Silver — Target ₹50,000</span>
+              <span id="vipNextBonusBadge" style="color:var(--green); font-weight:900; background:rgba(0,230,118,0.14); padding:2px 8px; border-radius:8px; border:1px solid rgba(0,230,118,0.35);">2.4% Bonus: +₹1,200</span>
+            </div>
+            <div style="width:100%; height:9px; background:rgba(255,255,255,0.08); border-radius:999px; overflow:hidden; margin:8px 0 6px;">
+              <div id="vipProgressFill" style="width:0%; height:100%; background:linear-gradient(90deg, var(--gold), var(--green)); border-radius:999px; transition:width 0.35s ease;"></div>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; font-size:10px; color:var(--text-muted);">
+              <span id="vipRemainingText">Need ₹10,001.00 more approved recharge to unlock Silver</span>
+              <span id="vipProgressPctText" style="color:var(--cyan); font-weight:800; font-family:monospace;">0%</span>
+            </div>
+          </div>
+
+          <!-- VIP Earnings Summary & Expand Chart Button -->
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+            <div style="background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:8px 10px;">
+              <div style="font-size:10px; color:var(--text-muted);">2.4% VIP Bonus Earned</div>
+              <div id="vipTotalBonusEarned" style="font-size:14px; font-weight:900; color:var(--gold); font-family:monospace; margin-top:2px;">₹0.00</div>
+            </div>
+            <div style="background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:8px 10px;">
+              <div style="font-size:10px; color:var(--text-muted);">Current Range</div>
+              <div id="vipCurrentRangeLabel" style="font-size:12px; font-weight:800; color:var(--cyan); margin-top:3px;">₹0 – ₹10,000</div>
+            </div>
+          </div>
+
+          <!-- Recent VIP Level-Up Bonus Credited History (PostgreSQL) -->
+          <div id="vipRewardHistoryBox" style="display:none; background:rgba(0,230,118,0.06); border:1px solid rgba(0,230,118,0.22); border-radius:10px; padding:8px 10px;">
+            <div style="font-size:10px; font-weight:800; color:var(--green); margin-bottom:4px;">✓ Credited VIP Level-Up Bonuses (One-Time 2.4%)</div>
+            <div id="vipRewardHistoryList" style="display:flex; flex-direction:column; gap:4px; font-size:11px;"></div>
+          </div>
+
+          <button type="button" class="btn-secondary" id="vipChartToggleBtn" onclick="toggleVipLevelsChart()" style="font-size:11px; padding:7px 10px;">
+            📊 View All 7 VIP Levels &amp; 2.4% Bonus Chart ▾
+          </button>
+
+          <!-- Collapsible 7-Tier VIP Rewards Chart -->
+          <div id="vipLevelsChartContainer" style="display:none; flex-direction:column; gap:6px; margin-top:2px;"></div>
         </div>
 
         <!-- Audio Settings with Preview Buttons -->
@@ -2793,6 +2855,8 @@
     let currentUserId = null;
     let currentUserName = 'Guest';
     let currentUserEmail = '';
+    let currentUserVip = null;
+    let vipLevelsChartExpanded = false;
     let currentUserPhone = '';
     let currentUserReferralCode = '';
     let currentRecoveryToken = '';
@@ -2948,7 +3012,9 @@
         currentUserId = String(serverUid);
         if (userName) currentUserName = String(userName);
         const sub = document.getElementById('headerUserSubtitle');
-        if (sub) sub.innerText = `${currentUserName} • VIP 1`;
+        const vipIcon = (currentUserVip && currentUserVip.currentIcon) ? currentUserVip.currentIcon : '🥉';
+        const vipName = (currentUserVip && currentUserVip.currentLevel) ? currentUserVip.currentLevel : 'Bronze';
+        if (sub) sub.innerText = `${currentUserName} • ${vipIcon} ${vipName}`;
       }
       if (urlChanged && typeof connectUserEventStream === 'function') {
         syncServerClock();
@@ -3311,7 +3377,7 @@
     // Transaction Ledger History (Synced live from SQLite /api/statement)
     let walletLedger = [];
 
-    // 6-Level Subordinates Team Directory & Affiliate Stats (Synced live from SQLite /api/affiliates)
+    // 6-Level Subordinates Team Directory & Affiliate Stats (Synced live from PostgreSQL /api/affiliates)
     let affiliateTeam = [];
     let affiliateCommissions = [];
     let affiliateLevelBreakdown = [];
@@ -3319,6 +3385,13 @@
     let affiliateTeamLevelFilter = 'ALL';
     let affiliateActiveSection = 'all';
     let isClaimingAffiliate = false;
+    let affiliateLoadedUserId = null;
+    let affiliateSyncInFlight = false;
+    let affiliateSyncQueued = false;
+    let affiliateRetryTimer = null;
+    let affiliateRetryAttempt = 0;
+    let sessionRestoreRetryTimer = null;
+    let sessionRestoreRetryAttempt = 0;
     let affiliateSummary = {
       referralCode: '',
       lifetimeCommission: 0,
@@ -3521,6 +3594,10 @@
         renderWalletLedger();
       } else if (tabId === 'affiliate') {
         renderAffiliateTeam();
+        syncUserAffiliates(true);
+      } else if (tabId === 'profile') {
+        renderVipProfileCard();
+        syncUserVipStatus();
       }
     }
 
@@ -3764,6 +3841,10 @@
         if (sUser.email) currentUserEmail = sUser.email;
         if (sUser.phone) currentUserPhone = sUser.phone;
         if (sUser.referralCode) currentUserReferralCode = sUser.referralCode;
+        if (sUser.vip) {
+          currentUserVip = sUser.vip;
+          renderVipProfileCard();
+        }
         updateProfileIdentityUI(currentUserId, currentUserName, currentUserEmail || currentUserPhone || '');
         if (typeof sUser.balance === 'number' && Math.abs(sUser.balance - userBalance) > 0.01) {
           const diff = sUser.balance - userBalance;
@@ -3859,6 +3940,9 @@
               syncAuthoritativeMarkets();
               fetchMarketHistory(currentMarketId);
             }
+            if (['bet_placed', 'round_settled', 'affiliate_claimed', 'user_registered'].includes(evType)) {
+              syncUserAffiliates(true);
+            }
             if (evType === 'bank_config_updated') {
               showToast('🏛️ Payment gateway details updated by Admin.');
             }
@@ -3870,6 +3954,15 @@
             }
             if (evType === 'withdrawal_rejected' && targetUid === currentUserId) {
               showToast('❌ Withdrawal rejected & refunded: ' + (reasonText || 'Check bank details'));
+            }
+            if (evType === 'deposit_approved' && targetUid === currentUserId) {
+              syncUserVipStatus();
+              if (Array.isArray(ev.vipUpgraded) && ev.vipUpgraded.length > 0) {
+                const topUpgrade = ev.vipUpgraded[ev.vipUpgraded.length - 1];
+                const totBonus = ev.vipUpgraded.reduce((s, item) => s + Number(item.bonusAmount || 0), 0);
+                showToast(`🎉 VIP Level Up! Reached ${topUpgrade.icon || '🏆'} ${topUpgrade.level} (+₹${totBonus.toLocaleString('en-IN')} 2.4% Bonus)!`);
+                playSound('win');
+              }
             }
             if (currentUserId && currentUserId !== 'Guest' &&
                 ['support_reply', 'support_updated', 'support_message', 'balance_adjusted', 'user_status_changed', 'deposit_approved', 'deposit_rejected', 'withdrawal_approved', 'withdrawal_rejected'].includes(evType)) {
@@ -6035,6 +6128,10 @@
       if (cntEl) cntEl.innerText = `${affiliateSummary.teamCount || 0} Users`;
       if (rcEl) rcEl.innerText = getActiveReferralCode() || '---';
 
+      const isAwaitingAffiliateHydration = Boolean(
+        currentUserId && currentUserId !== 'Guest' && hasBackendConnection() && affiliateLoadedUserId !== currentUserId
+      );
+
       if (claimBtn) {
         if (isClaimingAffiliate) {
           claimBtn.disabled = true;
@@ -6046,13 +6143,17 @@
         } else {
           claimBtn.disabled = true;
           claimBtn.style.opacity = '0.55';
-          claimBtn.innerText = '💰 Claim to Wallet';
+          claimBtn.innerText = isAwaitingAffiliateHydration ? '⏳ Syncing Vault...' : '💰 Claim to Wallet';
         }
       }
       if (claimNote) {
-        claimNote.innerText = claimable > 0.009
-          ? `Ready! Tap Claim to add ${fmt(claimable)} into Main Wallet`
-          : 'No pending bonus right now • Earnings accrue on L1–L6 bets';
+        if (isAwaitingAffiliateHydration) {
+          claimNote.innerText = '⏳ Waking server & syncing live affiliate vault from PostgreSQL...';
+        } else {
+          claimNote.innerText = claimable > 0.009
+            ? `Ready! Tap Claim to add ${fmt(claimable)} into Main Wallet`
+            : 'No pending bonus right now • Earnings accrue on L1–L6 bets';
+        }
       }
     }
 
@@ -6109,6 +6210,9 @@
 
     function renderAffiliateTeam() {
       updateAffiliateStatsUI();
+      const isAwaitingServer = Boolean(
+        currentUserId && currentUserId !== 'Guest' && hasBackendConnection() && affiliateLoadedUserId !== currentUserId
+      );
 
       // 1. Column-Wise Level 1 - Level 6 Breakdown Table
       const lvlBody = document.getElementById('affiliateLevelBreakdownBody');
@@ -6131,9 +6235,9 @@
           <tr style="cursor:pointer;" onclick="selectLevelFromBreakdown(${Number(r.level)})">
             <td style="font-weight:800; color:#FFF;">${escapeSupportHtml(r.label || ('Level ' + r.level))}</td>
             <td style="color:var(--gold); font-weight:800;">${Number(r.ratePercent || 0).toFixed(2)}%</td>
-            <td><span class="badge-pill" style="background:rgba(0,229,255,0.14); color:var(--cyan);">${Number(r.membersCount || 0)} Users</span></td>
-            <td style="font-family:monospace;">₹${Number(r.turnover || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-            <td style="color:var(--green); font-weight:800; font-family:monospace;">+₹${Number(r.earnedCommission || 0).toFixed(2)}</td>
+            <td><span class="badge-pill" style="background:rgba(0,229,255,0.14); color:var(--cyan);">${isAwaitingServer ? '...' : (Number(r.membersCount || 0) + ' Users')}</span></td>
+            <td style="font-family:monospace;">${isAwaitingServer ? '...' : ('₹' + Number(r.turnover || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}</td>
+            <td style="color:var(--green); font-weight:800; font-family:monospace;">${isAwaitingServer ? '...' : ('+₹' + Number(r.earnedCommission || 0).toFixed(2))}</td>
           </tr>
         `).join('');
       }
@@ -6142,10 +6246,13 @@
       const claimBody = document.getElementById('affiliateClaimHistoryBody');
       const claimBadge = document.getElementById('affClaimCountBadge');
       const claims = Array.isArray(affiliateClaimHistory) ? affiliateClaimHistory : [];
-      if (claimBadge) claimBadge.innerText = `${claims.length} Claim${claims.length === 1 ? '' : 's'}`;
+      if (claimBadge) claimBadge.innerText = isAwaitingServer ? 'Syncing...' : `${claims.length} Claim${claims.length === 1 ? '' : 's'}`;
       if (claimBody) {
         if (claims.length === 0) {
-          claimBody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:14px; font-size:12px;">No affiliate claims yet. Click "💰 Claim to Wallet" when you have claimable affiliate earnings!</td></tr>`;
+          const claimEmptyMsg = isAwaitingServer
+            ? '⏳ Syncing affiliate claim transactions from PostgreSQL...'
+            : 'No affiliate claims yet. Click "💰 Claim to Wallet" when you have claimable affiliate earnings!';
+          claimBody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:14px; font-size:12px;">${claimEmptyMsg}</td></tr>`;
         } else {
           claimBody.innerHTML = claims.map(ch => `
             <tr>
@@ -6166,9 +6273,11 @@
           affiliateTeamLevelFilter === 'ALL' || Number(m.tier) === Number(affiliateTeamLevelFilter)
         );
         if (teamList.length === 0) {
-          const emptyTxt = affiliateTeamLevelFilter === 'ALL'
-            ? 'No subordinates yet. Share your referral code to build your 6-level team!'
-            : `No members in Level ${affiliateTeamLevelFilter} yet.`;
+          const emptyTxt = isAwaitingServer
+            ? '⏳ Syncing 6-level subordinates directory from PostgreSQL...'
+            : (affiliateTeamLevelFilter === 'ALL'
+              ? 'No subordinates yet. Share your referral code to build your 6-level team!'
+              : `No members in Level ${affiliateTeamLevelFilter} yet.`);
           tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:14px; font-size:12px;">${emptyTxt}</td></tr>`;
         } else {
           tbody.innerHTML = teamList.map(m => `
@@ -6186,10 +6295,13 @@
       // 4. Live 6-Level Commission Earned History
       const commBody = document.getElementById('affiliateCommissionHistoryBody');
       const commBadge = document.getElementById('affCommCountBadge');
-      if (commBadge) commBadge.innerText = `${Array.isArray(affiliateCommissions) ? affiliateCommissions.length : 0} Entries`;
+      if (commBadge) commBadge.innerText = isAwaitingServer ? 'Syncing...' : `${Array.isArray(affiliateCommissions) ? affiliateCommissions.length : 0} Entries`;
       if (commBody) {
         if (!Array.isArray(affiliateCommissions) || affiliateCommissions.length === 0) {
-          commBody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:14px; font-size:12px;">No commission payouts recorded yet. Earn 1.00% to 0.20% across Levels 1–6 whenever your team bets!</td></tr>`;
+          const commEmptyMsg = isAwaitingServer
+            ? '⏳ Syncing 6-level commission history from PostgreSQL...'
+            : 'No commission payouts recorded yet. Earn 1.00% to 0.20% across Levels 1–6 whenever your team bets!';
+          commBody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:14px; font-size:12px;">${commEmptyMsg}</td></tr>`;
         } else {
           commBody.innerHTML = affiliateCommissions.map(rc => {
             const rcSt = String(rc.status || 'UNCLAIMED').toUpperCase();
@@ -6261,7 +6373,13 @@
     }
 
     function applyAffiliatePayload(data) {
-      if (!data) return;
+      if (!data || !data.userId || (currentUserId && data.userId !== currentUserId)) return;
+      affiliateLoadedUserId = data.userId;
+      affiliateRetryAttempt = 0;
+      if (affiliateRetryTimer) {
+        clearTimeout(affiliateRetryTimer);
+        affiliateRetryTimer = null;
+      }
       if (data.referralCode) {
         currentUserReferralCode = data.referralCode;
         persistSessionSnapshot();
@@ -6283,21 +6401,67 @@
       renderAffiliateTeam();
     }
 
-    function syncUserAffiliates() {
+    function scheduleAffiliateColdStartRetry(uid) {
+      if (!uid || currentUserId !== uid || affiliateRetryTimer) return;
+      if (affiliateRetryAttempt >= 8) return;
+      const delays = [1500, 3000, 5000, 7500, 10000, 10000, 12000, 15000];
+      const waitMs = delays[Math.min(affiliateRetryAttempt, delays.length - 1)];
+      affiliateRetryAttempt++;
+      affiliateRetryTimer = setTimeout(() => {
+        affiliateRetryTimer = null;
+        if (currentUserId === uid) {
+          syncUserAffiliates(true);
+        }
+      }, waitMs);
+    }
+
+    function syncUserAffiliates(force = false) {
       if (!currentUserId || currentUserId === 'Guest' || !hasBackendConnection()) {
         renderAffiliateTeam();
         return;
       }
+      if (affiliateSyncInFlight) {
+        if (force) affiliateSyncQueued = true;
+        return;
+      }
       const uid = currentUserId;
+      affiliateSyncInFlight = true;
+      const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      const timeoutId = controller ? setTimeout(() => { try { controller.abort(); } catch (e) {} }, 20000) : null;
+
       fetch(apiUrl(`/api/affiliates?userId=${encodeURIComponent(uid)}&t=${Date.now()}`), {
         credentials: 'include',
-        cache: 'no-store'
+        cache: 'no-store',
+        ...(controller ? { signal: controller.signal } : {})
       })
-        .then(r => r.ok ? r.json() : null)
-        .then(data => {
-          if (!data || currentUserId !== uid) return;
-          applyAffiliatePayload(data);
-        }).catch(() => {});
+        .then(async r => {
+          if (r.ok) {
+            const json = await r.json().catch(() => null);
+            return { ok: true, status: r.status, data: json };
+          }
+          return { ok: false, status: r.status, data: null };
+        })
+        .then(resObj => {
+          if (currentUserId !== uid) return;
+          if (resObj && resObj.ok && resObj.data && resObj.data.userId === uid) {
+            applyAffiliatePayload(resObj.data);
+          } else if (resObj && resObj.status >= 500) {
+            // Render cold-start wake-up / transient server error: preserve current UI and retry without wiping
+            scheduleAffiliateColdStartRetry(uid);
+          }
+        })
+        .catch(() => {
+          // Network/timeout during Render wake-up: preserve loaded DB values & retry with backoff
+          scheduleAffiliateColdStartRetry(uid);
+        })
+        .finally(() => {
+          if (timeoutId) clearTimeout(timeoutId);
+          affiliateSyncInFlight = false;
+          if (affiliateSyncQueued) {
+            affiliateSyncQueued = false;
+            syncUserAffiliates(false);
+          }
+        });
     }
 
     // BALANCE & SERVER SYNC
@@ -6349,6 +6513,10 @@
           if (data.email) currentUserEmail = data.email;
           if (data.phone) currentUserPhone = data.phone;
           if (data.referralCode) currentUserReferralCode = data.referralCode;
+          if (data.vip) {
+            currentUserVip = data.vip;
+            renderVipProfileCard();
+          }
           if (data.recoveryToken) {
             currentRecoveryToken = data.recoveryToken;
             saveRecoveryVault(data, data.recoveryToken);
@@ -6361,6 +6529,169 @@
           }
         }
       }).catch(()=>{});
+    }
+
+    const DEFAULT_VIP_CHART = [
+      { tier: 1, name: 'Bronze', icon: '🥉', minRecharge: 0, maxRecharge: 10000, targetAmount: 10000, bonusAmount: 0, rangeLabel: '₹0 – ₹10,000', color: '#CD7F32' },
+      { tier: 2, name: 'Silver', icon: '🥈', minRecharge: 10001, maxRecharge: 50000, targetAmount: 50000, bonusAmount: 1200, rangeLabel: '₹10,001 – ₹50,000', color: '#E2E8F0' },
+      { tier: 3, name: 'Gold', icon: '🥇', minRecharge: 50001, maxRecharge: 200000, targetAmount: 200000, bonusAmount: 4800, rangeLabel: '₹50,001 – ₹2,00,000', color: '#FFD700' },
+      { tier: 4, name: 'Platinum', icon: '💠', minRecharge: 200001, maxRecharge: 500000, targetAmount: 500000, bonusAmount: 12000, rangeLabel: '₹2,00,001 – ₹5,00,000', color: '#38BDF8' },
+      { tier: 5, name: 'Diamond', icon: '💎', minRecharge: 500001, maxRecharge: 1000000, targetAmount: 1000000, bonusAmount: 24000, rangeLabel: '₹5,00,001 – ₹10,00,000', color: '#A78BFA' },
+      { tier: 6, name: 'Crown', icon: '👑', minRecharge: 1000001, maxRecharge: 5000000, targetAmount: 5000000, bonusAmount: 120000, rangeLabel: '₹10,00,001 – ₹50,00,000', color: '#FB7185' },
+      { tier: 7, name: 'King', icon: '🦁', minRecharge: 5000001, maxRecharge: 10000000, targetAmount: 10000000, bonusAmount: 240000, rangeLabel: '₹50,00,001 – ₹1,00,00,000+', color: '#F59E0B' }
+    ];
+
+    function buildDefaultVipView() {
+      return {
+        currentLevel: 'Bronze',
+        currentTier: 1,
+        currentIcon: '🥉',
+        currentColor: '#CD7F32',
+        currentRangeLabel: '₹0 – ₹10,000',
+        totalApprovedRecharge: 0,
+        progressPercent: 0,
+        remainingToNext: 10001,
+        isMaxLevel: false,
+        nextLevel: { tier: 2, name: 'Silver', icon: '🥈', targetAmount: 50000, bonusAmount: 1200, minRecharge: 10001, remainingRecharge: 10001 },
+        claimedLevels: [],
+        totalVipBonusEarned: 0,
+        rewardHistory: [],
+        levelsChart: DEFAULT_VIP_CHART.map((lv, idx) => ({ ...lv, isCurrent: idx === 0, isUnlocked: idx === 0, isClaimed: false }))
+      };
+    }
+
+    function syncUserVipStatus() {
+      if (!hasBackendConnection() || !currentUserId || currentUserId === 'Guest') return;
+      const uid = currentUserId;
+      fetch(apiUrl(`/api/vip?userId=${encodeURIComponent(uid)}&t=${Date.now()}`), {
+        credentials: 'include',
+        cache: 'no-store'
+      }).then(r => r.ok ? r.json() : null).then(data => {
+        if (!data || !data.vip || currentUserId !== uid) return;
+        currentUserVip = data.vip;
+        renderVipProfileCard();
+        updateProfileIdentityUI(currentUserId, currentUserName, currentUserEmail || currentUserPhone || '');
+      }).catch(() => {});
+    }
+
+    function toggleVipLevelsChart() {
+      vipLevelsChartExpanded = !vipLevelsChartExpanded;
+      const box = document.getElementById('vipLevelsChartContainer');
+      const btn = document.getElementById('vipChartToggleBtn');
+      if (box) box.style.display = vipLevelsChartExpanded ? 'flex' : 'none';
+      if (btn) btn.innerHTML = vipLevelsChartExpanded
+        ? '📊 Hide All 7 VIP Levels &amp; 2.4% Bonus Chart ▴'
+        : '📊 View All 7 VIP Levels &amp; 2.4% Bonus Chart ▾';
+      if (vipLevelsChartExpanded) renderVipProfileCard();
+    }
+
+    function renderVipProfileCard() {
+      const v = currentUserVip || buildDefaultVipView();
+      const fmtINR = (val, dec = 0) => '₹' + Number(val || 0).toLocaleString('en-IN', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+
+      const headerBadge = document.getElementById('profileVipHeaderBadge');
+      if (headerBadge) {
+        headerBadge.innerText = `${v.currentIcon || '🥉'} ${v.currentLevel || 'Bronze'}`;
+        headerBadge.style.color = v.currentColor || 'var(--gold)';
+        headerBadge.style.background = 'rgba(255,215,0,0.16)';
+        headerBadge.style.borderColor = v.currentColor || 'rgba(255,215,0,0.4)';
+      }
+
+      const iconCircle = document.getElementById('vipLevelIconCircle');
+      if (iconCircle) {
+        iconCircle.innerText = v.currentIcon || '🥉';
+        iconCircle.style.borderColor = v.currentColor || 'rgba(255,215,0,0.45)';
+      }
+      const lvlNameEl = document.getElementById('vipCurrentLevelName');
+      if (lvlNameEl) {
+        lvlNameEl.innerText = v.currentLevel || 'Bronze';
+        lvlNameEl.style.color = v.currentColor || 'var(--gold)';
+      }
+      const tierPillEl = document.getElementById('vipCurrentTierPill');
+      if (tierPillEl) tierPillEl.innerText = `Level ${v.currentTier || 1} / 7`;
+
+      const totApprEl = document.getElementById('vipTotalApprovedRecharge');
+      if (totApprEl) totApprEl.innerText = fmtINR(v.totalApprovedRecharge, 2);
+
+      const nextLblEl = document.getElementById('vipNextLevelLabel');
+      const nextBonusEl = document.getElementById('vipNextBonusBadge');
+      const progFillEl = document.getElementById('vipProgressFill');
+      const remTxtEl = document.getElementById('vipRemainingText');
+      const pctTxtEl = document.getElementById('vipProgressPctText');
+
+      if (v.isMaxLevel || !v.nextLevel) {
+        if (nextLblEl) nextLblEl.innerText = '👑 MAX LEVEL ACHIEVED • KING';
+        if (nextBonusEl) nextBonusEl.innerText = 'Top Tier Unlocked ✓';
+        if (progFillEl) progFillEl.style.width = '100%';
+        if (remTxtEl) remTxtEl.innerText = 'All 7 VIP Milestones Completed!';
+        if (pctTxtEl) pctTxtEl.innerText = '100%';
+      } else {
+        const nl = v.nextLevel;
+        if (nextLblEl) nextLblEl.innerText = `Next: ${nl.icon || ''} ${nl.name} — ${fmtINR(nl.targetAmount, 0)}`;
+        if (nextBonusEl) nextBonusEl.innerText = `2.4% Bonus: +${fmtINR(nl.bonusAmount, 0)}`;
+        const pct = Math.max(0, Math.min(100, Number(v.progressPercent || 0)));
+        if (progFillEl) progFillEl.style.width = `${pct.toFixed(1)}%`;
+        if (remTxtEl) remTxtEl.innerText = `Recharge ${fmtINR(nl.remainingRecharge, 2)} more (at ${fmtINR(nl.minRecharge, 0)}) to unlock ${nl.name}`;
+        if (pctTxtEl) pctTxtEl.innerText = `${pct.toFixed(1)}%`;
+      }
+
+      const earnedEl = document.getElementById('vipTotalBonusEarned');
+      if (earnedEl) earnedEl.innerText = fmtINR(v.totalVipBonusEarned, 2);
+      const rangeEl = document.getElementById('vipCurrentRangeLabel');
+      if (rangeEl) rangeEl.innerText = v.currentRangeLabel || '₹0 – ₹10,000';
+
+      const histBox = document.getElementById('vipRewardHistoryBox');
+      const histList = document.getElementById('vipRewardHistoryList');
+      const histArr = Array.isArray(v.rewardHistory) ? v.rewardHistory : [];
+      if (histBox && histList) {
+        if (histArr.length === 0) {
+          histBox.style.display = 'none';
+          histList.innerHTML = '';
+        } else {
+          histBox.style.display = 'block';
+          histList.innerHTML = histArr.map(r => `
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:6px; padding:3px 0; border-bottom:1px dashed rgba(255,255,255,0.06);">
+              <span style="color:#FFF; font-weight:700;">${r.level} VIP Bonus (2.4%)</span>
+              <span style="color:var(--green); font-weight:900; font-family:monospace;">+${fmtINR(r.bonusAmount, 2)}</span>
+            </div>
+          `).join('');
+        }
+      }
+
+      const chartBox = document.getElementById('vipLevelsChartContainer');
+      if (chartBox && vipLevelsChartExpanded) {
+        const rows = Array.isArray(v.levelsChart) && v.levelsChart.length ? v.levelsChart : buildDefaultVipView().levelsChart;
+        chartBox.innerHTML = rows.map(lv => {
+          const badge = lv.isCurrent
+            ? `<span style="background:rgba(255,215,0,0.2); color:var(--gold); border:1px solid rgba(255,215,0,0.45); padding:2px 6px; border-radius:6px; font-size:9px; font-weight:900;">CURRENT</span>`
+            : (lv.isClaimed
+              ? `<span style="background:rgba(0,230,118,0.18); color:var(--green); border:1px solid rgba(0,230,118,0.4); padding:2px 6px; border-radius:6px; font-size:9px; font-weight:900;">CLAIMED ✓</span>`
+              : (lv.isUnlocked
+                ? `<span style="background:rgba(0,229,255,0.16); color:var(--cyan); padding:2px 6px; border-radius:6px; font-size:9px; font-weight:900;">UNLOCKED</span>`
+                : `<span style="background:rgba(255,255,255,0.07); color:var(--text-muted); padding:2px 6px; border-radius:6px; font-size:9px; font-weight:800;">LOCKED</span>`));
+          const bonusTxt = Number(lv.bonusAmount || 0) > 0
+            ? `<strong style="color:var(--green); font-family:monospace;">+${fmtINR(lv.bonusAmount, 0)} (2.4%)</strong>`
+            : `<span style="color:var(--text-muted); font-size:10px;">Starter Tier</span>`;
+          return `
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:8px 10px; border-radius:8px; background:${lv.isCurrent ? 'rgba(255,215,0,0.09)' : 'var(--card-highlight)'}; border:1px solid ${lv.isCurrent ? 'rgba(255,215,0,0.45)' : 'var(--border)'};">
+              <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+                <span style="font-size:17px;">${lv.icon || '🏅'}</span>
+                <div>
+                  <div style="font-size:12px; font-weight:900; color:${lv.color || '#FFF'}; display:flex; align-items:center; gap:6px;">
+                    <span>${lv.tier}. ${lv.name}</span>
+                    ${badge}
+                  </div>
+                  <div style="font-size:10px; color:var(--text-muted); margin-top:1px;">Recharge: ${lv.rangeLabel}</div>
+                </div>
+              </div>
+              <div style="text-align:right; flex-shrink:0;">
+                <div style="font-size:11px;">${bonusTxt}</div>
+                <div style="font-size:9px; color:var(--text-muted);">Target ${fmtINR(lv.targetAmount, 0)}</div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
     }
 
     // MODAL HELPERS & PROFILE ACTIONS
@@ -6378,10 +6709,13 @@
       const nameEl = document.getElementById('profileUsernameDisplay');
       const metaEl = document.getElementById('profileMetaDisplay');
       const hdrEl = document.getElementById('headerUserSubtitle');
+      const vipIcon = (currentUserVip && currentUserVip.currentIcon) ? currentUserVip.currentIcon : '🥉';
+      const vipName = (currentUserVip && currentUserVip.currentLevel) ? currentUserVip.currentLevel : 'Bronze';
       if (avEl) avEl.innerText = initials;
       if (nameEl) nameEl.innerText = cleanName;
       if (metaEl) metaEl.innerHTML = `User ID: <span style="font-family:monospace; color:var(--cyan);">${uid || 'Guest'}</span>${contact ? ' • ' + contact : ''}`;
-      if (hdrEl) hdrEl.innerText = (uid && uid !== 'Guest') ? `${cleanName} • VIP 1` : 'Guest • Please Login';
+      if (hdrEl) hdrEl.innerText = (uid && uid !== 'Guest') ? `${cleanName} • ${vipIcon} ${vipName}` : 'Guest • Please Login';
+      renderVipProfileCard();
     }
 
     function openChangePasswordModal() { document.getElementById('changePasswordModal').classList.add('active'); }
@@ -6438,10 +6772,15 @@
       currentUserPhone = '';
       currentUserReferralCode = '';
       currentRecoveryToken = '';
+      currentUserVip = null;
       userBalance = 0.00;
       latestStatementData = null;
       userBetSlipsHistory = [];
       walletLedger = [];
+      affiliateLoadedUserId = null;
+      affiliateRetryAttempt = 0;
+      if (affiliateRetryTimer) { clearTimeout(affiliateRetryTimer); affiliateRetryTimer = null; }
+      if (sessionRestoreRetryTimer) { clearTimeout(sessionRestoreRetryTimer); sessionRestoreRetryTimer = null; }
       affiliateTeam = [];
       affiliateCommissions = [];
       affiliateLevelBreakdown = [];
@@ -6455,6 +6794,7 @@
       renderAffiliateTeam();
       updateBalanceUI();
       updateProfileIdentityUI(null, 'Guest', '');
+      renderVipProfileCard();
       showToast('Logged out. Please log in or register.');
       openAuthModal(0);
     }
@@ -6528,6 +6868,8 @@
     }
 
     function completeAuthSession(userObj, recToken = '') {
+      const prevUid = currentUserId;
+      const isSameUser = Boolean(prevUid && prevUid === userObj.id);
       currentUserId = userObj.id;
       currentUserName = userObj.name || userObj.username || userObj.id;
       currentUserEmail = userObj.email || '';
@@ -6538,13 +6880,36 @@
       const curStatus = String(userObj.status || 'ACTIVE').toUpperCase();
       lastKnownAccountStatus = curStatus;
       setAccountBlockedBanner(curStatus === 'BLOCKED');
-      latestStatementData = null;
-      walletLedger = [];
-      affiliateTeam = [];
-      affiliateCommissions = [];
-      affiliateLevelBreakdown = [];
-      affiliateClaimHistory = [];
-      lastKnownBetStatuses = {};
+      if (!isSameUser) {
+        latestStatementData = null;
+        walletLedger = [];
+        affiliateLoadedUserId = null;
+        affiliateTeam = [];
+        affiliateCommissions = [];
+        affiliateLevelBreakdown = [];
+        affiliateClaimHistory = [];
+        affiliateSummary = {
+          referralCode: currentUserReferralCode || '',
+          lifetimeCommission: 0,
+          claimableBalance: 0,
+          totalClaimed: 0,
+          claimCount: 0,
+          todayCommission: 0,
+          networkTurnover: 0,
+          teamCount: 0
+        };
+        lastKnownBetStatuses = {};
+      }
+      affiliateRetryAttempt = 0;
+      if (affiliateRetryTimer) {
+        clearTimeout(affiliateRetryTimer);
+        affiliateRetryTimer = null;
+      }
+      if (userObj.vip) {
+        currentUserVip = userObj.vip;
+      } else if (!isSameUser) {
+        currentUserVip = null;
+      }
       loadSavedBetSlipsForCurrentUser();
       if (recToken) saveRecoveryVault(userObj, recToken);
       persistSessionSnapshot();
@@ -6553,10 +6918,12 @@
       closeModal('authModal');
       renderBetSlips();
       renderAffiliateTeam();
+      renderVipProfileCard();
       fetchInitialBackendWallet();
       loadUserBetsFromBackend();
       syncUserTransactions();
-      syncUserAffiliates();
+      syncUserAffiliates(true);
+      syncUserVipStatus();
       syncAdminStateRealtime(true);
       fetchUserSupportThread(false, false);
     }
@@ -6684,6 +7051,7 @@
 
     async function restoreSessionFromServerAndStorage(forceOpenAuthIfMissing = false) {
       const storedToken = getStoredRecoveryToken();
+      let backendTransientError = false;
       if (hasBackendConnection()) {
         try {
           const query = (currentUserId && currentUserId !== 'Guest')
@@ -6691,14 +7059,17 @@
             : `?t=${Date.now()}`;
           const res = await fetch(apiUrl(`/api/session${query}`), { credentials: 'include', cache: 'no-store' });
           if (res.ok) {
+            sessionRestoreRetryAttempt = 0;
             const data = await res.json();
             if (data && data.authenticated && data.user) {
               completeAuthSession(data.user, data.recoveryToken || storedToken);
               return;
             }
+          } else if (res.status >= 500) {
+            backendTransientError = true;
           }
-          // If server restarted/recycled and lost SQLite record, automatically restore via signed recoveryToken
-          if (storedToken) {
+          // If server restarted/recycled and user not yet in DB, restore via signed recoveryToken (only if not 5xx server waking)
+          if (storedToken && !backendTransientError) {
             const r2 = await fetch(apiUrl('/api/users/restore-session'), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -6706,25 +7077,40 @@
               body: JSON.stringify({ recoveryToken: storedToken })
             });
             if (r2.ok) {
+              sessionRestoreRetryAttempt = 0;
               const d2 = await r2.json();
               if (d2 && d2.authenticated && d2.user) {
                 completeAuthSession(d2.user, d2.recoveryToken || storedToken);
                 return;
               }
+            } else if (r2.status >= 500) {
+              backendTransientError = true;
             }
           }
-        } catch (e) {}
+        } catch (e) {
+          backendTransientError = true;
+        }
       }
 
-      if (currentUserId && currentUserId !== 'Guest' && !forceOpenAuthIfMissing) {
+      if (currentUserId && currentUserId !== 'Guest' && (!forceOpenAuthIfMissing || backendTransientError)) {
         loadSavedBetSlipsForCurrentUser();
         updateProfileIdentityUI(currentUserId, currentUserName, currentUserEmail || currentUserPhone || '');
         updateBalanceUI();
         renderBetSlips();
+        renderAffiliateTeam();
         fetchInitialBackendWallet();
         loadUserBetsFromBackend();
         syncUserTransactions();
-        syncUserAffiliates();
+        syncUserAffiliates(true);
+        if (backendTransientError && !sessionRestoreRetryTimer && sessionRestoreRetryAttempt < 6) {
+          const delays = [2000, 4000, 6000, 8000, 10000, 12000];
+          const waitMs = delays[Math.min(sessionRestoreRetryAttempt, delays.length - 1)];
+          sessionRestoreRetryAttempt++;
+          sessionRestoreRetryTimer = setTimeout(() => {
+            sessionRestoreRetryTimer = null;
+            restoreSessionFromServerAndStorage(false);
+          }, waitMs);
+        }
         return;
       }
 
@@ -6738,6 +7124,7 @@
       userBalance = 0.00;
       userBetSlipsHistory = [];
       walletLedger = [];
+      affiliateLoadedUserId = null;
       affiliateTeam = [];
       affiliateCommissions = [];
       affiliateLevelBreakdown = [];
