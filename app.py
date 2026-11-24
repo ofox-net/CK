@@ -22,6 +22,7 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Flask, Response, jsonify, make_response, redirect, request, send_from_directory
 from sqlalchemy import func, text
+from sqlalchemy.exc import SQLAlchemyError
 
 from models import (
     AdminAuditLog,
@@ -486,10 +487,10 @@ def build_sqlalchemy_database_uri() -> tuple[str, dict, bool]:
     use_ssl = (host not in ("localhost", "127.0.0.1", "::1")) and (sslmode != "disable")
     engine_opts: dict = {
         "pool_pre_ping": True,
-        "pool_recycle": 240,
+        "pool_recycle": 120,
         "pool_size": 10,
         "max_overflow": 20,
-        "pool_timeout": 20,
+        "pool_timeout": 25,
     }
     if target_scheme == "postgresql+pg8000" and use_ssl:
         engine_opts["connect_args"] = {"ssl_context": ssl.create_default_context()}
@@ -510,6 +511,57 @@ db.init_app(app)
 db_lock = threading.RLock()
 sse_lock = threading.Lock()
 sse_subscribers: list[queue.Queue] = []
+
+
+def run_with_db_retry(fn, attempts: int = 4, delay_sec: float = 0.6):
+    """Executes a read/query callable with automatic rollback + pool recovery on transient Render PG wake-up errors."""
+    last_exc = None
+    for i in range(max(1, attempts)):
+        try:
+            return fn()
+        except SQLAlchemyError as exc:
+            last_exc = exc
+            try:
+                db.session.rollback()
+                db.session.remove()
+            except Exception:
+                pass
+            if i + 1 < attempts:
+                if i >= 1:
+                    try:
+                        db.engine.dispose()
+                    except Exception:
+                        pass
+                time.sleep(delay_sec * (i + 1))
+    raise last_exc
+
+
+def resolve_user_by_id_safe(uid: str):
+    clean = str(uid or "").strip()
+    if not clean or clean == "Guest":
+        return None
+    u = db.session.get(User, clean)
+    if u:
+        return u
+    return User.query.filter(func.upper(func.trim(User.id)) == clean.upper()).first()
+
+
+def extract_referral_code_input(raw_val: str) -> str:
+    txt = str(raw_val or "").strip()
+    if not txt:
+        return ""
+    if "ref=" in txt.lower():
+        try:
+            parsed = urllib.parse.urlparse(txt)
+            q_ref = urllib.parse.parse_qs(parsed.query).get("ref", [])
+            if q_ref and str(q_ref[0]).strip():
+                return str(q_ref[0]).strip().upper()
+            m = re.search(r"[?&]ref=([^&\s#]+)", txt, flags=re.IGNORECASE)
+            if m:
+                return urllib.parse.unquote(m.group(1)).strip().upper()
+        except Exception:
+            pass
+    return txt.upper()
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -972,7 +1024,7 @@ def init_database():
     with app.app_context():
         # Resilient cold-start DB wake-up loop (handles Render PostgreSQL sleep/wake transient hiccups)
         last_exc = None
-        for attempt in range(5):
+        for attempt in range(12):
             try:
                 db.create_all()
                 last_exc = None
@@ -981,10 +1033,12 @@ def init_database():
                 last_exc = exc
                 try:
                     db.session.rollback()
+                    db.session.remove()
+                    db.engine.dispose()
                 except Exception:
                     pass
-                print(f"[DB] Startup wake-up attempt {attempt + 1}/5 waiting on DB: {exc}")
-                time.sleep(1.5)
+                print(f"[DB] Startup wake-up attempt {attempt + 1}/12 waiting on DB: {exc}")
+                time.sleep(2.0)
         if last_exc is not None:
             raise last_exc
 
@@ -1288,6 +1342,11 @@ def settle_round_in_db(market_code: str, round_id: str, period: str, winning_num
         target = str(b.prediction_target or "").upper().strip()
         actual_mult = float(b.multiplier or 2.0)
 
+        u = User.query.get(b.user_id)
+        if u:
+            # Idempotent guarantee: ensure 6-level UNCLAIMED commissions exist in PostgreSQL for every settled bet
+            accrue_referral_commissions_for_bet(u, b, curr_ms=eff_end_ms)
+
         won = False
         if btype in ("BIG_SMALL", "SIZE"):
             if (target == "BIG" and is_big) or (target == "SMALL" and not is_big):
@@ -1318,7 +1377,6 @@ def settle_round_in_db(market_code: str, round_id: str, period: str, winning_num
             b.result_text = f"Won ₹{win_amount:,.2f} (Outcome {winning_number} {color.upper()})"
             b.settled_at = now_ts
 
-            u = User.query.get(b.user_id)
             curr_bal = float(u.balance) if u else 0.0
             new_bal = round(curr_bal + win_amount, 2)
             if u:
@@ -1520,10 +1578,66 @@ def find_user_by_identifier(identifier: str):
     return None
 
 
+def accrue_referral_commissions_for_bet(u: User, bet_row: Bet, curr_ms: int | None = None) -> int:
+    """Idempotently accrues Level 1–6 (1.00%, 0.75%, 0.60%, 0.50%, 0.30%, 0.20%) commissions into PostgreSQL
+    as UNCLAIMED vault entries using db.session.add(...). Caller handles commit/rollback."""
+    if not u or not bet_row:
+        return 0
+    st_u = str(bet_row.status or "").strip().upper()
+    if st_u in ("CANCELLED", "REFUNDED"):
+        return 0
+    amount = round(float(bet_row.amount or 0.0), 2)
+    if amount <= 0.0:
+        return 0
+    if ReferralCommission.query.filter_by(source_bet_id=bet_row.bet_id).first():
+        return 0
+
+    eff_ms = int(curr_ms or bet_row.created_at_ms or now_ms())
+    now_str = str(bet_row.created_at or format_ist_datetime(eff_ms))
+    cur_sponsor_key = str(u.referred_by or "").strip()
+    visited = {u.id}
+    added = 0
+    for tier_lvl, comm_rate in REFERRAL_TIER_RATES:
+        if not cur_sponsor_key:
+            break
+        sp = db.session.get(User, cur_sponsor_key)
+        if not sp:
+            sp = User.query.filter(
+                (func.upper(func.trim(User.id)) == cur_sponsor_key.upper())
+                | (func.upper(func.trim(User.referral_code)) == cur_sponsor_key.upper())
+                | (func.lower(func.trim(User.name)) == cur_sponsor_key.lower())
+            ).first()
+        if not sp or sp.id in visited:
+            break
+        visited.add(sp.id)
+        comm_amt = round(amount * comm_rate, 2)
+        if comm_amt > 0.0:
+            db.session.add(ReferralCommission(
+                id=f"REF-L{tier_lvl}-{eff_ms}-{secrets.token_hex(3)}",
+                beneficiary_user_id=sp.id,
+                source_user_id=u.id,
+                source_user_name=u.name,
+                source_bet_id=bet_row.bet_id,
+                level=tier_lvl,
+                rate=comm_rate,
+                eligible_amount=amount,
+                commission_amount=comm_amt,
+                status="UNCLAIMED",
+                created_at=now_str,
+                created_at_ms=eff_ms,
+            ))
+            added += 1
+        cur_sponsor_key = str(sp.referred_by or "").strip()
+    return added
+
+
 def _build_affiliate_graph(all_users: list[User]):
-    """Builds canonical sponsor->children graph supporting ID, referral_code, or case-insensitive links."""
+    """Builds canonical sponsor->children graph supporting ID, referral_code, name, or case-insensitive links."""
     user_by_id = {u.id: u for u in all_users if u.id}
     key_to_uid: dict[str, str] = {}
+    for u in all_users:
+        if u.name and str(u.name).strip():
+            key_to_uid[str(u.name).strip().upper()] = u.id
     for u in all_users:
         if not u.id:
             continue
@@ -1678,6 +1792,13 @@ def build_user_affiliates(uid: str):
     user_by_id, children_map = _build_affiliate_graph(all_users)
     root_u = user_by_id.get(uid)
     if not root_u:
+        clean_u = str(uid or "").strip().upper()
+        for candidate in all_users:
+            if str(candidate.id or "").strip().upper() == clean_u:
+                root_u = candidate
+                uid = candidate.id
+                break
+    if not root_u:
         return None
 
     # Gather all downline IDs up to 6 tiers for 1 bulk Bet turnover query
@@ -1721,7 +1842,10 @@ def build_user_affiliates(uid: str):
 
     claim_tx_rows = (
         Transaction.query
-        .filter(Transaction.user_id == uid, func.upper(Transaction.type) == "AFFILIATE_CLAIM")
+        .filter(
+            Transaction.user_id == uid,
+            func.upper(func.trim(Transaction.type)).in_(["AFFILIATE_CLAIM", "AFFILIATE_CLAIMED"]),
+        )
         .order_by(Transaction.created_at_ms.desc())
         .all()
     )
@@ -1759,7 +1883,7 @@ def build_all_affiliates_bulk(all_users: list[User], all_comm_rows: list[Referra
 
     claim_rows = (
         Transaction.query
-        .filter(func.upper(Transaction.type) == "AFFILIATE_CLAIM")
+        .filter(func.upper(func.trim(Transaction.type)).in_(["AFFILIATE_CLAIM", "AFFILIATE_CLAIMED"]))
         .order_by(Transaction.created_at_ms.desc())
         .all()
     )
@@ -1787,11 +1911,13 @@ def build_all_affiliates_bulk(all_users: list[User], all_comm_rows: list[Referra
             "totalEarnedCommission": aff["lifetimeCommission"],
             "claimableBalance": aff["claimableBalance"],
             "totalClaimed": aff["totalClaimed"],
+            "claimCount": aff["claimCount"],
             "levelBreakdown": aff["levelBreakdown"],
             "yesterdayCommission": aff["todayCommission"], "todayCommission": aff["todayCommission"],
             "networkTurnover": aff["networkTurnover"],
             "members": [{
-                "id": m["id"], "name": m["name"], "tier": m["tierLabel"], "joinDate": m["joined"],
+                "id": m["id"], "name": m["name"], "tier": m["tierLabel"], "tierNum": m["tier"],
+                "joinDate": m["joined"], "joined": m["joined"],
                 "totalDeposit": m["totalDeposit"], "turnover": m["turnover"],
                 "commission": m["commission"], "status": m["status"],
             } for m in aff["members"]],
@@ -1849,7 +1975,9 @@ def build_user_statement(uid: str, days="ALL", category="ALL", market_filter="AL
     cat_upper = str(category or "ALL").upper().strip()
     mkt_upper = str(market_filter or "ALL").upper().strip()
 
-    u = User.query.get(uid)
+    u = resolve_user_by_id_safe(uid)
+    if u:
+        uid = u.id
     wallet_balance = float(u.balance) if u else 0.0
     user_name = u.name if u else uid
     referral_code = (u.referral_code or uid[-6:].upper()) if u else uid[-6:].upper()
@@ -2480,11 +2608,14 @@ def shutdown_db_session(exception=None):
 @app.route("/api/health", methods=["GET"])
 def api_health():
     try:
-        db.session.execute(text("SELECT 1"))
+        def _probe():
+            db.session.execute(text("SELECT 1"))
+            return get_state_version()
+        ver = run_with_db_retry(_probe, attempts=4, delay_sec=0.5)
         return jsonify({
             "status": "ok",
             "database": "POSTGRESQL" if IS_POSTGRES else "SQLITE",
-            "stateVersion": get_state_version(),
+            "stateVersion": ver,
             "serverTimeMs": now_ms(),
             "istTime": format_ist_datetime(),
         })
@@ -2660,45 +2791,50 @@ def api_bets():
     curr_ms = now_ms()
     parsed_days = _parse_days_arg(request.args.get("days", "ALL"), default_all=True)
 
-    with db_lock:
-        cur_p_map = {mk: calculate_authoritative_round(mk, curr_ms)["period"] for mk in MARKET_KEYS}
-        pending_bets = Bet.query.filter(Bet.user_id == uid, Bet.status.in_(["PENDING", "LOCKED"])).all()
-        checked_rounds = set()
-        for pb in pending_bets:
-            key = (pb.market, pb.round_id, pb.period)
-            if key in checked_rounds:
-                continue
-            checked_rounds.add(key)
-            if pb.market in cur_p_map and str(pb.period).isdigit() and int(pb.period) < int(cur_p_map[pb.market]):
-                sr = Round.query.filter_by(round_id=pb.round_id, status="SETTLED").first()
-                if sr and sr.result_number is not None:
-                    win_n, d_m = int(sr.result_number), sr.draw_mode or "AUTO_RANDOM"
-                else:
-                    mkt = Market.query.get(pb.market)
-                    if mkt and mkt.manual_override_num is not None and (mkt.manual_override_period == pb.period or not mkt.manual_override_period):
-                        win_n, d_m = int(mkt.manual_override_num), "MANUAL_ADMIN"
+    def _query_bets():
+        with db_lock:
+            u = resolve_user_by_id_safe(uid)
+            eff_uid = u.id if u else uid
+            cur_p_map = {mk: calculate_authoritative_round(mk, curr_ms)["period"] for mk in MARKET_KEYS}
+            pending_bets = Bet.query.filter(Bet.user_id == eff_uid, Bet.status.in_(["PENDING", "LOCKED"])).all()
+            checked_rounds = set()
+            for pb in pending_bets:
+                key = (pb.market, pb.round_id, pb.period)
+                if key in checked_rounds:
+                    continue
+                checked_rounds.add(key)
+                if pb.market in cur_p_map and str(pb.period).isdigit() and int(pb.period) < int(cur_p_map[pb.market]):
+                    sr = Round.query.filter_by(round_id=pb.round_id, status="SETTLED").first()
+                    if sr and sr.result_number is not None:
+                        win_n, d_m = int(sr.result_number), sr.draw_mode or "AUTO_RANDOM"
                     else:
-                        win_n, d_m = generate_provably_fair_outcome(pb.market, pb.period, use_csprng=True)["number"], "AUTO_RANDOM"
-                settle_round_in_db(pb.market, pb.round_id, pb.period, win_n, d_m, "SYSTEM_ROLLOVER")
+                        mkt = Market.query.get(pb.market)
+                        if mkt and mkt.manual_override_num is not None and (mkt.manual_override_period == pb.period or not mkt.manual_override_period):
+                            win_n, d_m = int(mkt.manual_override_num), "MANUAL_ADMIN"
+                        else:
+                            win_n, d_m = generate_provably_fair_outcome(pb.market, pb.period, use_csprng=True)["number"], "AUTO_RANDOM"
+                    settle_round_in_db(pb.market, pb.round_id, pb.period, win_n, d_m, "SYSTEM_ROLLOVER")
 
-        aq = Bet.query.filter(Bet.user_id == uid, Bet.status.in_(["PENDING", "LOCKED"]))
-        hq = Bet.query.filter(Bet.user_id == uid)
-        if m_code:
-            aq = aq.filter(Bet.market == m_code)
-            hq = hq.filter(Bet.market == m_code)
-        if parsed_days:
-            cutoff_ms = curr_ms - (parsed_days * 86400 * 1000)
-            hq = hq.filter((Bet.created_at_ms >= cutoff_ms) | (Bet.created_at_ms == 0))
+            aq = Bet.query.filter(Bet.user_id == eff_uid, Bet.status.in_(["PENDING", "LOCKED"]))
+            hq = Bet.query.filter(Bet.user_id == eff_uid)
+            if m_code:
+                aq = aq.filter(Bet.market == m_code)
+                hq = hq.filter(Bet.market == m_code)
+            if parsed_days:
+                cutoff_ms = curr_ms - (parsed_days * 86400 * 1000)
+                hq = hq.filter((Bet.created_at_ms >= cutoff_ms) | (Bet.created_at_ms == 0))
 
-        active_rows = aq.order_by(Bet.created_at_ms.desc()).all()
-        history_rows = hq.order_by(Bet.created_at_ms.desc()).all()
+            active_rows = aq.order_by(Bet.created_at_ms.desc()).all()
+            history_rows = hq.order_by(Bet.created_at_ms.desc()).all()
+            return eff_uid, [bet_to_dict(b) for b in active_rows], [bet_to_dict(b) for b in history_rows]
 
+    eff_uid, active_list, history_list = run_with_db_retry(_query_bets)
     return jsonify({
-        "userId": uid,
+        "userId": eff_uid,
         "retentionDays": "PERMANENT",
         "days": parsed_days if parsed_days else "ALL",
-        "activeBets": [bet_to_dict(b) for b in active_rows],
-        "betHistory": [bet_to_dict(b) for b in history_rows],
+        "activeBets": active_list,
+        "betHistory": history_list,
     })
 
 
@@ -2808,9 +2944,10 @@ def api_bets_place():
 
     with db_lock:
         try:
-            u = User.query.get(uid)
+            u = resolve_user_by_id_safe(uid)
             if not u:
                 return jsonify({"success": False, "error": "User account not found"}), 404
+            uid = u.id
             if u.status == "BLOCKED":
                 return jsonify({"success": False, "error": "Account is blocked by Admin"}), 403
             curr_bal = float(u.balance)
@@ -2847,30 +2984,7 @@ def api_bets_place():
             ))
 
             # 6-Level Downline Commission Accrual (held in UNCLAIMED affiliate vault until sponsor explicitly claims to wallet)
-            cur_sponsor_key = str(u.referred_by or "").strip()
-            visited = {uid}
-            for tier_lvl, comm_rate in REFERRAL_TIER_RATES:
-                if not cur_sponsor_key:
-                    break
-                sp = User.query.get(cur_sponsor_key)
-                if not sp:
-                    sp = User.query.filter(
-                        (func.upper(func.trim(User.id)) == cur_sponsor_key.upper())
-                        | (func.upper(func.trim(User.referral_code)) == cur_sponsor_key.upper())
-                    ).first()
-                if not sp or sp.id in visited:
-                    break
-                visited.add(sp.id)
-                comm_amt = round(amount * comm_rate, 2)
-                if comm_amt > 0:
-                    db.session.add(ReferralCommission(
-                        id=f"REF-L{tier_lvl}-{curr_ms}-{secrets.token_hex(3)}",
-                        beneficiary_user_id=sp.id, source_user_id=uid, source_user_name=u.name,
-                        source_bet_id=bet_id, level=tier_lvl, rate=comm_rate,
-                        eligible_amount=amount, commission_amount=comm_amt,
-                        status="UNCLAIMED", created_at=now_str, created_at_ms=curr_ms,
-                    ))
-                cur_sponsor_key = str(sp.referred_by or "").strip()
+            accrue_referral_commissions_for_bet(u, bet_row, curr_ms)
 
             _, sse_ev = bump_state_version("bet_placed", {"userId": uid, "market": m_code, "period": period, "betId": bet_id})
             db.session.commit()
@@ -2904,11 +3018,11 @@ def api_session():
     uid = (request.args.get("userId") or get_cookie_uid() or "").strip()
     if not uid or uid == "Guest":
         return jsonify({"authenticated": False, "user": None})
-    u = User.query.get(uid)
-    if not u:
+    payload = run_with_db_retry(lambda: (lambda u: {"found": bool(u), "recoveryToken": build_user_recovery_token(u) if u else "", "user": user_to_dict(u) if u else None})(resolve_user_by_id_safe(uid)))
+    if not payload["found"]:
         resp = make_response(jsonify({"authenticated": False, "user": None, "canRestoreWithToken": True}))
         return attach_session_cookie(resp, "", max_age=0)
-    return jsonify({"authenticated": True, "recoveryToken": build_user_recovery_token(u), "user": user_to_dict(u)})
+    return jsonify({"authenticated": True, "recoveryToken": payload["recoveryToken"], "user": payload["user"]})
 
 
 @app.route("/api/user", methods=["GET"])
@@ -2917,11 +3031,9 @@ def api_user_profile():
     uid = (request.args.get("id") or request.args.get("userId") or get_cookie_uid() or "").strip()
     if not uid or uid == "Guest":
         return jsonify({"success": False, "error": "Not authenticated", "notFound": True}), 404
-    u = User.query.get(uid)
-    if not u:
+    d = run_with_db_retry(lambda: (lambda u: ({**user_to_dict(u), "recoveryToken": build_user_recovery_token(u)}) if u else None)(resolve_user_by_id_safe(uid)))
+    if not d:
         return jsonify({"success": False, "error": "User not found", "notFound": True}), 404
-    d = user_to_dict(u)
-    d["recoveryToken"] = build_user_recovery_token(u)
     return jsonify(d)
 
 
@@ -2941,7 +3053,7 @@ def api_users_register():
     bal = float(payload.get("balance") if payload.get("balance") is not None else 100.00)
     clean_prefix = "".join(ch for ch in name.upper() if ch.isalnum())[:4] or "CK"
     ref_code = str(payload.get("referralCode") or f"{clean_prefix}{random.randint(100, 999)}").strip().upper()
-    ref_by_code = str(payload.get("referredBy") or payload.get("inviteCode") or payload.get("sponsorCode") or "").strip().upper()
+    ref_by_code = extract_referral_code_input(payload.get("referredBy") or payload.get("inviteCode") or payload.get("sponsorCode") or "")
 
     if len(name) < 3:
         return jsonify({"success": False, "error": "Username must be at least 3 characters"}), 400
@@ -3548,7 +3660,9 @@ def api_statement():
     if not uid or uid == "Guest":
         return jsonify({"success": False, "error": "Missing userId"}), 400
     req_days = request.args.get("days", "ALL")
-    return jsonify(build_user_statement(uid, days=req_days, category=request.args.get("category", "ALL"), market_filter=request.args.get("market", "ALL")))
+    cat = request.args.get("category", "ALL")
+    mkt = request.args.get("market", "ALL")
+    return jsonify(run_with_db_retry(lambda: build_user_statement(uid, days=req_days, category=cat, market_filter=mkt)))
 
 
 @app.route("/api/statement/export", methods=["GET"])
@@ -3556,7 +3670,10 @@ def api_statement_export():
     uid = (request.args.get("userId") or get_cookie_uid() or "").strip()
     if not uid or uid == "Guest":
         return jsonify({"success": False, "error": "Missing userId"}), 400
-    stmt = build_user_statement(uid, days=request.args.get("days", "ALL"), category=request.args.get("category", "ALL"), market_filter=request.args.get("market", "ALL"))
+    req_days = request.args.get("days", "ALL")
+    cat = request.args.get("category", "ALL")
+    mkt = request.args.get("market", "ALL")
+    stmt = run_with_db_retry(lambda: build_user_statement(uid, days=req_days, category=cat, market_filter=mkt))
     safe_uid = "".join(ch for ch in uid if ch.isalnum() or ch in ("-", "_")) or "user"
     fname = f"ColourKing_{stmt['days']}_Statement_{safe_uid}_{get_ist_now().strftime('%Y%m%d')}.csv"
     return Response(export_statement_csv(stmt), mimetype="text/csv; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="{fname}"'})
@@ -3567,7 +3684,7 @@ def api_affiliates():
     uid = (request.args.get("userId") or get_cookie_uid() or "").strip()
     if not uid or uid == "Guest":
         return jsonify({"success": False, "error": "Missing userId"}), 400
-    aff = build_user_affiliates(uid)
+    aff = run_with_db_retry(lambda: build_user_affiliates(uid))
     if not aff:
         return jsonify({"success": False, "error": "User not found", "notFound": True}), 404
     return jsonify(aff)
@@ -3578,10 +3695,10 @@ def api_vip():
     uid = (request.args.get("userId") or get_cookie_uid() or "").strip()
     if not uid or uid == "Guest":
         return jsonify({"success": False, "error": "Missing userId"}), 400
-    u = User.query.get(uid)
-    if not u:
+    vip = run_with_db_retry(lambda: (lambda u: build_user_vip_payload(u) if u else None)(resolve_user_by_id_safe(uid)))
+    if not vip:
         return jsonify({"success": False, "error": "User not found", "notFound": True}), 404
-    return jsonify({"success": True, "vip": build_user_vip_payload(u)})
+    return jsonify({"success": True, "vip": vip})
 
 
 @app.route("/api/affiliates/claim", methods=["POST"])
@@ -3594,9 +3711,10 @@ def api_affiliates_claim():
     sse_ev = None
     with db_lock:
         try:
-            u = User.query.get(uid)
+            u = resolve_user_by_id_safe(uid)
             if not u:
                 return jsonify({"success": False, "error": "User not found"}), 404
+            uid = u.id
             if str(u.status or "").upper() == "BLOCKED":
                 return jsonify({"success": False, "error": "Account temporarily restricted by Admin"}), 403
 
@@ -3646,7 +3764,7 @@ def api_affiliates_claim():
             return jsonify({"success": False, "error": f"Failed to claim affiliate commission: {exc}"}), 500
 
     notify_sse_clients(sse_ev)
-    updated_aff = build_user_affiliates(uid)
+    updated_aff = run_with_db_retry(lambda: build_user_affiliates(uid))
     return jsonify({
         "success": True,
         "message": f"Claimed ₹{claim_amt:.2f} affiliate earnings into main wallet!",
@@ -3685,11 +3803,10 @@ def api_admin_verify_login():
 
 @app.route("/api/admin/commissions", methods=["GET"])
 def api_admin_commissions():
-    rows = ReferralCommission.query.order_by(ReferralCommission.created_at_ms.desc()).all()
-    users_map = {u.id: u.name for u in User.query.all()}
-    return jsonify({
-        "success": True,
-        "commissions": [{
+    def _load():
+        rows = ReferralCommission.query.order_by(ReferralCommission.created_at_ms.desc()).all()
+        users_map = {u.id: u.name for u in User.query.all()}
+        return [{
             "id": r.id,
             "beneficiaryUserId": r.beneficiary_user_id,
             "beneficiaryUserName": users_map.get(r.beneficiary_user_id, r.beneficiary_user_id),
@@ -3700,11 +3817,11 @@ def api_admin_commissions():
             "rate": float(r.rate or 0.01),
             "eligibleAmount": round(float(r.eligible_amount or 0.0), 2),
             "commissionAmount": round(float(r.commission_amount or 0.0), 2),
-            "status": r.status or "SETTLED",
+            "status": r.status or "UNCLAIMED",
             "time": to_ist_display(r.created_at, r.created_at_ms, mode="datetime"),
             "createdAtMs": int(r.created_at_ms or 0),
-        } for r in rows],
-    })
+        } for r in rows]
+    return jsonify({"success": True, "commissions": run_with_db_retry(_load)})
 
 
 @app.route("/api/state/version", methods=["GET"])
@@ -3714,122 +3831,124 @@ def api_state_version():
 
 @app.route("/api/state", methods=["GET"])
 def api_state():
-    curr_ms = now_ms()
-    all_users = User.query.order_by(User.created_at_ms.asc(), User.id.asc()).all()
-    default_sha = hashlib.sha256(b"password123").hexdigest()
-    users_dict, users_arr = {}, []
-    users_name_map = {}
-    for u in all_users:
-        users_name_map[u.id] = u.name
-        r_plain = u.password_plain or ("password123" if (u.password_hash or "") == default_sha else "")
-        u_obj = {
-            **user_to_dict(u),
-            "password": r_plain,
-            "createdAt": to_ist_display(u.created_at, u.created_at_ms or 0, mode="datetime"),
-        }
-        users_dict[u.id] = u_obj
-        users_arr.append(u_obj)
-
-    deposits_list = [{
-        "id": r.id, "userId": r.user_id, "userName": r.user_name,
-        "amount": round(float(r.amount or 0.0), 2), "method": r.method, "utr": r.utr,
-        "time": to_ist_display(r.created_at, r.created_at_ms or 0, mode="display"),
-        "createdAtMs": _parse_ts_ms(r.created_at, r.created_at_ms or 0),
-        "status": r.status, "reason": r.reason,
-    } for r in Deposit.query.order_by(Deposit.created_at_ms.desc(), Deposit.created_at.desc()).all()]
-
-    withdrawals_list = [{
-        "id": r.id, "userId": r.user_id, "userName": r.user_name,
-        "amount": round(float(r.amount or 0.0), 2), "upiId": r.upi_id, "bankName": r.bank_name,
-        "accNo": r.acc_no, "ifsc": r.ifsc, "bankingName": r.banking_name, "destination": r.destination,
-        "time": to_ist_display(r.created_at, r.created_at_ms or 0, mode="display"),
-        "createdAtMs": _parse_ts_ms(r.created_at, r.created_at_ms or 0),
-        "status": r.status, "reason": r.reason,
-    } for r in Withdrawal.query.order_by(Withdrawal.created_at_ms.desc(), Withdrawal.created_at.desc()).all()]
-
-    draw_overrides = {}
-    for mkt in Market.query.filter(Market.manual_override_num.isnot(None)).all():
-        ov_num = int(mkt.manual_override_num)
-        ov_col = "VIOLET+RED" if ov_num == 0 else ("VIOLET+GREEN" if ov_num == 5 else ("GREEN" if ov_num in (1, 3, 7, 9) else "RED"))
-        draw_overrides[mkt.code] = {"market": mkt.code, "number": ov_num, "color": ov_col, "period": mkt.manual_override_period, "mode": "MANUAL"}
-
-    rounds_rows = Round.query.filter(Round.status == "SETTLED", Round.result_number.isnot(None)).order_by(Round.period.desc()).limit(240).all()
-    declared_results = {m: {} for m in MARKET_KEYS}
-    declared_results_list = []
-    for rr in rounds_rows:
-        num_i = int(rr.result_number)
-        col_raw = rr.result_color or ("violet" if num_i in (0, 5) else ("green" if num_i in (1, 3, 7, 9) else "red"))
-        col_cls = rr.result_col_class or ("red-violet" if num_i == 0 else ("green-violet" if num_i == 5 else col_raw))
-        col_badge = "VIOLET+RED" if num_i == 0 else ("VIOLET+GREEN" if num_i == 5 else col_raw.upper())
-        dec_time_ist = to_ist_display(rr.declared_at, int(rr.end_time_ms or 0), mode="datetime")
-        if rr.market in declared_results and len(declared_results[rr.market]) < 60:
-            declared_results[rr.market][str(rr.period)] = {
-                "period": str(rr.period), "number": num_i, "color": col_raw, "colClass": col_cls,
-                "isBig": bool(rr.is_big), "mode": rr.draw_mode or "AUTO_RANDOM", "time": dec_time_ist,
+    def _build_state():
+        curr_ms = now_ms()
+        all_users = User.query.order_by(User.created_at_ms.asc(), User.id.asc()).all()
+        default_sha = hashlib.sha256(b"password123").hexdigest()
+        users_dict, users_arr = {}, []
+        users_name_map = {}
+        for u in all_users:
+            users_name_map[u.id] = u.name
+            r_plain = u.password_plain or ("password123" if (u.password_hash or "") == default_sha else "")
+            u_obj = {
+                **user_to_dict(u),
+                "password": r_plain,
+                "createdAt": to_ist_display(u.created_at, u.created_at_ms or 0, mode="datetime"),
             }
-        if len(declared_results_list) < 200:
-            payout_sum = float(db.session.query(func.coalesce(func.sum(Bet.win_amount), 0.0)).filter(Bet.market == rr.market, Bet.period == rr.period, Bet.status == "WON").scalar() or 0.0)
-            declared_results_list.append({
-                "market": rr.market, "period": str(rr.period), "number": num_i, "color": col_badge,
-                "isBig": bool(rr.is_big), "mode": rr.draw_mode or "AUTO_RANDOM",
-                "payout": round(payout_sum, 2), "time": dec_time_ist,
-            })
+            users_dict[u.id] = u_obj
+            users_arr.append(u_obj)
 
-    bets_list = [{
-        "id": b.bet_id, "market": b.market, "period": b.period, "userId": b.user_id,
-        "userName": b.user_name, "target": b.prediction_target, "type": b.prediction_type,
-        "amount": round(float(b.amount or 0.0), 2),
-        "platformFee": round(float(b.platform_fee or 0.0), 2),
-        "netAmount": round(float(b.net_amount or 0.0), 2),
-        "multiplier": float(b.multiplier or 0.0), "status": b.status,
-        "payout": round(float(b.win_amount or 0.0), 2),
-        "time": to_ist_display(b.created_at, b.created_at_ms, mode="datetime"),
-        "createdAtMs": _parse_ts_ms(b.created_at, b.created_at_ms),
-    } for b in Bet.query.order_by(Bet.created_at_ms.desc()).all()]
+        deposits_list = [{
+            "id": r.id, "userId": r.user_id, "userName": r.user_name,
+            "amount": round(float(r.amount or 0.0), 2), "method": r.method, "utr": r.utr,
+            "time": to_ist_display(r.created_at, r.created_at_ms or 0, mode="display"),
+            "createdAtMs": _parse_ts_ms(r.created_at, r.created_at_ms or 0),
+            "status": r.status, "reason": r.reason,
+        } for r in Deposit.query.order_by(Deposit.created_at_ms.desc(), Deposit.created_at.desc()).all()]
 
-    all_comm_rows = ReferralCommission.query.order_by(ReferralCommission.created_at_ms.desc()).all()
-    commissions_list = [{
-        "id": r.id,
-        "beneficiaryUserId": r.beneficiary_user_id,
-        "beneficiaryUserName": users_name_map.get(r.beneficiary_user_id, r.beneficiary_user_id),
-        "sourceUserId": r.source_user_id,
-        "sourceUserName": r.source_user_name or users_name_map.get(r.source_user_id, r.source_user_id),
-        "sourceBetId": r.source_bet_id or "",
-        "level": int(r.level or 1), "rate": float(r.rate or 0.01),
-        "eligibleAmount": round(float(r.eligible_amount or 0.0), 2),
-        "commissionAmount": round(float(r.commission_amount or 0.0), 2),
-        "status": r.status or "SETTLED",
-        "time": to_ist_display(r.created_at, r.created_at_ms, mode="datetime"),
-        "createdAtMs": int(r.created_at_ms or 0),
-    } for r in all_comm_rows]
+        withdrawals_list = [{
+            "id": r.id, "userId": r.user_id, "userName": r.user_name,
+            "amount": round(float(r.amount or 0.0), 2), "upiId": r.upi_id, "bankName": r.bank_name,
+            "accNo": r.acc_no, "ifsc": r.ifsc, "bankingName": r.banking_name, "destination": r.destination,
+            "time": to_ist_display(r.created_at, r.created_at_ms or 0, mode="display"),
+            "createdAtMs": _parse_ts_ms(r.created_at, r.created_at_ms or 0),
+            "status": r.status, "reason": r.reason,
+        } for r in Withdrawal.query.order_by(Withdrawal.created_at_ms.desc(), Withdrawal.created_at.desc()).all()]
 
-    audit_logs = [{
-        "id": r.id, "actor": r.actor, "action": r.action, "entity": r.entity, "desc": r.desc,
-        "time": to_ist_display(r.created_at, r.created_at_ms or 0, mode="display"),
-        "createdAtMs": _parse_ts_ms(r.created_at, r.created_at_ms or 0),
-    } for r in AdminAuditLog.query.order_by(AdminAuditLog.id.desc()).all()]
+        draw_overrides = {}
+        for mkt in Market.query.filter(Market.manual_override_num.isnot(None)).all():
+            ov_num = int(mkt.manual_override_num)
+            ov_col = "VIOLET+RED" if ov_num == 0 else ("VIOLET+GREEN" if ov_num == 5 else ("GREEN" if ov_num in (1, 3, 7, 9) else "RED"))
+            draw_overrides[mkt.code] = {"market": mkt.code, "number": ov_num, "color": ov_col, "period": mkt.manual_override_period, "mode": "MANUAL"}
 
-    affiliates_list = build_all_affiliates_bulk(all_users, all_comm_rows)
+        rounds_rows = Round.query.filter(Round.status == "SETTLED", Round.result_number.isnot(None)).order_by(Round.period.desc()).limit(240).all()
+        declared_results = {m: {} for m in MARKET_KEYS}
+        declared_results_list = []
+        for rr in rounds_rows:
+            num_i = int(rr.result_number)
+            col_raw = rr.result_color or ("violet" if num_i in (0, 5) else ("green" if num_i in (1, 3, 7, 9) else "red"))
+            col_cls = rr.result_col_class or ("red-violet" if num_i == 0 else ("green-violet" if num_i == 5 else col_raw))
+            col_badge = "VIOLET+RED" if num_i == 0 else ("VIOLET+GREEN" if num_i == 5 else col_raw.upper())
+            dec_time_ist = to_ist_display(rr.declared_at, int(rr.end_time_ms or 0), mode="datetime")
+            if rr.market in declared_results and len(declared_results[rr.market]) < 60:
+                declared_results[rr.market][str(rr.period)] = {
+                    "period": str(rr.period), "number": num_i, "color": col_raw, "colClass": col_cls,
+                    "isBig": bool(rr.is_big), "mode": rr.draw_mode or "AUTO_RANDOM", "time": dec_time_ist,
+                }
+            if len(declared_results_list) < 200:
+                payout_sum = float(db.session.query(func.coalesce(func.sum(Bet.win_amount), 0.0)).filter(Bet.market == rr.market, Bet.period == rr.period, Bet.status == "WON").scalar() or 0.0)
+                declared_results_list.append({
+                    "market": rr.market, "period": str(rr.period), "number": num_i, "color": col_badge,
+                    "isBig": bool(rr.is_big), "mode": rr.draw_mode or "AUTO_RANDOM",
+                    "payout": round(payout_sum, 2), "time": dec_time_ist,
+                })
 
-    live_wagers, market_stats = compute_live_wagers_and_market_stats(curr_ms)
-    support_tickets, support_unread_admin = list_admin_support_tickets()
+        bets_list = [{
+            "id": b.bet_id, "market": b.market, "period": b.period, "userId": b.user_id,
+            "userName": b.user_name, "target": b.prediction_target, "type": b.prediction_type,
+            "amount": round(float(b.amount or 0.0), 2),
+            "platformFee": round(float(b.platform_fee or 0.0), 2),
+            "netAmount": round(float(b.net_amount or 0.0), 2),
+            "multiplier": float(b.multiplier or 0.0), "status": b.status,
+            "payout": round(float(b.win_amount or 0.0), 2),
+            "time": to_ist_display(b.created_at, b.created_at_ms, mode="datetime"),
+            "createdAtMs": _parse_ts_ms(b.created_at, b.created_at_ms),
+        } for b in Bet.query.order_by(Bet.created_at_ms.desc()).all()]
 
-    return jsonify({
-        "state_version": get_state_version(),
-        "server_time_ms": curr_ms,
-        "bank_config": get_app_state_json("bank_config", DEFAULT_BANK_CONFIG),
-        "platform_settings": get_app_state_json("platform_settings", DEFAULT_PLATFORM_SETTINGS),
-        "users": users_dict, "users_list": users_arr,
-        "deposits": deposits_list, "withdrawals": withdrawals_list,
-        "draw_overrides": draw_overrides,
-        "declared_results": declared_results, "declared_results_list": declared_results_list,
-        "bets": bets_list, "referral_commissions": commissions_list,
-        "audit_logs": audit_logs, "affiliates": affiliates_list,
-        "live_wagers": live_wagers, "market_stats": market_stats,
-        "admin_kpis": compute_admin_kpis(),
-        "support_tickets": support_tickets, "support_unread_admin": support_unread_admin,
-        "storage_info": get_storage_status_dict(),
-    })
+        all_comm_rows = ReferralCommission.query.order_by(ReferralCommission.created_at_ms.desc()).all()
+        commissions_list = [{
+            "id": r.id,
+            "beneficiaryUserId": r.beneficiary_user_id,
+            "beneficiaryUserName": users_name_map.get(r.beneficiary_user_id, r.beneficiary_user_id),
+            "sourceUserId": r.source_user_id,
+            "sourceUserName": r.source_user_name or users_name_map.get(r.source_user_id, r.source_user_id),
+            "sourceBetId": r.source_bet_id or "",
+            "level": int(r.level or 1), "rate": float(r.rate or 0.01),
+            "eligibleAmount": round(float(r.eligible_amount or 0.0), 2),
+            "commissionAmount": round(float(r.commission_amount or 0.0), 2),
+            "status": r.status or "UNCLAIMED",
+            "time": to_ist_display(r.created_at, r.created_at_ms, mode="datetime"),
+            "createdAtMs": int(r.created_at_ms or 0),
+        } for r in all_comm_rows]
+
+        audit_logs = [{
+            "id": r.id, "actor": r.actor, "action": r.action, "entity": r.entity, "desc": r.desc,
+            "time": to_ist_display(r.created_at, r.created_at_ms or 0, mode="display"),
+            "createdAtMs": _parse_ts_ms(r.created_at, r.created_at_ms or 0),
+        } for r in AdminAuditLog.query.order_by(AdminAuditLog.id.desc()).all()]
+
+        affiliates_list = build_all_affiliates_bulk(all_users, all_comm_rows)
+
+        live_wagers, market_stats = compute_live_wagers_and_market_stats(curr_ms)
+        support_tickets, support_unread_admin = list_admin_support_tickets()
+
+        return {
+            "state_version": get_state_version(),
+            "server_time_ms": curr_ms,
+            "bank_config": get_app_state_json("bank_config", DEFAULT_BANK_CONFIG),
+            "platform_settings": get_app_state_json("platform_settings", DEFAULT_PLATFORM_SETTINGS),
+            "users": users_dict, "users_list": users_arr,
+            "deposits": deposits_list, "withdrawals": withdrawals_list,
+            "draw_overrides": draw_overrides,
+            "declared_results": declared_results, "declared_results_list": declared_results_list,
+            "bets": bets_list, "referral_commissions": commissions_list,
+            "audit_logs": audit_logs, "affiliates": affiliates_list,
+            "live_wagers": live_wagers, "market_stats": market_stats,
+            "admin_kpis": compute_admin_kpis(),
+            "support_tickets": support_tickets, "support_unread_admin": support_unread_admin,
+            "storage_info": get_storage_status_dict(),
+        }
+    return jsonify(run_with_db_retry(_build_state))
 
 
 @app.route("/api/admin/overview", methods=["GET"])

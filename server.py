@@ -1492,6 +1492,57 @@ def normalize_bet_target_num(btype, target):
             return int(digits)
     return None
 
+def extract_referral_code_input(raw_val):
+    txt = str(raw_val or "").strip()
+    if not txt:
+        return ""
+    if "ref=" in txt.lower():
+        try:
+            parsed = urllib.parse.urlparse(txt)
+            q_ref = urllib.parse.parse_qs(parsed.query).get("ref", [])
+            if q_ref and str(q_ref[0]).strip():
+                return str(q_ref[0]).strip().upper()
+            m = re.search(r"[?&]ref=([^&\s#]+)", txt, flags=re.IGNORECASE)
+            if m:
+                return urllib.parse.unquote(m.group(1)).strip().upper()
+        except Exception:
+            pass
+    return txt.upper()
+
+def accrue_referral_commissions_for_bet_sqlite(conn, uid, uname, referred_by, bet_id, amount, eff_ms):
+    amt = round(float(amount or 0.0), 2)
+    if amt <= 0.0 or not uid or not bet_id:
+        return 0
+    c = conn.cursor()
+    c.execute("SELECT 1 FROM referral_commissions WHERE source_bet_id = ? LIMIT 1", (bet_id,))
+    if c.fetchone():
+        return 0
+    cur_sponsor_key = str(referred_by or "").strip()
+    visited_sponsors = {uid}
+    added = 0
+    now_str = format_ist_datetime(eff_ms)
+    for tier_lvl, comm_rate in REFERRAL_TIER_RATES:
+        if not cur_sponsor_key:
+            break
+        c.execute(
+            "SELECT id, name, referred_by FROM users WHERE UPPER(TRIM(id)) = UPPER(?) OR UPPER(TRIM(referral_code)) = UPPER(?) OR LOWER(TRIM(name)) = LOWER(?)",
+            (cur_sponsor_key, cur_sponsor_key, cur_sponsor_key),
+        )
+        sp = c.fetchone()
+        if not sp or sp["id"] in visited_sponsors:
+            break
+        visited_sponsors.add(sp["id"])
+        comm_amt = round(amt * comm_rate, 2)
+        if comm_amt > 0.0:
+            rc_id = f"REF-L{tier_lvl}-{int(eff_ms)}-{secrets.token_hex(3)}"
+            c.execute("""
+                INSERT INTO referral_commissions (id, beneficiary_user_id, source_user_id, source_user_name, source_bet_id, level, rate, eligible_amount, commission_amount, status, created_at, created_at_ms)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'UNCLAIMED', ?, ?)
+            """, (rc_id, sp["id"], uid, uname, bet_id, tier_lvl, comm_rate, amt, comm_amt, now_str, int(eff_ms)))
+            added += 1
+        cur_sponsor_key = str(sp["referred_by"] or "").strip() if "referred_by" in sp.keys() else ""
+    return added
+
 def settle_round_in_db(conn, market_code, round_id, period, winning_number, draw_mode="AUTO_RANDOM", declared_by="SYSTEM"):
     c = conn.cursor()
 
@@ -1534,7 +1585,7 @@ def settle_round_in_db(conn, market_code, round_id, period, winning_number, draw
 
     # 2. Fetch all unsettled bets for this market and period
     c.execute("""
-        SELECT bet_id, user_id, user_name, amount, platform_fee, net_amount, prediction_type, prediction_target, multiplier
+        SELECT bet_id, user_id, user_name, amount, platform_fee, net_amount, prediction_type, prediction_target, multiplier, created_at_ms
         FROM bets
         WHERE market = ? AND period = ? AND status IN ('PENDING', 'LOCKED')
     """, (market_code, period))
@@ -1544,6 +1595,11 @@ def settle_round_in_db(conn, market_code, round_id, period, winning_number, draw
         bet_id = b["bet_id"]
         uid = b["user_id"]
         amt = float(b["amount"] or 0.0)
+        c.execute("SELECT name, referred_by FROM users WHERE id = ?", (uid,))
+        ub_row = c.fetchone()
+        if ub_row:
+            b_ms = int(b["created_at_ms"] or eff_end_ms) if "created_at_ms" in b.keys() else eff_end_ms
+            accrue_referral_commissions_for_bet_sqlite(conn, uid, ub_row["name"], ub_row["referred_by"], bet_id, amt, b_ms)
         net_amt_db = float(b["net_amount"] or 0.0) if "net_amount" in b.keys() else 0.0
         stake_base = net_amt_db if net_amt_db > 0.0 else round(amt - round(amt * 0.03, 2), 2)
         btype = str(b["prediction_type"] or "").upper().strip()
@@ -2198,11 +2254,21 @@ def build_user_affiliates(conn, uid):
     user_by_id = {r["id"]: r for r in all_user_rows if r["id"]}
     root_u = user_by_id.get(uid)
     if not root_u:
+        clean_u = str(uid or "").strip().upper()
+        for candidate in all_user_rows:
+            if str(candidate["id"] or "").strip().upper() == clean_u:
+                root_u = candidate
+                uid = candidate["id"]
+                break
+    if not root_u:
         return None
 
     ref_code = (root_u["referral_code"] if "referral_code" in root_u.keys() and root_u["referral_code"] else uid[-6:].upper())
 
     key_to_uid = {}
+    for ur in all_user_rows:
+        if ur["name"] and str(ur["name"]).strip():
+            key_to_uid[str(ur["name"]).strip().upper()] = ur["id"]
     for ur in all_user_rows:
         if not ur["id"]:
             continue
@@ -2323,7 +2389,7 @@ def build_user_affiliates(conn, uid):
 
     c.execute("""
         SELECT * FROM transactions
-        WHERE user_id = ? AND UPPER(type) = 'AFFILIATE_CLAIM'
+        WHERE user_id = ? AND UPPER(TRIM(type)) IN ('AFFILIATE_CLAIM', 'AFFILIATE_CLAIMED')
         ORDER BY created_at_ms DESC
     """, (uid,))
     claim_tx_rows = c.fetchall()
@@ -3758,7 +3824,9 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                         "id": m["id"],
                         "name": m["name"],
                         "tier": m["tierLabel"],
+                        "tierNum": m["tier"],
                         "joinDate": m["joined"],
+                        "joined": m["joined"],
                         "totalDeposit": m["totalDeposit"],
                         "turnover": m["turnover"],
                         "commission": m["commission"],
@@ -3775,6 +3843,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                         "totalEarnedCommission": aff_data["lifetimeCommission"],
                         "claimableBalance": aff_data["claimableBalance"],
                         "totalClaimed": aff_data["totalClaimed"],
+                        "claimCount": aff_data["claimCount"],
                         "levelBreakdown": aff_data["levelBreakdown"],
                         "yesterdayCommission": aff_data["todayCommission"],
                         "todayCommission": aff_data["todayCommission"],
@@ -4268,27 +4337,9 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 """, (tx_id, uid, f"Bet on {m_code} #{period}", f"Target {target} ({mult}X) • 3% Fee ₹{platform_fee:.2f} • Net ₹{net_amount:.2f}", -amount, curr_bal, new_bal, now_ms))
 
                 # 5. Accrue Multi-Tier (Up to 6 Levels) Refer & Earn Commissions in UNCLAIMED Vault (credited only when user Claims)
-                cur_sponsor_key = str(user["referred_by"] or "").strip() if "referred_by" in user.keys() else ""
-                visited_sponsors = {uid}
-                for tier_lvl, comm_rate in REFERRAL_TIER_RATES:
-                    if not cur_sponsor_key:
-                        break
-                    c.execute(
-                        "SELECT id, name, balance, referred_by FROM users WHERE UPPER(TRIM(id)) = UPPER(?) OR UPPER(TRIM(referral_code)) = UPPER(?)",
-                        (cur_sponsor_key, cur_sponsor_key),
-                    )
-                    sp = c.fetchone()
-                    if not sp or sp["id"] in visited_sponsors:
-                        break
-                    visited_sponsors.add(sp["id"])
-                    comm_amt = round(amount * comm_rate, 2)
-                    if comm_amt > 0:
-                        rc_id = f"REF-L{tier_lvl}-{int(now_ms)}-{secrets.token_hex(3)}"
-                        c.execute("""
-                            INSERT INTO referral_commissions (id, beneficiary_user_id, source_user_id, source_user_name, source_bet_id, level, rate, eligible_amount, commission_amount, status, created_at, created_at_ms)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'UNCLAIMED', ?, ?)
-                        """, (rc_id, sp["id"], uid, user["name"], bet_id, tier_lvl, comm_rate, amount, comm_amt, format_ist_datetime(now_ms), now_ms))
-                    cur_sponsor_key = str(sp["referred_by"] or "").strip() if "referred_by" in sp.keys() else ""
+                accrue_referral_commissions_for_bet_sqlite(
+                    conn, uid, user["name"], user["referred_by"] if "referred_by" in user.keys() else "", bet_id, amount, now_ms
+                )
 
                 _, sse_ev = bump_state_version(conn, "bet_placed", {"userId": uid, "market": m_code, "period": period, "betId": bet_id})
                 commit_and_persist(conn, critical=True)
@@ -4509,7 +4560,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             bal = float(payload.get("balance") if payload.get("balance") is not None else 100.00)
             clean_prefix = "".join(ch for ch in name.upper() if ch.isalnum())[:4] or "CK"
             ref_code = str(payload.get("referralCode") or f"{clean_prefix}{random.randint(100, 999)}").strip().upper()
-            ref_by_code = str(payload.get("referredBy") or "").strip().upper()
+            ref_by_code = extract_referral_code_input(payload.get("referredBy") or payload.get("inviteCode") or payload.get("sponsorCode") or "")
 
             if len(name) < 3:
                 self._send_json({ "success": False, "error": "Username must be at least 3 characters" }, status=400)

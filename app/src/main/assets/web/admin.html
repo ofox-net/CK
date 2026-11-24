@@ -1351,7 +1351,7 @@
               <p class="panel-subtitle">Transparent tracking of who is referred by whom, downline members count, tier structure, and referral commissions earned</p>
             </div>
             <div style="display:flex; gap:8px;">
-              <span class="badge badge-approved">TIER 1 (30%) • TIER 2 (20%) • TIER 3 (10%)</span>
+              <span class="badge badge-approved">L1 1.00% • L2 0.75% • L3 0.60% • L4 0.50% • L5 0.30% • L6 0.20%</span>
             </div>
           </div>
 
@@ -3758,10 +3758,12 @@
             <span style="font-size:10px; color:var(--text-muted);">Tier 1-6 Total</span>
           </td>
           <td>
-            <strong style="color:var(--green); font-size:15px;">₹${Number(a.totalEarnedCommission || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+            <strong style="color:var(--green); font-size:15px;">₹${Number(a.totalEarnedCommission || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong><br/>
+            <span style="font-size:10px; color:var(--amber);">Claimable: ₹${Number(a.claimableBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span> • 
+            <span style="font-size:10px; color:var(--cyan);">Claimed: ₹${Number(a.totalClaimed || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
           </td>
           <td style="color:var(--gold); font-weight:700;">
-            +₹${Number(a.yesterdayCommission || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            +₹${Number(a.todayCommission ?? a.yesterdayCommission ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
           </td>
           <td>
             <button class="btn btn-gold btn-sm" onclick="openAffiliateMembersModal('${escapeAdminHtml(a.userId)}')">
@@ -3848,21 +3850,21 @@
       document.getElementById('affiliateModalTitle').innerText = `👥 Downline Affiliate Members: ${aff.userName}`;
       document.getElementById('affiliateModalSubtitle').innerText = `User ID: ${aff.userId} • Referral Code: ${aff.refCode} • Sponsor: ${aff.referredBy}`;
       document.getElementById('modalAffiliateCount').innerText = `${aff.members ? aff.members.length : 0} Members Listed`;
-      document.getElementById('modalAffiliateTotalEarned').innerText = `₹${aff.totalEarnedCommission.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+      document.getElementById('modalAffiliateTotalEarned').innerText = `₹${Number(aff.totalEarnedCommission || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 
       const tbody = document.getElementById('affiliateModalTableBody');
       if (aff.members && aff.members.length > 0) {
         tbody.innerHTML = aff.members.map(m => `
           <tr>
             <td>
-              <strong style="color:#FFF;">${m.name}</strong><br/>
-              <span style="font-size:11px; color:var(--cyan); font-family:monospace;">${m.id}</span>
+              <strong style="color:#FFF;">${escapeAdminHtml(m.name)}</strong><br/>
+              <span style="font-size:11px; color:var(--cyan); font-family:monospace;">${escapeAdminHtml(m.id)}</span>
             </td>
-            <td><span class="badge ${m.tier.includes('Tier 1') ? 'badge-approved' : 'badge-pending'}">${m.tier}</span></td>
-            <td style="font-size:11px; color:var(--text-muted);">${m.joinDate}</td>
-            <td><strong>₹${m.totalDeposit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></td>
-            <td><strong style="color:var(--green);">₹${m.commission.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></td>
-            <td><span class="badge badge-active">${m.status || 'ACTIVE'}</span></td>
+            <td><span class="badge ${String(m.tier || '').includes('Tier 1') ? 'badge-approved' : 'badge-pending'}">${escapeAdminHtml(m.tier)}</span></td>
+            <td style="font-size:11px; color:var(--text-muted);">${escapeAdminHtml(m.joinDate || m.joined || '-')}</td>
+            <td><strong>₹${Number(m.totalDeposit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></td>
+            <td><strong style="color:var(--green);">₹${Number(m.commission || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></td>
+            <td><span class="badge badge-active">${escapeAdminHtml(m.status || 'ACTIVE')}</span></td>
           </tr>
         `).join('');
       } else {
@@ -4495,18 +4497,32 @@
       renderActiveSupportTicket();
     }
 
+    let isPullingAdminState = false;
     function pullAdminStateFromServer() {
-      if (window.location.protocol === 'file:') return Promise.resolve();
-      return fetch('/api/state?t=' + Date.now(), { cache: 'no-store' })
-        .then(r => r.ok ? r.json() : null)
+      if (window.location.protocol === 'file:' || isPullingAdminState) return Promise.resolve();
+      isPullingAdminState = true;
+      const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      const tid = controller ? setTimeout(() => { try { controller.abort(); } catch (e) {} }, 15000) : null;
+      return fetch('/api/state?t=' + Date.now(), {
+        cache: 'no-store',
+        ...(controller ? { signal: controller.signal } : {})
+      })
+        .then(r => r.ok ? r.json().catch(() => null) : null)
         .then(data => { if (data) applyServerStateToAdmin(data); })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => {
+          if (tid) clearTimeout(tid);
+          isPullingAdminState = false;
+        });
     }
 
     function connectAdminEventStream() {
       if (window.location.protocol === 'file:' || typeof EventSource === 'undefined') return;
       try {
         const es = new EventSource('/api/events');
+        es.addEventListener('connected', () => {
+          pullAdminStateFromServer();
+        });
         es.addEventListener('state_update', (ev) => {
           try {
             const payload = JSON.parse(ev.data || '{}');
@@ -4544,9 +4560,14 @@
       renderSupportTicketList();
       renderActiveSupportTicket();
 
-      // Hydrate live state from SQLite & attach real-time SSE stream + fallback polling
+      // Hydrate live state from PostgreSQL & attach real-time SSE stream + fallback polling
       pullAdminStateFromServer();
       connectAdminEventStream();
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) pullAdminStateFromServer();
+      });
+      window.addEventListener('focus', pullAdminStateFromServer);
+      window.addEventListener('online', pullAdminStateFromServer);
       setInterval(pullAdminStateFromServer, 2500);
     });
   </script>

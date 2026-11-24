@@ -3386,6 +3386,7 @@
     let affiliateActiveSection = 'all';
     let isClaimingAffiliate = false;
     let affiliateLoadedUserId = null;
+    let affiliatePrehydratedUserId = null;
     let affiliateSyncInFlight = false;
     let affiliateSyncQueued = false;
     let affiliateRetryTimer = null;
@@ -3593,6 +3594,8 @@
       } else if (tabId === 'wallet') {
         renderWalletLedger();
       } else if (tabId === 'affiliate') {
+        affiliateRetryAttempt = 0;
+        if (affiliateRetryTimer) { clearTimeout(affiliateRetryTimer); affiliateRetryTimer = null; }
         renderAffiliateTeam();
         syncUserAffiliates(true);
       } else if (tabId === 'profile') {
@@ -3895,11 +3898,52 @@
         });
       }
 
-      if (versionChanged || walletChanged || txChanged || force) {
+      let affiliateHydratedChanged = false;
+      if (currentUserId && currentUserId !== 'Guest' && Array.isArray(state.affiliates)) {
+        const myAff = state.affiliates.find(a => String(a.userId || '').toUpperCase() === String(currentUserId).toUpperCase());
+        if (myAff && affiliateLoadedUserId !== currentUserId) {
+          affiliatePrehydratedUserId = currentUserId;
+          affiliateSummary = {
+            referralCode: myAff.refCode || currentUserReferralCode || '',
+            lifetimeCommission: Number(myAff.totalEarnedCommission || 0),
+            claimableBalance: Number(myAff.claimableBalance || 0),
+            totalClaimed: Number(myAff.totalClaimed || 0),
+            claimCount: Number(myAff.claimCount || 0),
+            todayCommission: Number(myAff.todayCommission || 0),
+            networkTurnover: Number(myAff.networkTurnover || 0),
+            teamCount: Number(myAff.teamMembersCount || 0)
+          };
+          if (Array.isArray(myAff.levelBreakdown)) {
+            affiliateLevelBreakdown = myAff.levelBreakdown;
+          }
+          if (Array.isArray(myAff.members)) {
+            affiliateTeam = myAff.members.map(m => {
+              const rawTier = Number(m.tierNum || m.tier || String(m.tier || '').replace(/[^\d]/g, '') || 1);
+              return {
+                id: m.id,
+                name: m.name,
+                tier: rawTier,
+                tierLabel: m.tier || (`Tier ${rawTier}`),
+                joined: m.joined || m.joinDate || '-',
+                totalDeposit: Number(m.totalDeposit || 0),
+                turnover: Number(m.turnover || 0),
+                commission: Number(m.commission || 0),
+                status: m.status || 'ACTIVE'
+              };
+            });
+          }
+          affiliateHydratedChanged = true;
+          renderAffiliateTeam();
+        }
+      }
+
+      if (versionChanged || walletChanged || txChanged || force || affiliateLoadedUserId !== currentUserId || affiliateHydratedChanged) {
         if (currentUserId && currentUserId !== 'Guest') {
-          syncUserTransactions();
-          syncUserAffiliates();
-          loadUserBetsFromBackend();
+          if (versionChanged || walletChanged || txChanged || force) {
+            syncUserTransactions();
+            loadUserBetsFromBackend();
+          }
+          syncUserAffiliates(affiliateLoadedUserId !== currentUserId || force);
         }
       }
     }
@@ -3926,7 +3970,12 @@
       try {
         userEventSource = new EventSource(apiUrl('/api/events'));
         userEventSource.addEventListener('connected', () => {
+          affiliateRetryAttempt = 0;
+          if (affiliateRetryTimer) { clearTimeout(affiliateRetryTimer); affiliateRetryTimer = null; }
           syncAdminStateRealtime(true, { eventType: 'connected' });
+          if (currentUserId && currentUserId !== 'Guest') {
+            syncUserAffiliates(true);
+          }
         });
         userEventSource.addEventListener('state_update', (msg) => {
           try {
@@ -6117,20 +6166,20 @@
 
       const claimable = Number(affiliateSummary.claimableBalance || 0);
       const claimedTotal = Number(affiliateSummary.totalClaimed || 0);
-
-      if (lcEl) lcEl.innerText = fmt(affiliateSummary.lifetimeCommission);
-      if (cbEl) cbEl.innerText = fmt(claimable);
-      if (chEl) chEl.innerText = fmt(claimedTotal);
-      if (clTotalEl) clTotalEl.innerText = fmt(claimedTotal);
-      if (clUnclaimedEl) clUnclaimedEl.innerText = fmt(claimable);
-      if (tcEl) tcEl.innerText = fmt(affiliateSummary.todayCommission);
-      if (ntEl) ntEl.innerText = fmt(affiliateSummary.networkTurnover);
-      if (cntEl) cntEl.innerText = `${affiliateSummary.teamCount || 0} Users`;
-      if (rcEl) rcEl.innerText = getActiveReferralCode() || '---';
-
       const isAwaitingAffiliateHydration = Boolean(
         currentUserId && currentUserId !== 'Guest' && hasBackendConnection() && affiliateLoadedUserId !== currentUserId
       );
+      const showPendingPlaceholder = isAwaitingAffiliateHydration && affiliatePrehydratedUserId !== currentUserId;
+
+      if (lcEl) lcEl.innerText = showPendingPlaceholder ? '⏳ Syncing...' : fmt(affiliateSummary.lifetimeCommission);
+      if (cbEl) cbEl.innerText = showPendingPlaceholder ? '⏳ Syncing...' : fmt(claimable);
+      if (chEl) chEl.innerText = showPendingPlaceholder ? '⏳ Syncing...' : fmt(claimedTotal);
+      if (clTotalEl) clTotalEl.innerText = showPendingPlaceholder ? '⏳ Syncing...' : fmt(claimedTotal);
+      if (clUnclaimedEl) clUnclaimedEl.innerText = showPendingPlaceholder ? '⏳ Syncing...' : fmt(claimable);
+      if (tcEl) tcEl.innerText = showPendingPlaceholder ? '⏳ Syncing...' : fmt(affiliateSummary.todayCommission);
+      if (ntEl) ntEl.innerText = showPendingPlaceholder ? '⏳ Syncing...' : fmt(affiliateSummary.networkTurnover);
+      if (cntEl) cntEl.innerText = showPendingPlaceholder ? '...' : `${affiliateSummary.teamCount || 0} Users`;
+      if (rcEl) rcEl.innerText = getActiveReferralCode() || '---';
 
       if (claimBtn) {
         if (isClaimingAffiliate) {
@@ -6213,6 +6262,7 @@
       const isAwaitingServer = Boolean(
         currentUserId && currentUserId !== 'Guest' && hasBackendConnection() && affiliateLoadedUserId !== currentUserId
       );
+      const showBreakdownLoading = isAwaitingServer && affiliatePrehydratedUserId !== currentUserId;
 
       // 1. Column-Wise Level 1 - Level 6 Breakdown Table
       const lvlBody = document.getElementById('affiliateLevelBreakdownBody');
@@ -6235,9 +6285,9 @@
           <tr style="cursor:pointer;" onclick="selectLevelFromBreakdown(${Number(r.level)})">
             <td style="font-weight:800; color:#FFF;">${escapeSupportHtml(r.label || ('Level ' + r.level))}</td>
             <td style="color:var(--gold); font-weight:800;">${Number(r.ratePercent || 0).toFixed(2)}%</td>
-            <td><span class="badge-pill" style="background:rgba(0,229,255,0.14); color:var(--cyan);">${isAwaitingServer ? '...' : (Number(r.membersCount || 0) + ' Users')}</span></td>
-            <td style="font-family:monospace;">${isAwaitingServer ? '...' : ('₹' + Number(r.turnover || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}</td>
-            <td style="color:var(--green); font-weight:800; font-family:monospace;">${isAwaitingServer ? '...' : ('+₹' + Number(r.earnedCommission || 0).toFixed(2))}</td>
+            <td><span class="badge-pill" style="background:rgba(0,229,255,0.14); color:var(--cyan);">${showBreakdownLoading ? '...' : (Number(r.membersCount || 0) + ' Users')}</span></td>
+            <td style="font-family:monospace;">${showBreakdownLoading ? '...' : ('₹' + Number(r.turnover || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}</td>
+            <td style="color:var(--green); font-weight:800; font-family:monospace;">${showBreakdownLoading ? '...' : ('+₹' + Number(r.earnedCommission || 0).toFixed(2))}</td>
           </tr>
         `).join('');
       }
@@ -6373,8 +6423,9 @@
     }
 
     function applyAffiliatePayload(data) {
-      if (!data || !data.userId || (currentUserId && data.userId !== currentUserId)) return;
+      if (!data || !data.userId || (currentUserId && String(data.userId).toUpperCase() !== String(currentUserId).toUpperCase())) return;
       affiliateLoadedUserId = data.userId;
+      affiliatePrehydratedUserId = data.userId;
       affiliateRetryAttempt = 0;
       if (affiliateRetryTimer) {
         clearTimeout(affiliateRetryTimer);
@@ -6402,14 +6453,14 @@
     }
 
     function scheduleAffiliateColdStartRetry(uid) {
-      if (!uid || currentUserId !== uid || affiliateRetryTimer) return;
-      if (affiliateRetryAttempt >= 8) return;
-      const delays = [1500, 3000, 5000, 7500, 10000, 10000, 12000, 15000];
+      if (!uid || String(currentUserId || '').toUpperCase() !== String(uid).toUpperCase() || affiliateRetryTimer) return;
+      if (affiliateRetryAttempt >= 20) return;
+      const delays = [1200, 2000, 3000, 4500, 6000, 8000, 10000];
       const waitMs = delays[Math.min(affiliateRetryAttempt, delays.length - 1)];
       affiliateRetryAttempt++;
       affiliateRetryTimer = setTimeout(() => {
         affiliateRetryTimer = null;
-        if (currentUserId === uid) {
+        if (String(currentUserId || '').toUpperCase() === String(uid).toUpperCase()) {
           syncUserAffiliates(true);
         }
       }, waitMs);
@@ -6442,11 +6493,14 @@
           return { ok: false, status: r.status, data: null };
         })
         .then(resObj => {
-          if (currentUserId !== uid) return;
-          if (resObj && resObj.ok && resObj.data && resObj.data.userId === uid) {
+          if (String(currentUserId || '').toUpperCase() !== String(uid).toUpperCase()) return;
+          if (resObj && resObj.ok && resObj.data && resObj.data.userId && String(resObj.data.userId).toUpperCase() === String(uid).toUpperCase()) {
             applyAffiliatePayload(resObj.data);
-          } else if (resObj && resObj.status >= 500) {
-            // Render cold-start wake-up / transient server error: preserve current UI and retry without wiping
+          } else if (!resObj || resObj.status !== 400) {
+            if (resObj && resObj.status === 404 && getStoredRecoveryToken()) {
+              restoreSessionFromServerAndStorage(false);
+            }
+            // Render cold-start / transient error / HTML wake page: preserve existing UI & retry
             scheduleAffiliateColdStartRetry(uid);
           }
         })
@@ -6489,22 +6543,28 @@
     function fetchInitialBackendWallet() {
       if (!hasBackendConnection() || !currentUserId || currentUserId === 'Guest') return;
       const uid = currentUserId;
+      const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      const timeoutId = controller ? setTimeout(() => { try { controller.abort(); } catch (e) {} }, 15000) : null;
       fetch(apiUrl(`/api/wallet?userId=${encodeURIComponent(uid)}&t=${Date.now()}`), {
         credentials: 'include',
-        cache: 'no-store'
+        cache: 'no-store',
+        ...(controller ? { signal: controller.signal } : {})
       }).then(async r => {
         if (r.status === 404) {
+          const errJson = await r.json().catch(() => null);
           const recToken = getStoredRecoveryToken();
           if (recToken) {
             restoreSessionFromServerAndStorage(false);
             return null;
           }
-          localStorage.removeItem('colour_king_user_session');
-          currentUserId = null;
-          restoreSessionFromServerAndStorage(true);
+          if (errJson && errJson.notFound === true) {
+            localStorage.removeItem('colour_king_user_session');
+            currentUserId = null;
+            restoreSessionFromServerAndStorage(true);
+          }
           return null;
         }
-        return r.ok ? r.json() : null;
+        return r.ok ? r.json().catch(() => null) : null;
       }).then(data => {
         if (!data || currentUserId !== uid) return;
         if (typeof data.balance === 'number') {
@@ -6528,7 +6588,9 @@
             window.AndroidBridge.syncWalletBalance(userBalance, 'Server settlement sync');
           }
         }
-      }).catch(()=>{});
+      }).catch(() => {}).finally(() => {
+        if (timeoutId) clearTimeout(timeoutId);
+      });
     }
 
     const DEFAULT_VIP_CHART = [
@@ -6884,6 +6946,7 @@
         latestStatementData = null;
         walletLedger = [];
         affiliateLoadedUserId = null;
+        affiliatePrehydratedUserId = null;
         affiliateTeam = [];
         affiliateCommissions = [];
         affiliateLevelBreakdown = [];
@@ -7049,6 +7112,16 @@
       }
     }
 
+    async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+      const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      const tid = controller ? setTimeout(() => { try { controller.abort(); } catch (e) {} }, timeoutMs) : null;
+      try {
+        return await fetch(url, { ...options, ...(controller ? { signal: controller.signal } : {}) });
+      } finally {
+        if (tid) clearTimeout(tid);
+      }
+    }
+
     async function restoreSessionFromServerAndStorage(forceOpenAuthIfMissing = false) {
       const storedToken = getStoredRecoveryToken();
       let backendTransientError = false;
@@ -7057,33 +7130,35 @@
           const query = (currentUserId && currentUserId !== 'Guest')
             ? `?userId=${encodeURIComponent(currentUserId)}&t=${Date.now()}`
             : `?t=${Date.now()}`;
-          const res = await fetch(apiUrl(`/api/session${query}`), { credentials: 'include', cache: 'no-store' });
+          const res = await fetchWithTimeout(apiUrl(`/api/session${query}`), { credentials: 'include', cache: 'no-store' }, 15000);
           if (res.ok) {
             sessionRestoreRetryAttempt = 0;
-            const data = await res.json();
+            const data = await res.json().catch(() => null);
             if (data && data.authenticated && data.user) {
               completeAuthSession(data.user, data.recoveryToken || storedToken);
               return;
             }
-          } else if (res.status >= 500) {
+            if (!data) backendTransientError = true;
+          } else if (res.status === 408 || res.status === 429 || res.status >= 500) {
             backendTransientError = true;
           }
-          // If server restarted/recycled and user not yet in DB, restore via signed recoveryToken (only if not 5xx server waking)
+          // If server restarted/recycled and user not yet in DB, restore via signed recoveryToken (only if not transient waking)
           if (storedToken && !backendTransientError) {
-            const r2 = await fetch(apiUrl('/api/users/restore-session'), {
+            const r2 = await fetchWithTimeout(apiUrl('/api/users/restore-session'), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               credentials: 'include',
               body: JSON.stringify({ recoveryToken: storedToken })
-            });
+            }, 15000);
             if (r2.ok) {
               sessionRestoreRetryAttempt = 0;
-              const d2 = await r2.json();
+              const d2 = await r2.json().catch(() => null);
               if (d2 && d2.authenticated && d2.user) {
                 completeAuthSession(d2.user, d2.recoveryToken || storedToken);
                 return;
               }
-            } else if (r2.status >= 500) {
+              if (!d2) backendTransientError = true;
+            } else if (r2.status === 408 || r2.status === 429 || r2.status >= 500) {
               backendTransientError = true;
             }
           }
@@ -7102,8 +7177,8 @@
         loadUserBetsFromBackend();
         syncUserTransactions();
         syncUserAffiliates(true);
-        if (backendTransientError && !sessionRestoreRetryTimer && sessionRestoreRetryAttempt < 6) {
-          const delays = [2000, 4000, 6000, 8000, 10000, 12000];
+        if (backendTransientError && !sessionRestoreRetryTimer && sessionRestoreRetryAttempt < 15) {
+          const delays = [1500, 3000, 4500, 6000, 8000, 10000];
           const waitMs = delays[Math.min(sessionRestoreRetryAttempt, delays.length - 1)];
           sessionRestoreRetryAttempt++;
           sessionRestoreRetryTimer = setTimeout(() => {
@@ -7111,6 +7186,10 @@
             restoreSessionFromServerAndStorage(false);
           }, waitMs);
         }
+        return;
+      }
+
+      if (backendTransientError) {
         return;
       }
 
@@ -7125,6 +7204,7 @@
       userBetSlipsHistory = [];
       walletLedger = [];
       affiliateLoadedUserId = null;
+      affiliatePrehydratedUserId = null;
       affiliateTeam = [];
       affiliateCommissions = [];
       affiliateLevelBreakdown = [];
@@ -7546,6 +7626,21 @@
     }
 
     // INITIALIZATION
+    function handleUserWakeRecovery() {
+      affiliateRetryAttempt = 0;
+      sessionRestoreRetryAttempt = 0;
+      if (affiliateRetryTimer) { clearTimeout(affiliateRetryTimer); affiliateRetryTimer = null; }
+      if (sessionRestoreRetryTimer) { clearTimeout(sessionRestoreRetryTimer); sessionRestoreRetryTimer = null; }
+      syncAdminStateRealtime(true);
+      if (currentUserId && currentUserId !== 'Guest') {
+        syncUserAffiliates(true);
+        syncUserTransactions();
+        fetchInitialBackendWallet();
+      } else {
+        restoreSessionFromServerAndStorage(false);
+      }
+    }
+
     window.addEventListener('DOMContentLoaded', () => {
       initPastRecords();
       syncServerResults();
@@ -7565,7 +7660,16 @@
         showToast(`Referral link applied & locked: ${window.lockedReferralCode}`);
       }
 
+      if (currentUserId && currentUserId !== 'Guest') {
+        syncUserAffiliates(true);
+      }
       restoreSessionFromServerAndStorage();
+
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) handleUserWakeRecovery();
+      });
+      window.addEventListener('focus', handleUserWakeRecovery);
+      window.addEventListener('online', handleUserWakeRecovery);
 
       setInterval(() => syncAdminStateRealtime(false), 3000);
       setInterval(() => {
