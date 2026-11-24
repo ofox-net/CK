@@ -1835,6 +1835,28 @@
           </div>
         </div>
 
+        <!-- Dedicated User Deposit History (All Requests & Statuses) -->
+        <div class="card" id="userDepositsHistoryCard" style="border:1px solid rgba(0,230,118,0.35);">
+          <div class="section-title">
+            <span>📥 My Deposit Data (All Records)</span>
+            <span id="userDepositHistoryCountBadge" class="section-badge" style="background:rgba(0,230,118,0.16); color:var(--green);">0 Deposits</span>
+          </div>
+          <div class="bets-list" id="userDepositsHistoryList">
+            <!-- Dynamically populated deposit records -->
+          </div>
+        </div>
+
+        <!-- Dedicated User Withdrawal History (All Requests & Statuses) -->
+        <div class="card" id="userWithdrawalsHistoryCard" style="border:1px solid rgba(0,229,255,0.35);">
+          <div class="section-title">
+            <span>📤 My Withdrawal Data (All Records)</span>
+            <span id="userWithdrawalHistoryCountBadge" class="section-badge" style="background:rgba(0,229,255,0.16); color:var(--cyan);">0 Withdrawals</span>
+          </div>
+          <div class="bets-list" id="userWithdrawalsHistoryList">
+            <!-- Dynamically populated withdrawal records -->
+          </div>
+        </div>
+
         <!-- Immutable Transaction Ledger -->
         <div class="card">
           <div class="section-title">
@@ -3374,8 +3396,13 @@
       loadSavedBetSlipsForCurrentUser();
     }
 
-    // Transaction Ledger History (Synced live from SQLite /api/statement)
+    // Transaction Ledger History (Synced live from PostgreSQL/SQLite /api/statement & /api/state)
     let walletLedger = [];
+    let latestStateDeposits = [];
+    let latestStateWithdrawals = [];
+    let walletSyncedUserId = null;
+    let walletSyncRetryTimer = null;
+    let walletSyncRetryAttempt = 0;
 
     // 6-Level Subordinates Team Directory & Affiliate Stats (Synced live from PostgreSQL /api/affiliates)
     let affiliateTeam = [];
@@ -3593,6 +3620,7 @@
         renderCasinoCatalog();
       } else if (tabId === 'wallet') {
         renderWalletLedger();
+        syncUserTransactions();
       } else if (tabId === 'affiliate') {
         affiliateRetryAttempt = 0;
         if (affiliateRetryTimer) { clearTimeout(affiliateRetryTimer); affiliateRetryTimer = null; }
@@ -3875,32 +3903,75 @@
         }
       }
 
-      // 5. Reflect Deposits & Withdrawals status + refresh full SQLite bet slips & wallet ledger on changes
+      // 5. Reflect Deposits & Withdrawals status + pre-hydrate from /api/state + refresh full ledger on changes
       let txChanged = false;
-      if (currentUserId && state.deposits) {
-        state.deposits.forEach(d => {
-          if (d.userId === currentUserId) {
-            const item = walletLedger.find(tx => tx.id === d.id);
-            if (!item || item.status !== d.status || item.reason !== d.reason) {
-              txChanged = true;
-            }
+      const curUidUpper = currentUserId ? String(currentUserId).toUpperCase() : '';
+      if (curUidUpper && curUidUpper !== 'GUEST' && Array.isArray(state.deposits)) {
+        const myDeps = state.deposits.filter(d => String(d.userId || '').toUpperCase() === curUidUpper);
+        if (myDeps.length !== latestStateDeposits.length) txChanged = true;
+        latestStateDeposits = myDeps;
+        myDeps.forEach(d => {
+          const item = walletLedger.find(tx => tx.id === d.id);
+          const dMs = Number(d.createdAtMs || d.timestampMs || 0);
+          if (!item) {
+            walletLedger.push({
+              id: d.id,
+              type: 'DEPOSIT',
+              category: 'DEPOSIT',
+              title: `Deposit via ${d.method || 'UPI Instant'}`,
+              ref: d.utr ? `UTR: ${d.utr}` : (d.id || ''),
+              amount: Number(d.amount || 0),
+              timestampMs: dMs,
+              createdAtMs: dMs,
+              time: resolveISTTimestamp(d.time, dMs, true),
+              status: d.status || 'IN PROCESS',
+              reason: d.reason || ''
+            });
+            txChanged = true;
+          } else if (item.status !== d.status || item.reason !== (d.reason || '')) {
+            item.status = d.status;
+            item.reason = d.reason || '';
+            txChanged = true;
           }
         });
       }
-      if (currentUserId && state.withdrawals) {
-        state.withdrawals.forEach(w => {
-          if (w.userId === currentUserId) {
-            const item = walletLedger.find(tx => tx.id === w.id);
-            if (!item || item.status !== w.status || item.reason !== w.reason) {
-              txChanged = true;
-            }
+      if (curUidUpper && curUidUpper !== 'GUEST' && Array.isArray(state.withdrawals)) {
+        const myWds = state.withdrawals.filter(w => String(w.userId || '').toUpperCase() === curUidUpper);
+        if (myWds.length !== latestStateWithdrawals.length) txChanged = true;
+        latestStateWithdrawals = myWds;
+        myWds.forEach(w => {
+          const item = walletLedger.find(tx => tx.id === w.id);
+          const wMs = Number(w.createdAtMs || w.timestampMs || 0);
+          if (!item) {
+            walletLedger.push({
+              id: w.id,
+              type: 'WITHDRAWAL',
+              category: 'WITHDRAWAL',
+              title: `Withdrawal to ${w.bankName || 'Bank'}`,
+              ref: w.accNo ? `A/C: ${w.accNo}` : (w.upiId ? `UPI: ${w.upiId}` : (w.id || '')),
+              amount: -Math.abs(Number(w.amount || 0)),
+              timestampMs: wMs,
+              createdAtMs: wMs,
+              time: resolveISTTimestamp(w.time, wMs, true),
+              status: w.status || 'IN PROCESS',
+              reason: w.reason || ''
+            });
+            txChanged = true;
+          } else if (item.status !== w.status || item.reason !== (w.reason || '')) {
+            item.status = w.status;
+            item.reason = w.reason || '';
+            txChanged = true;
           }
         });
+      }
+      if (txChanged) {
+        walletLedger.sort((a, b) => Number(b.timestampMs || b.createdAtMs || 0) - Number(a.timestampMs || a.createdAtMs || 0));
+        renderWalletLedger();
       }
 
       let affiliateHydratedChanged = false;
       if (currentUserId && currentUserId !== 'Guest' && Array.isArray(state.affiliates)) {
-        const myAff = state.affiliates.find(a => String(a.userId || '').toUpperCase() === String(currentUserId).toUpperCase());
+        const myAff = state.affiliates.find(a => String(a.userId || '').toUpperCase() === curUidUpper);
         if (myAff && affiliateLoadedUserId !== currentUserId) {
           affiliatePrehydratedUserId = currentUserId;
           affiliateSummary = {
@@ -3932,6 +4003,9 @@
               };
             });
           }
+          if (Array.isArray(state.affiliate_claims)) {
+            affiliateClaimHistory = state.affiliate_claims.filter(c => String(c.userId || '').toUpperCase() === curUidUpper);
+          }
           affiliateHydratedChanged = true;
           renderAffiliateTeam();
         }
@@ -3939,7 +4013,7 @@
 
       if (versionChanged || walletChanged || txChanged || force || affiliateLoadedUserId !== currentUserId || affiliateHydratedChanged) {
         if (currentUserId && currentUserId !== 'Guest') {
-          if (versionChanged || walletChanged || txChanged || force) {
+          if (versionChanged || walletChanged || txChanged || force || walletSyncedUserId !== currentUserId) {
             syncUserTransactions();
             loadUserBetsFromBackend();
           }
@@ -5709,8 +5783,135 @@
       });
     }
 
+    function renderUserDepositWithdrawalCards() {
+      const depListEl = document.getElementById('userDepositsHistoryList');
+      const depBadgeEl = document.getElementById('userDepositHistoryCountBadge');
+      const wdListEl = document.getElementById('userWithdrawalsHistoryList');
+      const wdBadgeEl = document.getElementById('userWithdrawalHistoryCountBadge');
+
+      const depMap = new Map();
+      const wdMap = new Map();
+
+      const addDepositEntry = (entry) => {
+        if (!entry || !entry.id) return;
+        const id = String(entry.id);
+        if (!depMap.has(id)) depMap.set(id, entry);
+      };
+      const addWithdrawalEntry = (entry) => {
+        if (!entry || !entry.id) return;
+        const id = String(entry.id);
+        if (!wdMap.has(id)) wdMap.set(id, entry);
+      };
+
+      (Array.isArray(walletLedger) ? walletLedger : []).forEach(tx => {
+        const tp = String(tx.type || '').toUpperCase();
+        if (tp === 'DEPOSIT') {
+          addDepositEntry(tx);
+        } else if (tp === 'WITHDRAWAL' || tp === 'WITHDRAWAL_REFUND') {
+          addWithdrawalEntry(tx);
+        }
+      });
+
+      const curUidUpper = currentUserId ? String(currentUserId).toUpperCase() : '';
+      (Array.isArray(latestStateDeposits) ? latestStateDeposits : []).forEach(d => {
+        if (curUidUpper && String(d.userId || '').toUpperCase() !== curUidUpper) return;
+        const ms = Number(d.createdAtMs || d.timestampMs || 0);
+        addDepositEntry({
+          id: d.id,
+          type: 'DEPOSIT',
+          title: `Deposit via ${d.method || 'UPI Instant'}`,
+          ref: d.utr ? `UTR: ${d.utr}` : d.id,
+          amount: Number(d.amount || 0),
+          timestampMs: ms,
+          createdAtMs: ms,
+          time: resolveISTTimestamp(d.time, ms, true),
+          status: d.status || 'IN PROCESS',
+          reason: d.reason || ''
+        });
+      });
+
+      (Array.isArray(latestStateWithdrawals) ? latestStateWithdrawals : []).forEach(w => {
+        if (curUidUpper && String(w.userId || '').toUpperCase() !== curUidUpper) return;
+        const ms = Number(w.createdAtMs || w.timestampMs || 0);
+        addWithdrawalEntry({
+          id: w.id,
+          type: 'WITHDRAWAL',
+          title: `Withdrawal to ${w.bankName || 'Bank'}`,
+          ref: w.accNo ? `A/C: ${w.accNo}` : (w.upiId ? `UPI: ${w.upiId}` : w.id),
+          amount: -Math.abs(Number(w.amount || 0)),
+          timestampMs: ms,
+          createdAtMs: ms,
+          time: resolveISTTimestamp(w.time, ms, true),
+          status: w.status || 'IN PROCESS',
+          reason: w.reason || ''
+        });
+      });
+
+      const deposits = Array.from(depMap.values()).sort((a, b) => Number(b.timestampMs || b.createdAtMs || 0) - Number(a.timestampMs || a.createdAtMs || 0));
+      const withdrawals = Array.from(wdMap.values()).sort((a, b) => Number(b.timestampMs || b.createdAtMs || 0) - Number(a.timestampMs || a.createdAtMs || 0));
+
+      const formatStatusPill = (tx) => {
+        const stUpper = String(tx.status || '').toUpperCase();
+        const reasonTxt = tx.reason ? ` (${escapeSupportHtml(tx.reason)})` : '';
+        if (stUpper === 'IN PROCESS' || stUpper === 'PENDING') {
+          return `<span style="background:rgba(255, 170, 0, 0.18); color:#FFAA00; border:1px solid #FFAA00; padding:2px 8px; border-radius:12px; font-size:10px; font-weight:800;">⏳ IN PROCESS</span>`;
+        }
+        if (stUpper === 'SUCCESS' || stUpper === 'COMPLETED' || stUpper === 'APPROVED' || stUpper === 'SETTLED') {
+          return `<span style="background:rgba(0, 230, 118, 0.18); color:#00E676; border:1px solid #00E676; padding:2px 8px; border-radius:12px; font-size:10px; font-weight:800;">✓ SUCCESS</span>`;
+        }
+        if (stUpper === 'FAIL' || stUpper === 'REJECTED') {
+          return `<span style="background:rgba(255, 82, 82, 0.18); color:#FF5252; border:1px solid #FF5252; padding:2px 8px; border-radius:12px; font-size:10px; font-weight:800;">✕ FAIL${reasonTxt}</span>`;
+        }
+        return `<span style="background:rgba(0, 229, 255, 0.18); color:var(--cyan); border:1px solid var(--cyan); padding:2px 8px; border-radius:12px; font-size:10px; font-weight:800;">${escapeSupportHtml(tx.status || 'INFO')}</span>`;
+      };
+
+      const renderItemRows = (rows, emptyMsg) => {
+        if (!rows || rows.length === 0) {
+          return `<p style="font-size:12px; color:var(--text-muted); text-align:center; padding:12px;">${emptyMsg}</p>`;
+        }
+        return rows.map(tx => {
+          const amtVal = Number(tx.amount || 0);
+          const isPos = amtVal >= 0;
+          const color = isPos ? 'var(--green)' : 'var(--red)';
+          const balAfterTxt = (tx.balanceAfter !== null && tx.balanceAfter !== undefined)
+            ? `<div style="font-size:9px; color:var(--text-muted); font-family:monospace;">Bal: ₹${Number(tx.balanceAfter).toFixed(2)}</div>`
+            : '';
+          const istStr = resolveISTTimestamp(tx.time, tx.timestampMs || tx.createdAtMs, true);
+          return `
+            <div class="bet-item" style="display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border-bottom:1px solid var(--border); gap:8px;">
+              <div style="flex:1; min-width:0;">
+                <div style="font-weight:800; font-size:12px; color:#FFF; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                  <span>${escapeSupportHtml(tx.title || tx.type || 'Transaction')}</span> ${formatStatusPill(tx)}
+                </div>
+                <div style="font-size:10px; color:var(--text-muted); margin-top:3px; word-break:break-word;">
+                  <span style="font-family:monospace; color:#CBD5E1;">${escapeSupportHtml(tx.id || '')}</span> • ${escapeSupportHtml(tx.ref || '')} • <span style="color:var(--cyan);">${escapeSupportHtml(istStr)}</span>
+                </div>
+              </div>
+              <div style="text-align:right; flex-shrink:0;">
+                <div style="font-weight:900; font-size:13px; font-family:monospace; color:${color};">
+                  ${isPos ? '+' : '-'}₹${Math.abs(amtVal).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+                ${balAfterTxt}
+              </div>
+            </div>
+          `;
+        }).join('');
+      };
+
+      if (depBadgeEl) depBadgeEl.innerText = `${deposits.length} Deposit${deposits.length === 1 ? '' : 's'}`;
+      if (depListEl) {
+        depListEl.innerHTML = renderItemRows(deposits, 'No deposit records found yet. Click "+ Quick Deposit" to add funds.');
+      }
+
+      if (wdBadgeEl) wdBadgeEl.innerText = `${withdrawals.length} Withdrawal${withdrawals.length === 1 ? '' : 's'}`;
+      if (wdListEl) {
+        wdListEl.innerHTML = renderItemRows(withdrawals, 'No withdrawal requests found yet.');
+      }
+    }
+
     function renderWalletLedger() {
       updateStatementSummaryCards(latestStatementData ? latestStatementData.summary : null);
+      renderUserDepositWithdrawalCards();
       const container = document.getElementById('walletLedgerList');
       if (!container) return;
       const list = filterWalletLedgerEntries();
@@ -5718,7 +5919,7 @@
 
       if (list.length === 0) {
         const winText = statementDaysFilter === 'ALL' ? 'all saved history' : `the last ${statementDaysFilter} days`;
-        container.innerHTML = `<p style="font-size:12px; color:var(--text-muted); text-align:center; padding:14px;">No statement transactions found for ${ledgerFilterType} in ${winText}.</p>`;
+        container.innerHTML = `<p style="font-size:12px; color:var(--text-muted); text-align:center; padding:14px;">No statement transactions found for ${escapeSupportHtml(ledgerFilterType)} in ${winText}.</p>`;
         return;
       }
 
@@ -5728,14 +5929,15 @@
 
         let statusBadge = '';
         const stUpper = (tx.status || '').toUpperCase();
+        const reasonEsc = tx.reason ? escapeSupportHtml(tx.reason) : '';
         if (stUpper === 'IN PROCESS' || stUpper === 'PENDING') {
           statusBadge = `<span style="background:rgba(255, 170, 0, 0.18); color:#FFAA00; border:1px solid #FFAA00; padding:2px 8px; border-radius:12px; font-size:10px; font-weight:800; letter-spacing:0.3px;">⏳ IN PROCESS</span>`;
         } else if (stUpper === 'SUCCESS' || stUpper === 'COMPLETED' || stUpper === 'APPROVED' || stUpper === 'SETTLED') {
           statusBadge = `<span style="background:rgba(0, 230, 118, 0.18); color:#00E676; border:1px solid #00E676; padding:2px 8px; border-radius:12px; font-size:10px; font-weight:800; letter-spacing:0.3px;">✓ ${stUpper === 'SETTLED' ? 'CREDITED' : 'SUCCESS'}</span>`;
         } else if (stUpper === 'FAIL' || stUpper === 'REJECTED') {
-          statusBadge = `<span style="background:rgba(255, 82, 82, 0.18); color:#FF5252; border:1px solid #FF5252; padding:2px 8px; border-radius:12px; font-size:10px; font-weight:800; letter-spacing:0.3px;">✕ FAIL${tx.reason ? ` (${tx.reason})` : ''}</span>`;
+          statusBadge = `<span style="background:rgba(255, 82, 82, 0.18); color:#FF5252; border:1px solid #FF5252; padding:2px 8px; border-radius:12px; font-size:10px; font-weight:800; letter-spacing:0.3px;">✕ FAIL${reasonEsc ? ` (${reasonEsc})` : ''}</span>`;
         } else {
-          statusBadge = `<span style="background:rgba(0, 229, 255, 0.18); color:var(--cyan); border:1px solid var(--cyan); padding:2px 8px; border-radius:12px; font-size:10px; font-weight:800;">${tx.status}</span>`;
+          statusBadge = `<span style="background:rgba(0, 229, 255, 0.18); color:var(--cyan); border:1px solid var(--cyan); padding:2px 8px; border-radius:12px; font-size:10px; font-weight:800;">${escapeSupportHtml(tx.status || '')}</span>`;
         }
 
         const balAfterTxt = (tx.balanceAfter !== null && tx.balanceAfter !== undefined)
@@ -5746,9 +5948,9 @@
           <div class="bet-item" style="display:flex; justify-content:space-between; align-items:center; padding:12px; border-bottom:1px solid var(--border); gap:8px;">
             <div style="flex:1;">
               <div style="font-weight:800; font-size:13px; color:#FFF; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                ${tx.title} ${statusBadge}
+                ${escapeSupportHtml(tx.title || tx.type || '')} ${statusBadge}
               </div>
-              <div style="font-size:10px; color:var(--text-muted); margin-top:3px;">${tx.ref || ''} • <span style="color:var(--cyan);">${resolveISTTimestamp(tx.time, tx.timestampMs || tx.createdAtMs, true)}</span></div>
+              <div style="font-size:10px; color:var(--text-muted); margin-top:3px;">${escapeSupportHtml(tx.ref || '')} • <span style="color:var(--cyan);">${escapeSupportHtml(resolveISTTimestamp(tx.time, tx.timestampMs || tx.createdAtMs, true))}</span></div>
             </div>
             <div style="text-align:right;">
               <div style="font-weight:900; font-size:14px; font-family:monospace; color:${color};">
@@ -5885,16 +6087,39 @@
       }
     }
 
+    function scheduleWalletSyncRetry(uid) {
+      if (!uid || String(currentUserId || '').toUpperCase() !== String(uid).toUpperCase() || walletSyncRetryTimer) return;
+      if (walletSyncRetryAttempt >= 15) return;
+      const delays = [1500, 2500, 4000, 6000, 8000, 10000];
+      const waitMs = delays[Math.min(walletSyncRetryAttempt, delays.length - 1)];
+      walletSyncRetryAttempt++;
+      walletSyncRetryTimer = setTimeout(() => {
+        walletSyncRetryTimer = null;
+        if (String(currentUserId || '').toUpperCase() === String(uid).toUpperCase()) {
+          syncUserTransactions();
+        }
+      }, waitMs);
+    }
+
     function syncUserTransactions() {
       if (!currentUserId || currentUserId === 'Guest' || !hasBackendConnection()) return;
       const uid = currentUserId;
+      const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      const timeoutId = controller ? setTimeout(() => { try { controller.abort(); } catch (e) {} }, 20000) : null;
       fetch(apiUrl(`/api/statement?userId=${encodeURIComponent(uid)}&days=${encodeURIComponent(statementDaysFilter)}&t=${Date.now()}`), {
         credentials: 'include',
-        cache: 'no-store'
+        cache: 'no-store',
+        ...(controller ? { signal: controller.signal } : {})
       })
-        .then(r => r.ok ? r.json() : null)
+        .then(r => r.ok ? r.json().catch(() => null) : null)
         .then(stmt => {
-          if (!stmt || !stmt.summary || currentUserId !== uid) return;
+          if (!stmt || !stmt.summary || String(currentUserId || '').toUpperCase() !== String(uid).toUpperCase()) {
+            if (!stmt) scheduleWalletSyncRetry(uid);
+            return;
+          }
+          walletSyncRetryAttempt = 0;
+          if (walletSyncRetryTimer) { clearTimeout(walletSyncRetryTimer); walletSyncRetryTimer = null; }
+          walletSyncedUserId = uid;
           latestStatementData = stmt;
           if (stmt.referralCode && !currentUserReferralCode) {
             currentUserReferralCode = stmt.referralCode;
@@ -5911,7 +6136,13 @@
             renderBetSlips();
           }
           renderWalletLedger();
-        }).catch(() => {});
+        })
+        .catch(() => {
+          scheduleWalletSyncRetry(uid);
+        })
+        .finally(() => {
+          if (timeoutId) clearTimeout(timeoutId);
+        });
     }
 
     // COPY SHORTCUTS
@@ -6022,6 +6253,7 @@
           .then(data => {
             if (data) applyBankConfigToDepositModal(data);
           }).catch(()=>{});
+        syncUserTransactions();
       }
       document.getElementById('depositModal').classList.add('active');
       playSound('betClick');
@@ -6059,7 +6291,18 @@
         }
         const dep = res.deposit ? res.deposit : {};
         const depId = res.depositId || dep.id || ('DEP-' + Math.floor(10000 + Math.random() * 90000));
-        const depMs = Number(dep.timestampMs || getSyncedNowMs());
+        const depMs = Number(dep.createdAtMs || dep.timestampMs || getSyncedNowMs());
+        latestStateDeposits.unshift(Object.assign({
+          id: depId,
+          userId: currentUserId,
+          userName: currentUserName,
+          amount: amount,
+          utr: utr,
+          method: 'UPI Instant',
+          status: 'IN PROCESS',
+          createdAtMs: depMs,
+          time: resolveISTTimestamp(dep.time, depMs, true)
+        }, dep));
         walletLedger.unshift({
           id: depId,
           type: 'DEPOSIT',
@@ -6086,6 +6329,7 @@
         return;
       }
       document.getElementById('userModalWithdrawBalance').innerText = `₹${userBalance.toFixed(2)}`;
+      syncUserTransactions();
       document.getElementById('withdrawModal').classList.add('active');
       playSound('betClick');
     }
@@ -6116,7 +6360,21 @@
           userBalance = typeof res.newBalance === 'number' ? res.newBalance : (userBalance - amount);
           const wd = res.withdrawal || {};
           const wdId = res.withdrawalId || wd.id || ('WD-' + Math.floor(10000 + Math.random() * 90000));
-          const wdMs = Number(wd.timestampMs || getSyncedNowMs());
+          const wdMs = Number(wd.createdAtMs || wd.timestampMs || getSyncedNowMs());
+          latestStateWithdrawals.unshift(Object.assign({
+            id: wdId,
+            userId: currentUserId,
+            userName: currentUserName,
+            amount: amount,
+            upiId: upiId,
+            bankName: bankName,
+            accNo: accNo,
+            ifsc: ifsc,
+            bankingName: bankingName,
+            status: 'IN PROCESS',
+            createdAtMs: wdMs,
+            time: resolveISTTimestamp(wd.time, wdMs, true)
+          }, wd));
           walletLedger.unshift({
             id: wdId,
             type: 'WITHDRAWAL',
@@ -6945,6 +7203,14 @@
       if (!isSameUser) {
         latestStatementData = null;
         walletLedger = [];
+        latestStateDeposits = [];
+        latestStateWithdrawals = [];
+        walletSyncedUserId = null;
+        walletSyncRetryAttempt = 0;
+        if (walletSyncRetryTimer) {
+          clearTimeout(walletSyncRetryTimer);
+          walletSyncRetryTimer = null;
+        }
         affiliateLoadedUserId = null;
         affiliatePrehydratedUserId = null;
         affiliateTeam = [];
@@ -7203,6 +7469,14 @@
       userBalance = 0.00;
       userBetSlipsHistory = [];
       walletLedger = [];
+      latestStateDeposits = [];
+      latestStateWithdrawals = [];
+      walletSyncedUserId = null;
+      walletSyncRetryAttempt = 0;
+      if (walletSyncRetryTimer) {
+        clearTimeout(walletSyncRetryTimer);
+        walletSyncRetryTimer = null;
+      }
       affiliateLoadedUserId = null;
       affiliatePrehydratedUserId = null;
       affiliateTeam = [];

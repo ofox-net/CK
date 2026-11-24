@@ -1040,12 +1040,12 @@
 
           <div class="filter-bar">
             <div class="filter-pills">
-              <button class="filter-pill active" onclick="filterDeposits('ALL', this)">All Requests</button>
-              <button class="filter-pill" onclick="filterDeposits('IN PROCESS', this)">In Process</button>
-              <button class="filter-pill" onclick="filterDeposits('SUCCESS', this)">Success</button>
-              <button class="filter-pill" onclick="filterDeposits('FAIL', this)">Fail</button>
+              <button class="filter-pill active" onclick="filterDeposits('ALL', this)" id="depFilterAllBtn">All Requests (0)</button>
+              <button class="filter-pill" onclick="filterDeposits('IN PROCESS', this)" id="depFilterPendingBtn">In Process (0)</button>
+              <button class="filter-pill" onclick="filterDeposits('SUCCESS', this)" id="depFilterSuccessBtn">Success (0)</button>
+              <button class="filter-pill" onclick="filterDeposits('FAIL', this)" id="depFilterFailBtn">Fail (0)</button>
             </div>
-            <input type="text" class="search-input" placeholder="Search by UTR or Username..." id="searchDepositInput" oninput="resetAdminTablePage('deposits'); renderDepositsTable()" />
+            <input type="text" class="search-input" placeholder="Search by UTR, User ID or Username..." id="searchDepositInput" oninput="resetAdminTablePage('deposits'); renderDepositsTable()" />
           </div>
 
           <div class="table-responsive">
@@ -1088,12 +1088,12 @@
 
           <div class="filter-bar">
             <div class="filter-pills">
-              <button class="filter-pill active" onclick="filterWithdrawals('ALL', this)">All</button>
-              <button class="filter-pill" onclick="filterWithdrawals('IN PROCESS', this)">In Process</button>
-              <button class="filter-pill" onclick="filterWithdrawals('SUCCESS', this)">Success</button>
-              <button class="filter-pill" onclick="filterWithdrawals('FAIL', this)">Fail</button>
+              <button class="filter-pill active" onclick="filterWithdrawals('ALL', this)" id="wdFilterAllBtn">All (0)</button>
+              <button class="filter-pill" onclick="filterWithdrawals('IN PROCESS', this)" id="wdFilterPendingBtn">In Process (0)</button>
+              <button class="filter-pill" onclick="filterWithdrawals('SUCCESS', this)" id="wdFilterSuccessBtn">Success (0)</button>
+              <button class="filter-pill" onclick="filterWithdrawals('FAIL', this)" id="wdFilterFailBtn">Fail (0)</button>
             </div>
-            <input type="text" class="search-input" placeholder="Search User or Bank Account..." id="searchWithdrawalInput" oninput="resetAdminTablePage('withdrawals'); renderWithdrawalsTable()" />
+            <input type="text" class="search-input" placeholder="Search User, Bank Account or UPI..." id="searchWithdrawalInput" oninput="resetAdminTablePage('withdrawals'); renderWithdrawalsTable()" />
           </div>
 
           <div class="table-responsive">
@@ -1378,9 +1378,9 @@
 
           <div class="filter-bar">
             <div class="filter-pills">
-              <button class="filter-pill active" onclick="filterAffiliates('ALL', this)">All Affiliates</button>
-              <button class="filter-pill" onclick="filterAffiliates('ACTIVE_EARNERS', this)">Active Earners (>₹10,000)</button>
-              <button class="filter-pill" onclick="filterAffiliates('TOP_TEAMS', this)">Top Teams (>50 Members)</button>
+              <button class="filter-pill active" onclick="filterAffiliates('ALL', this)" id="affFilterAllBtn">All Affiliates (0)</button>
+              <button class="filter-pill" onclick="filterAffiliates('ACTIVE_EARNERS', this)" id="affFilterEarnersBtn">Active Earners (&gt;₹10,000) (0)</button>
+              <button class="filter-pill" onclick="filterAffiliates('TOP_TEAMS', this)" id="affFilterTopTeamsBtn">Top Teams (&gt;50 Members) (0)</button>
             </div>
             <input type="text" class="search-input" placeholder="Search by User, Referral Code, or Sponsor..." id="searchAffiliateInput" oninput="resetAdminTablePage('affiliates'); renderAffiliateTable()" />
           </div>
@@ -1393,9 +1393,9 @@
                   <th>Referral Code</th>
                   <th>Invited By (Sponsor)</th>
                   <th>Direct Members (Tier 1)</th>
-                  <th>Team Members (Tier 2-6)</th>
+                  <th>Team Members (Tier 1–6)</th>
                   <th>Total Refer-to-Earn (₹)</th>
-                  <th>Yesterday's Earn</th>
+                  <th>Today's Earn</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -1410,8 +1410,40 @@
         <div class="panel" style="margin-top:16px;">
           <div class="panel-header">
             <div>
+              <h3 class="panel-title">💸 Affiliate Claim Transactions Ledger</h3>
+              <p class="panel-subtitle">Complete permanent history of every affiliate wallet claim across all users (nothing removed)</p>
+            </div>
+            <span class="badge badge-approved" id="adminAffiliateClaimsCountBadge">0 Claims • ₹0.00</span>
+          </div>
+          <div class="filter-bar">
+            <input type="text" class="search-input" placeholder="Search by Claim TX ID, User ID, or Username..." id="searchAdminAffClaimsInput" oninput="resetAdminTablePage('affiliateClaims'); renderAffiliateClaimsTable()" />
+          </div>
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>Claim TX ID</th>
+                  <th>User</th>
+                  <th>Claimed Amount</th>
+                  <th>Wallet Before → After</th>
+                  <th>Details</th>
+                  <th>Status</th>
+                  <th>Claimed At (IST)</th>
+                </tr>
+              </thead>
+              <tbody id="adminAffiliateClaimsBody">
+                <!-- Dynamically populated from PostgreSQL/SQLite -->
+              </tbody>
+            </table>
+          </div>
+          <div class="pagination-bar" id="affiliateClaimsPaginationBar"></div>
+        </div>
+
+        <div class="panel" style="margin-top:16px;">
+          <div class="panel-header">
+            <div>
               <h3 class="panel-title">💰 6-Level Commission History Ledger</h3>
-              <p class="panel-subtitle">Permanent audit ledger of every Tier 1–6 referral commission credited to sponsor wallets</p>
+              <p class="panel-subtitle">Permanent audit ledger of every Tier 1–6 referral commission credited to sponsor vaults</p>
             </div>
             <span class="badge badge-approved" id="adminCommissionCountBadge">0 Records</span>
           </div>
@@ -2208,6 +2240,7 @@
     let serverMarketStats = {};
     let supportTickets = [];
     let referralCommissions = [];
+    let affiliateClaimsList = [];
     let activeSupportTicketId = null;
     let currentSupportFilter = 'ALL';
 
@@ -2366,6 +2399,7 @@
       declaredResults: { currentPage: 1, pageSize: 10, containerId: 'declaredResultsPaginationBar', render: () => renderDeclaredResultsTable() },
       users:           { currentPage: 1, pageSize: 10, containerId: 'usersPaginationBar',           render: () => renderUsersTable() },
       affiliates:      { currentPage: 1, pageSize: 10, containerId: 'affiliatePaginationBar',       render: () => renderAffiliateTable() },
+      affiliateClaims: { currentPage: 1, pageSize: 10, containerId: 'affiliateClaimsPaginationBar', render: () => renderAffiliateClaimsTable() },
       commissions:     { currentPage: 1, pageSize: 10, containerId: 'commissionsPaginationBar',     render: () => renderCommissionHistoryTable() },
       bets:            { currentPage: 1, pageSize: 10, containerId: 'betsPaginationBar',            render: () => renderBetsTable() },
       audit:           { currentPage: 1, pageSize: 10, containerId: 'auditPaginationBar',           render: () => renderAuditTable() }
@@ -2457,6 +2491,19 @@
     }
 
     function renderDepositsTable() {
+      const depAll = depositRequests.length;
+      const depPend = depositRequests.filter(d => d.status === 'IN PROCESS' || d.status === 'PENDING').length;
+      const depSucc = depositRequests.filter(d => d.status === 'SUCCESS' || d.status === 'APPROVED').length;
+      const depFail = depositRequests.filter(d => d.status === 'FAIL' || d.status === 'REJECTED').length;
+      const dAllBtn = document.getElementById('depFilterAllBtn');
+      const dPendBtn = document.getElementById('depFilterPendingBtn');
+      const dSuccBtn = document.getElementById('depFilterSuccessBtn');
+      const dFailBtn = document.getElementById('depFilterFailBtn');
+      if (dAllBtn) dAllBtn.innerText = `All Requests (${depAll})`;
+      if (dPendBtn) dPendBtn.innerText = `In Process (${depPend})`;
+      if (dSuccBtn) dSuccBtn.innerText = `Success (${depSucc})`;
+      if (dFailBtn) dFailBtn.innerText = `Fail (${depFail})`;
+
       const q = (document.getElementById('searchDepositInput')?.value || '').toLowerCase();
       const tbody = document.getElementById('depositsTableBody');
       const filtered = depositRequests.filter(d => {
@@ -2469,7 +2516,13 @@
         else if (currentDepositFilter === 'SUCCESS') matchesStatus = isSuccess;
         else if (currentDepositFilter === 'FAIL') matchesStatus = isFail;
 
-        const matchesQuery = (!q || (d.utr && d.utr.toLowerCase().includes(q)) || (d.userName && d.userName.toLowerCase().includes(q)) || d.id.toLowerCase().includes(q));
+        const matchesQuery = (
+          !q ||
+          (d.utr && String(d.utr).toLowerCase().includes(q)) ||
+          (d.userName && String(d.userName).toLowerCase().includes(q)) ||
+          (d.userId && String(d.userId).toLowerCase().includes(q)) ||
+          String(d.id || '').toLowerCase().includes(q)
+        );
         return matchesStatus && matchesQuery;
       });
 
@@ -2485,38 +2538,43 @@
       tbody.innerHTML = pageMeta.slice.map(d => {
         const isProcess = d.status === 'IN PROCESS' || d.status === 'PENDING';
         const isSuccess = d.status === 'SUCCESS' || d.status === 'APPROVED';
-        const isFail = d.status === 'FAIL' || d.status === 'REJECTED';
+        const safeId = escapeAdminHtml(d.id);
+        const safeName = escapeAdminHtml(d.userName);
+        const safeUid = escapeAdminHtml(d.userId);
+        const safeMethod = escapeAdminHtml(d.method);
+        const safeUtr = escapeAdminHtml(d.utr);
+        const safeReason = d.reason ? escapeAdminHtml(d.reason) : '';
 
         const badgeHtml = isProcess
           ? `<span class="badge" style="background:rgba(255, 170, 0, 0.18); color:#FFAA00; border:1px solid #FFAA00;">⏳ IN PROCESS</span>`
           : isSuccess
           ? `<span class="badge" style="background:rgba(0, 230, 118, 0.18); color:#00E676; border:1px solid #00E676;">✓ SUCCESS</span>`
-          : `<span class="badge" style="background:rgba(255, 82, 82, 0.18); color:#FF5252; border:1px solid #FF5252;">✕ FAIL${d.reason ? `: ${d.reason}` : ''}</span>`;
+          : `<span class="badge" style="background:rgba(255, 82, 82, 0.18); color:#FF5252; border:1px solid #FF5252;">✕ FAIL${safeReason ? `: ${safeReason}` : ''}</span>`;
 
         return `
         <tr>
-          <td><strong style="color:var(--gold); font-family:monospace;">${d.id}</strong></td>
+          <td><strong style="color:var(--gold); font-family:monospace;">${safeId}</strong></td>
           <td>
-            <strong>${d.userName}</strong><br/>
-            <span style="font-size:11px; color:var(--text-muted);">${d.userId}</span>
+            <strong>${safeName}</strong><br/>
+            <span style="font-size:11px; color:var(--text-muted);">${safeUid}</span>
           </td>
-          <td><strong style="color:var(--green); font-size:15px;">₹${d.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></td>
+          <td><strong style="color:var(--green); font-size:15px;">₹${Number(d.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></td>
           <td>
-            <div style="font-weight:700;">${d.method}</div>
-            <span style="font-family:monospace; color:var(--cyan); font-size:11px;">UTR: ${d.utr}</span>
+            <div style="font-weight:700;">${safeMethod}</div>
+            <span style="font-family:monospace; color:var(--cyan); font-size:11px;">UTR: ${safeUtr}</span>
           </td>
           <td>
-            <button class="btn btn-secondary btn-sm" onclick="viewProofSlip('${d.id}')">🔍 View Slip</button>
+            <button class="btn btn-secondary btn-sm" onclick="viewProofSlip('${safeId}')">🔍 View Slip</button>
           </td>
-          <td style="font-size:11px; color:var(--cyan);">${resolveAdminIST(d.time, d.timestampMs, true)}</td>
+          <td style="font-size:11px; color:var(--cyan);">${escapeAdminHtml(resolveAdminIST(d.time, d.createdAtMs || d.timestampMs, true))}</td>
           <td>
             ${badgeHtml}
           </td>
           <td>
             ${isProcess ? `
               <div style="display:flex; gap:6px;">
-                <button class="btn btn-green btn-sm" onclick="approveDeposit('${d.id}')">✓ Approve</button>
-                <button class="btn btn-red btn-sm" onclick="promptRejectDeposit('${d.id}')">✕ Reject</button>
+                <button class="btn btn-green btn-sm" onclick="approveDeposit('${safeId}')">✓ Approve</button>
+                <button class="btn btn-red btn-sm" onclick="promptRejectDeposit('${safeId}')">✕ Reject</button>
               </div>
             ` : `<span style="font-size:11px; color:var(--text-muted); font-weight:700;">Resolved</span>`}
           </td>
@@ -2566,13 +2624,13 @@
           <h3 style="font-size:16px; font-weight:900;">COLOUR KING DIGITAL PAY</h3>
           <p style="font-size:11px; color:#666;">Transaction Reference Receipt</p>
         </div>
-        <div><strong>REQUEST ID:</strong> ${dep.id}</div>
-        <div><strong>USER:</strong> ${dep.userName} (${dep.userId})</div>
-        <div><strong>AMOUNT:</strong> ₹${dep.amount.toFixed(2)}</div>
-        <div><strong>UTR NUMBER:</strong> <span style="background:#FFFF00; padding:1px 4px;">${dep.utr}</span></div>
-        <div><strong>CHANNEL:</strong> ${dep.method}</div>
-        <div><strong>TIMESTAMP (IST):</strong> ${resolveAdminIST(dep.time, dep.timestampMs, true)}</div>
-        <div><strong>STATUS:</strong> <span style="font-weight:900; color:${(dep.status==='SUCCESS'||dep.status==='APPROVED')?'green':(dep.status==='FAIL'||dep.status==='REJECTED')?'red':'orange'}">${dep.status}</span></div>
+        <div><strong>REQUEST ID:</strong> ${escapeAdminHtml(dep.id)}</div>
+        <div><strong>USER:</strong> ${escapeAdminHtml(dep.userName)} (${escapeAdminHtml(dep.userId)})</div>
+        <div><strong>AMOUNT:</strong> ₹${Number(dep.amount || 0).toFixed(2)}</div>
+        <div><strong>UTR NUMBER:</strong> <span style="background:#FFFF00; padding:1px 4px;">${escapeAdminHtml(dep.utr)}</span></div>
+        <div><strong>CHANNEL:</strong> ${escapeAdminHtml(dep.method)}</div>
+        <div><strong>TIMESTAMP (IST):</strong> ${escapeAdminHtml(resolveAdminIST(dep.time, dep.createdAtMs || dep.timestampMs, true))}</div>
+        <div><strong>STATUS:</strong> <span style="font-weight:900; color:${(dep.status==='SUCCESS'||dep.status==='APPROVED')?'green':(dep.status==='FAIL'||dep.status==='REJECTED')?'red':'orange'}">${escapeAdminHtml(dep.status)}</span></div>
         ${dep.reason ? `<div><strong>REASON:</strong> <span style="color:red;">${escapeAdminHtml(dep.reason)}</span></div>` : ''}
         <div style="margin-top:12px; text-align:center; font-size:10px; color:#888;">
           Bank verification code: CK-VERIFIED-HASH-9981
@@ -2641,6 +2699,19 @@
     }
 
     function renderWithdrawalsTable() {
+      const wdAll = withdrawalRequests.length;
+      const wdPend = withdrawalRequests.filter(w => w.status === 'IN PROCESS' || w.status === 'PENDING').length;
+      const wdSucc = withdrawalRequests.filter(w => w.status === 'SUCCESS' || w.status === 'APPROVED').length;
+      const wdFail = withdrawalRequests.filter(w => w.status === 'FAIL' || w.status === 'REJECTED').length;
+      const wAllBtn = document.getElementById('wdFilterAllBtn');
+      const wPendBtn = document.getElementById('wdFilterPendingBtn');
+      const wSuccBtn = document.getElementById('wdFilterSuccessBtn');
+      const wFailBtn = document.getElementById('wdFilterFailBtn');
+      if (wAllBtn) wAllBtn.innerText = `All (${wdAll})`;
+      if (wPendBtn) wPendBtn.innerText = `In Process (${wdPend})`;
+      if (wSuccBtn) wSuccBtn.innerText = `Success (${wdSucc})`;
+      if (wFailBtn) wFailBtn.innerText = `Fail (${wdFail})`;
+
       const q = (document.getElementById('searchWithdrawalInput')?.value || '').toLowerCase();
       const tbody = document.getElementById('withdrawalsTableBody');
       const filtered = withdrawalRequests.filter(w => {
@@ -2653,7 +2724,15 @@
         else if (currentWithdrawalFilter === 'SUCCESS') matchesStatus = isSuccess;
         else if (currentWithdrawalFilter === 'FAIL') matchesStatus = isFail;
 
-        const matchesQuery = (!q || (w.userName && w.userName.toLowerCase().includes(q)) || (w.destination && w.destination.toLowerCase().includes(q)) || w.id.toLowerCase().includes(q));
+        const matchesQuery = (
+          !q ||
+          (w.userName && String(w.userName).toLowerCase().includes(q)) ||
+          (w.userId && String(w.userId).toLowerCase().includes(q)) ||
+          (w.destination && String(w.destination).toLowerCase().includes(q)) ||
+          (w.upiId && String(w.upiId).toLowerCase().includes(q)) ||
+          (w.accNo && String(w.accNo).toLowerCase().includes(q)) ||
+          String(w.id || '').toLowerCase().includes(q)
+        );
         return matchesStatus && matchesQuery;
       });
 
@@ -2669,47 +2748,55 @@
       tbody.innerHTML = pageMeta.slice.map(w => {
         const isProcess = w.status === 'IN PROCESS' || w.status === 'PENDING';
         const isSuccess = w.status === 'SUCCESS' || w.status === 'APPROVED';
-        const isFail = w.status === 'FAIL' || w.status === 'REJECTED';
+        const safeId = escapeAdminHtml(w.id);
+        const safeName = escapeAdminHtml(w.userName);
+        const safeUid = escapeAdminHtml(w.userId);
+        const safeBankingName = escapeAdminHtml(w.bankingName || w.userName);
+        const safeUpi = escapeAdminHtml(w.upiId || '');
+        const safeBank = escapeAdminHtml(w.bankName || 'Direct Bank IMPS');
+        const safeAcc = escapeAdminHtml(w.accNo || '');
+        const safeIfsc = escapeAdminHtml(w.ifsc || '');
+        const safeReason = w.reason ? escapeAdminHtml(w.reason) : '';
 
         const badgeHtml = isProcess
           ? `<span class="badge" style="background:rgba(255, 170, 0, 0.18); color:#FFAA00; border:1px solid #FFAA00;">⏳ IN PROCESS</span>`
           : isSuccess
           ? `<span class="badge" style="background:rgba(0, 230, 118, 0.18); color:#00E676; border:1px solid #00E676;">✓ SUCCESS</span>`
-          : `<span class="badge" style="background:rgba(255, 82, 82, 0.18); color:#FF5252; border:1px solid #FF5252;">✕ FAIL${w.reason ? `: ${w.reason}` : ''}</span>`;
+          : `<span class="badge" style="background:rgba(255, 82, 82, 0.18); color:#FF5252; border:1px solid #FF5252;">✕ FAIL${safeReason ? `: ${safeReason}` : ''}</span>`;
 
         return `
         <tr>
-          <td><strong style="color:var(--gold); font-family:monospace;">${w.id}</strong></td>
+          <td><strong style="color:var(--gold); font-family:monospace;">${safeId}</strong></td>
           <td>
-            <strong>${w.userName}</strong><br/>
-            <span style="font-size:11px; color:var(--text-muted);">${w.userId}</span>
+            <strong>${safeName}</strong><br/>
+            <span style="font-size:11px; color:var(--text-muted);">${safeUid}</span>
           </td>
-          <td><strong style="color:var(--gold); font-size:15px;">₹${w.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></td>
+          <td><strong style="color:var(--gold); font-size:15px;">₹${Number(w.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></td>
           <td>
-            <div style="font-size:13px; font-weight:800; color:#FFF;">👤 ${w.bankingName || w.userName}</div>
+            <div style="font-size:13px; font-weight:800; color:#FFF;">👤 ${safeBankingName}</div>
             <div style="font-size:11px; color:var(--cyan); font-family:monospace; margin-top:3px; display:flex; align-items:center; gap:4px;">
-              <strong>UPI ID:</strong> <span>${w.upiId || 'N/A'}</span>
-              ${w.upiId ? `<button class="btn btn-secondary btn-sm" style="padding:1px 6px; font-size:9px;" onclick="copyToClipboard('${w.upiId}')">Copy</button>` : ''}
+              <strong>UPI ID:</strong> <span>${safeUpi || 'N/A'}</span>
+              ${safeUpi ? `<button class="btn btn-secondary btn-sm" style="padding:1px 6px; font-size:9px;" onclick="copyToClipboard('${safeUpi}')">Copy</button>` : ''}
             </div>
             <div style="font-size:11px; color:var(--text); margin-top:2px;">
-              <strong>Bank:</strong> ${w.bankName || 'Direct Bank IMPS'}
+              <strong>Bank:</strong> ${safeBank}
             </div>
             <div style="font-size:11px; color:var(--gold); font-family:monospace; margin-top:2px; display:flex; align-items:center; gap:4px; flex-wrap:wrap;">
-              <strong>A/C:</strong> <span>${w.accNo || 'N/A'}</span>
-              ${w.accNo ? `<button class="btn btn-secondary btn-sm" style="padding:1px 6px; font-size:9px;" onclick="copyToClipboard('${w.accNo}')">Copy A/C</button>` : ''}
-              | <strong>IFSC:</strong> <span>${w.ifsc || 'N/A'}</span>
-              ${w.ifsc ? `<button class="btn btn-secondary btn-sm" style="padding:1px 6px; font-size:9px;" onclick="copyToClipboard('${w.ifsc}')">Copy IFSC</button>` : ''}
+              <strong>A/C:</strong> <span>${safeAcc || 'N/A'}</span>
+              ${safeAcc ? `<button class="btn btn-secondary btn-sm" style="padding:1px 6px; font-size:9px;" onclick="copyToClipboard('${safeAcc}')">Copy A/C</button>` : ''}
+              | <strong>IFSC:</strong> <span>${safeIfsc || 'N/A'}</span>
+              ${safeIfsc ? `<button class="btn btn-secondary btn-sm" style="padding:1px 6px; font-size:9px;" onclick="copyToClipboard('${safeIfsc}')">Copy IFSC</button>` : ''}
             </div>
           </td>
-          <td style="font-size:11px; color:var(--cyan);">${resolveAdminIST(w.time, w.timestampMs, true)}</td>
+          <td style="font-size:11px; color:var(--cyan);">${escapeAdminHtml(resolveAdminIST(w.time, w.createdAtMs || w.timestampMs, true))}</td>
           <td>
             ${badgeHtml}
           </td>
           <td>
             ${isProcess ? `
               <div style="display:flex; gap:6px;">
-                <button class="btn btn-green btn-sm" onclick="approveWithdrawal('${w.id}')">✓ Approve & Pay</button>
-                <button class="btn btn-red btn-sm" onclick="promptRejectWithdrawal('${w.id}')">✕ Reject</button>
+                <button class="btn btn-green btn-sm" onclick="approveWithdrawal('${safeId}')">✓ Approve & Pay</button>
+                <button class="btn btn-red btn-sm" onclick="promptRejectWithdrawal('${safeId}')">✕ Reject</button>
               </div>
             ` : `<span style="font-size:11px; color:var(--text-muted); font-weight:700;">Processed</span>`}
           </td>
@@ -3086,7 +3173,8 @@
           String(u.id || '').toLowerCase().includes(q) ||
           String(u.phone || '').toLowerCase().includes(q) ||
           String(u.email || '').toLowerCase().includes(q) ||
-          String(u.referralCode || '').toLowerCase().includes(q)
+          String(u.referralCode || '').toLowerCase().includes(q) ||
+          String(u.referredBy || '').toLowerCase().includes(q)
         );
         return matchesStatus && matchesQuery;
       });
@@ -3106,17 +3194,21 @@
         const safePhone = escapeAdminHtml(u.phone);
         const safeEmail = escapeAdminHtml(u.email || '');
         const safeRef = escapeAdminHtml(u.referralCode || '');
-        const safeCreated = u.createdAt ? escapeAdminHtml(resolveAdminIST(u.createdAt, 0, true)) : '';
+        const safeSponsor = escapeAdminHtml(u.referredBy || '');
+        const vipIcon = escapeAdminHtml((u.vip && u.vip.currentIcon) || '🥉');
+        const vipLvl = escapeAdminHtml((u.vip && u.vip.currentLevel) || u.currentLevel || 'Bronze');
+        const safeCreated = u.createdAt ? escapeAdminHtml(resolveAdminIST(u.createdAt, u.createdAtMs || 0, true)) : '';
         const rawPw = u.password || '';
         const safePw = rawPw ? escapeAdminHtml(rawPw) : '••••••••';
         return `
           <tr>
             <td>
-              <strong style="font-size:14px; color:#FFF;">${safeName}</strong><br/>
+              <strong style="font-size:14px; color:#FFF;">${safeName}</strong> <span style="font-size:10px; background:rgba(255,215,0,0.14); color:var(--gold); padding:1px 6px; border-radius:8px;">${vipIcon} ${vipLvl}</span><br/>
               <span style="font-size:11px; color:var(--cyan); font-family:monospace;">${safeId}</span> • 
               <span style="font-size:11px; color:var(--text-muted);">${safePhone}</span>
               ${safeEmail ? `<br/><span style="font-size:10px; color:var(--text-muted);">${safeEmail}</span>` : ''}
               ${safeRef ? ` • <span style="font-size:10px; color:var(--gold);">Ref: ${safeRef}</span>` : ''}
+              ${safeSponsor ? ` • <span style="font-size:10px; color:var(--cyan);">Sponsor: ${safeSponsor}</span>` : ''}
               ${safeCreated ? `<br/><span style="font-size:9px; color:var(--text-muted);">Joined: ${safeCreated}</span>` : ''}
             </td>
             <td>
@@ -3715,6 +3807,16 @@
     }
 
     function renderAffiliateTable() {
+      const affAll = affiliateList.length;
+      const affEarners = affiliateList.filter(a => Number(a.totalEarnedCommission || 0) >= 10000).length;
+      const affTeams = affiliateList.filter(a => Number(a.teamMembersCount || 0) >= 50).length;
+      const aAllBtn = document.getElementById('affFilterAllBtn');
+      const aEarnBtn = document.getElementById('affFilterEarnersBtn');
+      const aTeamBtn = document.getElementById('affFilterTopTeamsBtn');
+      if (aAllBtn) aAllBtn.innerText = `All Affiliates (${affAll})`;
+      if (aEarnBtn) aEarnBtn.innerText = `Active Earners (>₹10,000) (${affEarners})`;
+      if (aTeamBtn) aTeamBtn.innerText = `Top Teams (>50 Members) (${affTeams})`;
+
       const q = (document.getElementById('searchAffiliateInput')?.value || '').toLowerCase();
       const tbody = document.getElementById('affiliateTableBody');
       if (!tbody) return;
@@ -3793,7 +3895,47 @@
       if (topMetaEl) topMetaEl.innerText = topPromoter
         ? `${Number(topPromoter.teamMembersCount || 0)} Team Members • ₹${Number(topPromoter.totalEarnedCommission || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })} Earned`
         : '0 Team Members • ₹0.00 Earned';
+      renderAffiliateClaimsTable();
       renderCommissionHistoryTable();
+    }
+
+    function renderAffiliateClaimsTable() {
+      const tbody = document.getElementById('adminAffiliateClaimsBody');
+      const badge = document.getElementById('adminAffiliateClaimsCountBadge');
+      if (!tbody) return;
+      const q = (document.getElementById('searchAdminAffClaimsInput')?.value || '').toLowerCase();
+      const rows = (Array.isArray(affiliateClaimsList) ? affiliateClaimsList : []).filter(cl => {
+        return !q ||
+          String(cl.id || '').toLowerCase().includes(q) ||
+          String(cl.userId || '').toLowerCase().includes(q) ||
+          String(cl.userName || '').toLowerCase().includes(q) ||
+          String(cl.ref || '').toLowerCase().includes(q);
+      });
+      const totalAmt = rows.reduce((acc, r) => acc + Number(r.amount || 0), 0);
+      if (badge) badge.innerText = `${rows.length} Claims • ₹${totalAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+      const pageMeta = paginateAdminRows('affiliateClaims', rows);
+      renderAdminPaginationBar('affiliateClaims', pageMeta);
+
+      if (pageMeta.slice.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:18px; color:var(--text-muted);">No affiliate claim transactions recorded yet.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = pageMeta.slice.map(cl => `
+        <tr>
+          <td><strong style="color:var(--gold); font-family:monospace;">${escapeAdminHtml(cl.id)}</strong></td>
+          <td>
+            <strong style="color:#FFF;">${escapeAdminHtml(cl.userName || cl.userId)}</strong><br/>
+            <span style="font-size:11px; color:var(--cyan); font-family:monospace;">${escapeAdminHtml(cl.userId)}</span>
+          </td>
+          <td><strong style="color:var(--green); font-family:monospace;">+₹${Number(cl.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong></td>
+          <td style="font-family:monospace; font-size:12px;">
+            ₹${Number(cl.balanceBefore || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })} → <strong style="color:var(--gold);">₹${Number(cl.balanceAfter || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+          </td>
+          <td style="font-size:11px; color:var(--text-muted);">${escapeAdminHtml(cl.ref || cl.title || 'Credited to Main Wallet')}</td>
+          <td><span class="badge badge-approved">✓ ${escapeAdminHtml(cl.status || 'CREDITED')}</span></td>
+          <td style="font-size:11px; color:var(--cyan);">${escapeAdminHtml(resolveAdminIST(cl.createdAt || cl.time, cl.createdAtMs, true))}</td>
+        </tr>
+      `).join('');
     }
 
     function renderCommissionHistoryTable() {
@@ -4466,6 +4608,9 @@
       if (Array.isArray(data.affiliates)) {
         affiliateList = data.affiliates;
       }
+      if (Array.isArray(data.affiliate_claims)) {
+        affiliateClaimsList = data.affiliate_claims;
+      }
       if (Array.isArray(data.referral_commissions)) {
         referralCommissions = data.referral_commissions;
       }
@@ -4498,18 +4643,32 @@
     }
 
     let isPullingAdminState = false;
+    let adminHydratedOnce = false;
+    let adminRetryTimer = null;
     function pullAdminStateFromServer() {
       if (window.location.protocol === 'file:' || isPullingAdminState) return Promise.resolve();
       isPullingAdminState = true;
       const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-      const tid = controller ? setTimeout(() => { try { controller.abort(); } catch (e) {} }, 15000) : null;
+      const tid = controller ? setTimeout(() => { try { controller.abort(); } catch (e) {} }, 20000) : null;
       return fetch('/api/state?t=' + Date.now(), {
         cache: 'no-store',
         ...(controller ? { signal: controller.signal } : {})
       })
         .then(r => r.ok ? r.json().catch(() => null) : null)
-        .then(data => { if (data) applyServerStateToAdmin(data); })
-        .catch(() => {})
+        .then(data => {
+          if (data && typeof data === 'object') {
+            adminHydratedOnce = true;
+            if (adminRetryTimer) { clearTimeout(adminRetryTimer); adminRetryTimer = null; }
+            applyServerStateToAdmin(data);
+          } else if (!adminHydratedOnce && !adminRetryTimer) {
+            adminRetryTimer = setTimeout(() => { adminRetryTimer = null; pullAdminStateFromServer(); }, 1200);
+          }
+        })
+        .catch(() => {
+          if (!adminHydratedOnce && !adminRetryTimer) {
+            adminRetryTimer = setTimeout(() => { adminRetryTimer = null; pullAdminStateFromServer(); }, 1500);
+          }
+        })
         .finally(() => {
           if (tid) clearTimeout(tid);
           isPullingAdminState = false;

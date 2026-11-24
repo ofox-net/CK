@@ -1998,7 +1998,7 @@ def build_user_statement(conn, uid, days="ALL", category="ALL", market_filter="A
 
     c.execute("""
         SELECT * FROM referral_commissions
-        WHERE beneficiary_user_id = ? AND created_at_ms >= ?
+        WHERE beneficiary_user_id = ? AND (created_at_ms >= ? OR created_at_ms = 0)
         ORDER BY created_at_ms DESC
     """, (uid, cutoff_ms))
     ref_rows = c.fetchall()
@@ -3751,7 +3751,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                             "mode": rr["draw_mode"] or "AUTO_RANDOM",
                             "time": dec_time_ist
                         }
-                    if len(declared_results_list) < 50:
+                    if len(declared_results_list) < 200:
                         c.execute("SELECT COALESCE(SUM(win_amount), 0.0) FROM bets WHERE market = ? AND period = ? AND status = 'WON'", (m_k, p_str))
                         payout_sum = float(c.fetchone()[0] or 0.0)
                         declared_results_list.append({
@@ -3802,7 +3802,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     "createdAtMs": _parse_ts_ms(r["created_at"], r["created_at_ms"])
                 } for r in c.fetchall()]
 
-                c.execute("SELECT * FROM admin_audit_logs ORDER BY id DESC LIMIT 500")
+                c.execute("SELECT * FROM admin_audit_logs ORDER BY id DESC")
                 audit_logs = [{
                     "id": r["id"],
                     "actor": r["actor"],
@@ -3811,6 +3811,25 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                     "desc": r["desc"],
                     "time": to_ist_display(r["created_at"], 0, mode="display"),
                     "createdAtMs": _parse_ts_ms(r["created_at"], 0)
+                } for r in c.fetchall()]
+
+                c.execute("""
+                    SELECT * FROM transactions
+                    WHERE UPPER(TRIM(type)) IN ('AFFILIATE_CLAIM', 'AFFILIATE_CLAIMED')
+                    ORDER BY created_at_ms DESC, created_at DESC
+                """)
+                affiliate_claims_list = [{
+                    "id": r["tx_id"],
+                    "userId": r["user_id"],
+                    "userName": users_name_map.get(r["user_id"], r["user_id"]),
+                    "title": r["title"] or "Affiliate Bonus Claimed",
+                    "ref": r["ref"] or "Credited to Main Wallet",
+                    "amount": round(float(r["amount"] or 0.0), 2),
+                    "balanceBefore": round(float(r["balance_before"] or 0.0), 2),
+                    "balanceAfter": round(float(r["balance_after"] or 0.0), 2),
+                    "status": "CREDITED",
+                    "createdAt": to_ist_display(r["created_at"], r["created_at_ms"] if "created_at_ms" in r.keys() else 0, mode="datetime"),
+                    "createdAtMs": _parse_ts_ms(r["created_at"], r["created_at_ms"] if "created_at_ms" in r.keys() else 0),
                 } for r in c.fetchall()]
 
                 # Build 6-tier affiliate overview dynamically from SQLite users & referral_commissions
@@ -3874,6 +3893,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 "referral_commissions": commissions_list,
                 "audit_logs": audit_logs,
                 "affiliates": affiliates_list,
+                "affiliate_claims": affiliate_claims_list,
                 "live_wagers": live_wagers,
                 "market_stats": market_stats,
                 "admin_kpis": admin_kpis,
@@ -4037,7 +4057,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
-                c.execute("SELECT * FROM deposits ORDER BY created_at_ms DESC, created_at DESC LIMIT 200")
+                c.execute("SELECT * FROM deposits ORDER BY created_at_ms DESC, created_at DESC")
                 deps = []
                 for r in c.fetchall():
                     d_ms = _parse_ts_ms(r["created_at"], r["created_at_ms"] if "created_at_ms" in r.keys() else 0)
@@ -4055,7 +4075,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
-                c.execute("SELECT * FROM withdrawals ORDER BY created_at_ms DESC, created_at DESC LIMIT 200")
+                c.execute("SELECT * FROM withdrawals ORDER BY created_at_ms DESC, created_at DESC")
                 wds = []
                 for r in c.fetchall():
                     w_ms = _parse_ts_ms(r["created_at"], r["created_at_ms"] if "created_at_ms" in r.keys() else 0)
@@ -4911,20 +4931,35 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
         # 5. DEPOSITS & WITHDRAWALS LIFECYCLE
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         if path == "/api/deposits":
-            amount = float(payload.get("amount", 0.0))
+            amount = round(float(payload.get("amount", 0.0)), 2)
             utr = str(payload.get("utr", "")).strip()
             method = str(payload.get("method", "UPI"))
-            uid = payload.get("userId", "USR-1001")
-            uname = payload.get("userName", "Rahul_Player")
+            uid = str(payload.get("userId") or self._get_cookie_uid() or "").strip()
+            uname = str(payload.get("userName") or "").strip()
+            if not uid or uid == "Guest":
+                self._send_json({ "success": False, "error": "Please login before submitting a deposit" }, status=401)
+                return
+            if amount <= 0:
+                self._send_json({ "success": False, "error": "Deposit amount must be greater than zero" }, status=400)
+                return
+            if len(utr) < 4:
+                self._send_json({ "success": False, "error": "Please enter a valid UTR reference number" }, status=400)
+                return
 
             dep_time_str = format_ist_display(now_ms)
             dep_id = f"DEP-{get_ist_now(now_ms).strftime('%H%M%S')}-{random.randint(10, 99)}"
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
-                c.execute("SELECT status FROM users WHERE id = ?", (uid,))
+                c.execute("SELECT id, name, status FROM users WHERE UPPER(TRIM(id)) = UPPER(?)", (uid,))
                 ucheck = c.fetchone()
-                if ucheck and ucheck["status"] == "BLOCKED":
+                if not ucheck:
+                    conn.close()
+                    self._send_json({ "success": False, "error": "User account not found" }, status=404)
+                    return
+                uid = ucheck["id"]
+                eff_name = ucheck["name"] or uname or uid
+                if ucheck["status"] == "BLOCKED":
                     conn.close()
                     self._send_json({ "success": False, "error": "Account is blocked by Admin" }, status=403)
                     return
@@ -4932,13 +4967,17 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 c.execute("""
                     INSERT INTO deposits (id, user_id, user_name, amount, method, utr, time_str, status, created_at_ms)
                     VALUES (?, ?, ?, ?, ?, ?, ?, 'IN PROCESS', ?)
-                """, (dep_id, uid, uname, amount, method, utr, dep_time_str, now_ms))
+                """, (dep_id, uid, eff_name, amount, method, utr, dep_time_str, now_ms))
+                c.execute("""
+                    INSERT INTO admin_audit_logs (actor, action, entity, desc)
+                    VALUES (?, 'DEPOSIT_REQUEST', ?, ?)
+                """, (eff_name, dep_id, f"Deposit request ₹{amount:.2f} (UTR: {utr})"))
                 _, sse_ev = bump_state_version(conn, "deposit_requested", {"userId": uid, "depositId": dep_id, "amount": amount})
                 commit_and_persist(conn, critical=True)
                 conn.close()
             notify_sse_clients(sse_ev)
 
-            self._send_json({ "success": True, "deposit": { "id": dep_id, "amount": amount, "method": method, "utr": utr, "status": "IN PROCESS", "time": dep_time_str, "createdAtMs": now_ms } })
+            self._send_json({ "success": True, "depositId": dep_id, "deposit": { "id": dep_id, "userId": uid, "amount": amount, "method": method, "utr": utr, "status": "IN PROCESS", "time": dep_time_str, "createdAtMs": now_ms } })
             return
 
         if path == "/api/deposits/approve":
@@ -5021,25 +5060,37 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         if path == "/api/withdrawals":
-            amount = float(payload.get("amount", 0.0))
+            amount = round(float(payload.get("amount", 0.0)), 2)
             upi_id = str(payload.get("upiId", "")).strip()
             bank_name = str(payload.get("bankName", "")).strip()
             acc_no = str(payload.get("accNo", "")).strip()
             ifsc = str(payload.get("ifsc", "")).strip().upper()
             banking_name = str(payload.get("bankingName", "")).strip()
-            uid = payload.get("userId", "USR-1001")
-            uname = payload.get("userName", "Rahul_Player")
+            uid = str(payload.get("userId") or self._get_cookie_uid() or "").strip()
+            uname = str(payload.get("userName") or "").strip()
+            if not uid or uid == "Guest":
+                self._send_json({ "success": False, "error": "Please login before requesting a withdrawal" }, status=401)
+                return
+            if amount < 1.0:
+                self._send_json({ "success": False, "error": "Withdrawal amount must be at least ₹1.00" }, status=400)
+                return
 
             with db_lock:
                 conn = get_db()
                 c = conn.cursor()
-                c.execute("SELECT balance, status FROM users WHERE id = ?", (uid,))
+                c.execute("SELECT id, name, balance, status FROM users WHERE UPPER(TRIM(id)) = UPPER(?)", (uid,))
                 urow = c.fetchone()
-                if urow and urow["status"] == "BLOCKED":
+                if not urow:
+                    conn.close()
+                    self._send_json({ "success": False, "error": "User account not found" }, status=404)
+                    return
+                uid = urow["id"]
+                eff_name = urow["name"] or uname or uid
+                if urow["status"] == "BLOCKED":
                     conn.close()
                     self._send_json({ "success": False, "error": "Account is blocked by Admin" }, status=403)
                     return
-                if not urow or urow["balance"] < amount:
+                if urow["balance"] < amount:
                     conn.close()
                     self._send_json({ "success": False, "error": "Insufficient balance for withdrawal" }, status=400)
                     return
@@ -5053,13 +5104,17 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 c.execute("""
                     INSERT INTO withdrawals (id, user_id, user_name, amount, upi_id, bank_name, acc_no, ifsc, banking_name, destination, time_str, status, created_at_ms)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'IN PROCESS', ?)
-                """, (wd_id, uid, uname, amount, upi_id, bank_name, acc_no, ifsc, banking_name, destination, wd_time_str, now_ms))
+                """, (wd_id, uid, eff_name, amount, upi_id, bank_name, acc_no, ifsc, banking_name, destination, wd_time_str, now_ms))
 
                 tx_id = f"TX-WD-{int(now_ms)}-{random.randint(100, 999)}"
                 c.execute("""
                     INSERT INTO transactions (tx_id, user_id, type, title, ref, amount, balance_before, balance_after, status, created_at_ms)
                     VALUES (?, ?, 'WITHDRAWAL', 'Withdrawal Request', ?, ?, ?, ?, 'PENDING', ?)
                 """, (tx_id, uid, destination, -amount, urow["balance"], new_bal, now_ms))
+                c.execute("""
+                    INSERT INTO admin_audit_logs (actor, action, entity, desc)
+                    VALUES (?, 'WITHDRAWAL_REQUEST', ?, ?)
+                """, (eff_name, wd_id, f"Withdrawal request ₹{amount:.2f} -> {destination}"))
 
                 _, sse_ev = bump_state_version(conn, "withdrawal_requested", {"userId": uid, "withdrawalId": wd_id, "amount": amount})
                 commit_and_persist(conn, critical=True)
@@ -5072,7 +5127,7 @@ class AppHandler(http.server.SimpleHTTPRequestHandler):
                 "time": wd_time_str,
                 "createdAtMs": now_ms,
                 "newBalance": new_bal,
-                "withdrawal": { "id": wd_id, "amount": amount, "status": "IN PROCESS", "time": wd_time_str, "createdAtMs": now_ms }
+                "withdrawal": { "id": wd_id, "userId": uid, "amount": amount, "status": "IN PROCESS", "time": wd_time_str, "createdAtMs": now_ms }
             })
             return
 

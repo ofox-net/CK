@@ -3190,7 +3190,7 @@ def api_users_restore_session():
         return jsonify({"success": False, "authenticated": False, "error": "Invalid or expired recovery token"}), 401
     with db_lock:
         try:
-            u = User.query.get(td["id"])
+            u = resolve_user_by_id_safe(td["id"])
             was_restored = False
             if not u:
                 u = User(
@@ -3237,9 +3237,10 @@ def api_users_change_password():
         return jsonify({"success": False, "error": "Password must be at least 4 characters"}), 400
     with db_lock:
         try:
-            u = User.query.get(uid)
+            u = resolve_user_by_id_safe(uid)
             if not u:
                 return jsonify({"success": False, "error": "User not found"}), 404
+            uid = u.id
             if current_pw is not None and str(current_pw).strip() != "":
                 if not verify_password_secure(str(current_pw).strip(), u.password_hash or "", u.password_plain or ""):
                     return jsonify({"success": False, "error": "Current password is incorrect"}), 401
@@ -3278,9 +3279,10 @@ def api_user_adjust():
 
     with db_lock:
         try:
-            u = User.query.get(uid)
+            u = resolve_user_by_id_safe(uid)
             if not u:
                 return jsonify({"success": False, "error": "User not found"}), 404
+            uid = u.id
             curr_bal = float(u.balance)
             new_bal = round(curr_bal + amount, 2) if adj_type == "CREDIT" else round(max(0.0, curr_bal - amount), 2)
             u.balance = new_bal
@@ -3318,9 +3320,10 @@ def api_user_status():
         return jsonify({"success": False, "error": "Invalid user status"}), 400
     with db_lock:
         try:
-            u = User.query.get(uid)
+            u = resolve_user_by_id_safe(uid)
             if not u:
                 return jsonify({"success": False, "error": "User not found"}), 404
+            uid = u.id
             u.status = new_status
             log_admin_action("ColourPrince", "USER_STATUS_CHANGE", uid, f"Status updated to {new_status}")
             msg = (
@@ -3372,9 +3375,10 @@ def api_deposits():
 
     with db_lock:
         try:
-            u = User.query.get(uid)
+            u = resolve_user_by_id_safe(uid)
             if not u:
                 return jsonify({"success": False, "error": "User account not found"}), 404
+            uid = u.id
             if u.status == "BLOCKED":
                 return jsonify({"success": False, "error": "Account is blocked by Admin"}), 403
             db.session.add(Deposit(
@@ -3389,7 +3393,7 @@ def api_deposits():
             db.session.rollback()
             return jsonify({"success": False, "error": str(exc)}), 500
     notify_sse_clients(sse_ev)
-    return jsonify({"success": True, "deposit": {"id": dep_id, "amount": amount, "method": method, "utr": utr, "status": "IN PROCESS", "time": dep_time_str, "createdAtMs": curr_ms}})
+    return jsonify({"success": True, "deposit": {"id": dep_id, "userId": uid, "amount": amount, "method": method, "utr": utr, "status": "IN PROCESS", "time": dep_time_str, "createdAtMs": curr_ms}})
 
 
 @app.route("/api/deposits/approve", methods=["POST"])
@@ -3413,8 +3417,9 @@ def api_deposits_approve():
                 d.status = "SUCCESS"
                 affected_uid = d.user_id
                 amt = float(d.amount)
-                u = User.query.get(affected_uid)
+                u = resolve_user_by_id_safe(affected_uid)
                 if u:
+                    affected_uid = u.id
                     before = float(u.balance)
                     u.balance = round(before + amt, 2)
                     u.total_deposit = round(float(u.total_deposit or 0.0) + amt, 2)
@@ -3515,9 +3520,10 @@ def api_withdrawals():
 
     with db_lock:
         try:
-            u = User.query.get(uid)
+            u = resolve_user_by_id_safe(uid)
             if not u:
                 return jsonify({"success": False, "error": "User account not found"}), 404
+            uid = u.id
             if u.status == "BLOCKED":
                 return jsonify({"success": False, "error": "Account is blocked by Admin"}), 403
             if float(u.balance) < amount:
@@ -3552,7 +3558,7 @@ def api_withdrawals():
     return jsonify({
         "success": True, "withdrawalId": wd_id, "time": wd_time_str,
         "createdAtMs": curr_ms, "newBalance": new_bal,
-        "withdrawal": {"id": wd_id, "amount": amount, "status": "IN PROCESS", "time": wd_time_str, "createdAtMs": curr_ms},
+        "withdrawal": {"id": wd_id, "userId": uid, "amount": amount, "status": "IN PROCESS", "time": wd_time_str, "createdAtMs": curr_ms},
     })
 
 
@@ -3575,11 +3581,12 @@ def api_withdrawals_approve():
             if st_cur != "SUCCESS":
                 affected_uid = w.user_id
                 w.status = "SUCCESS"
-                u = User.query.get(affected_uid)
+                u = resolve_user_by_id_safe(affected_uid)
                 if u:
+                    affected_uid = u.id
                     u.total_withdraw = round(float(u.total_withdraw or 0.0) + float(w.amount), 2)
                 pending_wd_tx = Transaction.query.filter_by(
-                    user_id=affected_uid, type="WITHDRAWAL", ref=w.destination, status="PENDING"
+                    user_id=w.user_id, type="WITHDRAWAL", ref=w.destination, status="PENDING"
                 ).order_by(Transaction.created_at_ms.desc()).first()
                 if pending_wd_tx:
                     pending_wd_tx.status = "COMPLETED"
@@ -3619,13 +3626,15 @@ def api_withdrawals_reject():
                 affected_uid = w.user_id
                 w.status = "FAIL"
                 w.reason = reason
-                u = User.query.get(affected_uid)
+                u = resolve_user_by_id_safe(affected_uid)
+                if u:
+                    affected_uid = u.id
                 curr_bal = float(u.balance) if u else 0.0
                 new_bal = round(curr_bal + float(w.amount), 2)
                 if u:
                     u.balance = new_bal
                 pending_wd_tx = Transaction.query.filter_by(
-                    user_id=affected_uid, type="WITHDRAWAL", ref=w.destination, status="PENDING"
+                    user_id=w.user_id, type="WITHDRAWAL", ref=w.destination, status="PENDING"
                 ).order_by(Transaction.created_at_ms.desc()).first()
                 if pending_wd_tx:
                     pending_wd_tx.status = "REJECTED"
@@ -3929,6 +3938,26 @@ def api_state():
 
         affiliates_list = build_all_affiliates_bulk(all_users, all_comm_rows)
 
+        affiliate_claims_rows = (
+            Transaction.query
+            .filter(func.upper(func.trim(Transaction.type)).in_(["AFFILIATE_CLAIM", "AFFILIATE_CLAIMED"]))
+            .order_by(Transaction.created_at_ms.desc())
+            .all()
+        )
+        affiliate_claims_list = [{
+            "id": tx.tx_id,
+            "userId": tx.user_id,
+            "userName": users_name_map.get(tx.user_id, tx.user_id),
+            "title": tx.title or "Affiliate Bonus Claimed",
+            "ref": tx.ref or "Credited to Main Wallet",
+            "amount": round(float(tx.amount or 0.0), 2),
+            "balanceBefore": round(float(tx.balance_before or 0.0), 2),
+            "balanceAfter": round(float(tx.balance_after or 0.0), 2),
+            "status": "CREDITED",
+            "createdAt": to_ist_display(tx.created_at, tx.created_at_ms or 0, mode="datetime"),
+            "createdAtMs": _parse_ts_ms(tx.created_at, tx.created_at_ms or 0),
+        } for tx in affiliate_claims_rows]
+
         live_wagers, market_stats = compute_live_wagers_and_market_stats(curr_ms)
         support_tickets, support_unread_admin = list_admin_support_tickets()
 
@@ -3943,6 +3972,7 @@ def api_state():
             "declared_results": declared_results, "declared_results_list": declared_results_list,
             "bets": bets_list, "referral_commissions": commissions_list,
             "audit_logs": audit_logs, "affiliates": affiliates_list,
+            "affiliate_claims": affiliate_claims_list,
             "live_wagers": live_wagers, "market_stats": market_stats,
             "admin_kpis": compute_admin_kpis(),
             "support_tickets": support_tickets, "support_unread_admin": support_unread_admin,
